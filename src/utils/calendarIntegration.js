@@ -46,6 +46,21 @@ export const startGoogleCalendarOAuth = async () => {
     }
 };
 
+export const handleOutlookCalendarCallback = async (code) => {
+    try {
+        // Exchange authorization code for access token
+        const { access_token } = await exchangeOutlookToken(code);
+
+        // Fetch events from Microsoft Graph
+        const data = await fetchOutlookCalendarEvents(access_token);
+        return transformOutlookEvents(data.value || []);
+
+    } catch (error) {
+        console.error('Outlook Calendar integration error:', error);
+        throw error;
+    }
+};
+
 export const startOutlookCalendarOAuth = async () => {
     const clientId = import.meta.env.VITE_MICROSOFT_CLIENT_ID;
     const clientSecret = import.meta.env.VITE_MICROSOFT_CLIENT_SECRET;
