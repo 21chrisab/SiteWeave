@@ -3,6 +3,8 @@ import { autoUpdater } from 'electron-updater';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
+import { createServer } from 'http';
+import { parse } from 'url';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -10,9 +12,100 @@ const __dirname = dirname(__filename);
 const isDev = process.env.NODE_ENV === 'development';
 
 let mainWindow;
+let oauthServer = null;
+const OAUTH_PORT = 5000;
 
 // Configure auto-updater
 autoUpdater.checkForUpdatesAndNotify();
+
+// OAuth Server for loopback method
+function startOAuthServer() {
+  if (oauthServer) {
+    return; // Server already running
+  }
+
+  oauthServer = createServer((req, res) => {
+    const parsedUrl = parse(req.url, true);
+    const pathname = parsedUrl.pathname;
+    const query = parsedUrl.query;
+
+    // Handle OAuth callbacks
+    if (pathname.includes('-callback')) {
+      const provider = pathname.replace('/-callback', '').replace('/', '');
+      
+      // Send CORS headers
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+      res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+      
+      if (req.method === 'OPTIONS') {
+        res.writeHead(200);
+        res.end();
+        return;
+      }
+
+      // Send success response to browser
+      res.writeHead(200, { 'Content-Type': 'text/html' });
+      res.end(`
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <title>OAuth Success</title>
+          <style>
+            body { font-family: Arial, sans-serif; text-align: center; padding: 50px; }
+            .success { color: #4CAF50; }
+            .error { color: #f44336; }
+          </style>
+        </head>
+        <body>
+          <h2 class="success">✓ Authentication Successful!</h2>
+          <p>You can close this window and return to SiteWeave.</p>
+          <script>
+            setTimeout(() => {
+              window.close();
+            }, 2000);
+          </script>
+        </body>
+        </html>
+      `);
+
+      // Send callback data to main window
+      if (mainWindow) {
+        mainWindow.webContents.send('oauth-callback', {
+          provider: provider,
+          code: query.code,
+          state: query.state,
+          error: query.error,
+          errorDescription: query.error_description
+        });
+      }
+    } else {
+      // Handle other requests
+      res.writeHead(404, { 'Content-Type': 'text/plain' });
+      res.end('Not Found');
+    }
+  });
+
+  oauthServer.listen(OAUTH_PORT, '127.0.0.1', () => {
+    console.log(`OAuth server listening on http://127.0.0.1:${OAUTH_PORT}`);
+  });
+
+  oauthServer.on('error', (err) => {
+    if (err.code === 'EADDRINUSE') {
+      console.log(`Port ${OAUTH_PORT} is already in use`);
+    } else {
+      console.error('OAuth server error:', err);
+    }
+  });
+}
+
+function stopOAuthServer() {
+  if (oauthServer) {
+    oauthServer.close();
+    oauthServer = null;
+    console.log('OAuth server stopped');
+  }
+}
 
 // Custom protocol for OAuth callbacks
 const PROTOCOL_NAME = 'siteweave';
@@ -188,6 +281,7 @@ app.whenReady().then(() => {
   registerProtocol();
   createWindow();
   createMenu();
+  startOAuthServer(); // Start OAuth server
 
   // Handle protocol URLs
   app.on('open-url', (event, url) => {
@@ -203,9 +297,14 @@ app.whenReady().then(() => {
 });
 
 app.on('window-all-closed', () => {
+  stopOAuthServer(); // Stop OAuth server
   if (process.platform !== 'darwin') {
     app.quit();
   }
+});
+
+app.on('before-quit', () => {
+  stopOAuthServer(); // Stop OAuth server before quitting
 });
 
 // Auto-updater events
@@ -233,6 +332,16 @@ ipcMain.handle('install-update', () => {
 
 ipcMain.handle('check-for-updates', () => {
   return autoUpdater.checkForUpdates();
+});
+
+ipcMain.handle('start-oauth-server', () => {
+  startOAuthServer();
+  return true;
+});
+
+ipcMain.handle('stop-oauth-server', () => {
+  stopOAuthServer();
+  return true;
 });
 
 // Handle deep links on Windows

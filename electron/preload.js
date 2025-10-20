@@ -34,6 +34,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   installUpdate: () => ipcRenderer.invoke('install-update'),
   checkForUpdates: () => ipcRenderer.invoke('check-for-updates'),
 
+  // OAuth server control
+  startOAuthServer: () => ipcRenderer.invoke('start-oauth-server'),
+  stopOAuthServer: () => ipcRenderer.invoke('stop-oauth-server'),
+
   // External links
   openExternal: (url) => {
     // This will be handled by the main process automatically
