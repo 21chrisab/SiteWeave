@@ -1,0 +1,29 @@
+<svg width="200" height="120" viewBox="0 0 200 120" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background -->
+  <rect width="200" height="120" fill="white"/>
+  
+  <!-- SITE Text -->
+  <text x="100" y="35" text-anchor="middle" font-family="Arial, sans-serif" font-size="24" font-weight="bold" fill="#34B0B0">
+    SITE
+  </text>
+  
+  <!-- WEAVE Text -->
+  <text x="100" y="95" text-anchor="middle" font-family="Arial, sans-serif" font-size="24" font-weight="bold" fill="#F2C94C">
+    WEAVE
+  </text>
+  
+  <!-- Wavy Lines -->
+  <!-- Teal line -->
+  <path d="M 20 60 Q 50 45 80 60 Q 110 75 140 60 Q 170 45 180 60" 
+        stroke="#34B0B0" 
+        stroke-width="6" 
+        fill="none" 
+        stroke-linecap="round"/>
+  
+  <!-- Yellow-gold line -->
+  <path d="M 20 60 Q 50 75 80 60 Q 110 45 140 60 Q 170 75 180 60" 
+        stroke="#F2C94C" 
+        stroke-width="6" 
+        fill="none" 
+        stroke-linecap="round"/>
+</svg>
