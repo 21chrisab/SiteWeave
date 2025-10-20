@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dropbox OAuth Callback</title>
+</head>
+<body>
+    <div style="display: flex; justify-content: center; align-items: center; height: 100vh; font-family: Arial, sans-serif;">
+        <div style="text-align: center;">
+            <h2>Processing Dropbox Connection...</h2>
+            <p>Please wait while we complete the authentication process.</p>
+        </div>
+    </div>
+
+    <script>
+        // Handle Dropbox OAuth callback
+        (function() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const code = urlParams.get('code');
+            const error = urlParams.get('error');
+            const errorDescription = urlParams.get('error_description');
+
+            if (error) {
+                // Send error to parent window
+                window.opener.postMessage({
+                    type: 'DROPBOX_OAUTH_ERROR',
+                    error: errorDescription || error
+                }, window.location.origin);
+                window.close();
+                return;
+            }
+
+            if (code) {
+                // Exchange code for token
+                exchangeCodeForToken(code);
+            } else {
+                window.opener.postMessage({
+                    type: 'DROPBOX_OAUTH_ERROR',
+                    error: 'No authorization code received'
+                }, window.location.origin);
+                window.close();
+            }
+
+            async function exchangeCodeForToken(code) {
+                try {
+                    const response = await fetch('/api/dropbox/token', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({ code })
+                    });
+
+                    if (!response.ok) {
+                        throw new Error('Token exchange failed');
+                    }
+
+                    const data = await response.json();
+                    
+                    // Send success to parent window
+                    window.opener.postMessage({
+                        type: 'DROPBOX_OAUTH_SUCCESS',
+                        accessToken: data.access_token
+                    }, window.location.origin);
+                    
+                    window.close();
+                } catch (error) {
+                    console.error('Token exchange error:', error);
+                    window.opener.postMessage({
+                        type: 'DROPBOX_OAUTH_ERROR',
+                        error: error.message
+                    }, window.location.origin);
+                    window.close();
+                }
+            }
+        })();
+    </script>
+</body>
+</html>
