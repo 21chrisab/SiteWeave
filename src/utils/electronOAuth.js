@@ -1,9 +1,10 @@
 // Electron OAuth Helper
-// Handles OAuth flows for desktop applications using custom protocols
+// Handles OAuth flows for desktop applications using loopback method (localhost server)
 
 class ElectronOAuth {
   constructor() {
     this.isElectron = window.electronAPI?.isElectron || false;
+    this.localServer = null;
     this.setupListeners();
   }
 
@@ -16,16 +17,17 @@ class ElectronOAuth {
     }
   }
 
-  // Start OAuth flow - works for both web and desktop
+  // Start OAuth flow using loopback method
   async startOAuthFlow(provider, config) {
     const redirectUri = this.isElectron 
-      ? `siteweave://${provider}-callback`
+      ? `http://127.0.0.1:5000/${provider}-callback`
       : `${window.location.origin}/${provider}-callback`;
 
     const authUrl = this.buildAuthUrl(provider, config, redirectUri);
 
     if (this.isElectron) {
-      // In Electron, open in default browser
+      // In Electron, start local server and open browser
+      await this.startLocalServer(provider);
       window.electronAPI.openExternal(authUrl);
       
       // Return a promise that resolves when callback is received
@@ -37,12 +39,46 @@ class ElectronOAuth {
           if (this.pendingOAuth) {
             this.pendingOAuth.reject(new Error('OAuth timeout'));
             this.pendingOAuth = null;
+            this.stopLocalServer();
           }
         }, 300000); // 5 minutes timeout
       });
     } else {
       // In web browser, use popup
       return this.startWebOAuthFlow(authUrl, provider);
+    }
+  }
+
+  // Start local server for OAuth callbacks
+  async startLocalServer(provider) {
+    if (this.localServer) {
+      await this.stopLocalServer();
+    }
+
+    try {
+      // Use electron's IPC to start the server
+      if (window.electronAPI) {
+        await window.electronAPI.startOAuthServer();
+        console.log(`Started local server for ${provider} OAuth callback`);
+      }
+    } catch (error) {
+      console.error('Failed to start local server:', error);
+      throw error;
+    }
+  }
+
+  // Stop local server
+  async stopLocalServer() {
+    if (this.localServer) {
+      try {
+        if (window.electronAPI) {
+          await window.electronAPI.stopOAuthServer();
+        }
+        console.log('Stopped local OAuth server');
+        this.localServer = null;
+      } catch (error) {
+        console.error('Error stopping local server:', error);
+      }
     }
   }
 
@@ -95,9 +131,10 @@ class ElectronOAuth {
     }
 
     this.pendingOAuth = null;
+    this.stopLocalServer();
   }
 
-  // Web OAuth flow using popup
+  // Web OAuth flow using popup (fallback for web browsers)
   async startWebOAuthFlow(authUrl, provider) {
     const popup = window.open(
       authUrl,
@@ -160,7 +197,7 @@ class ElectronOAuth {
     };
 
     const redirectUri = this.isElectron 
-      ? `siteweave://${provider}-callback`
+      ? `http://127.0.0.1:5000/${provider}-callback`
       : `${window.location.origin}/${provider}-callback`;
 
     const body = new URLSearchParams({

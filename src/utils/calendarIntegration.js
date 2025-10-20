@@ -95,7 +95,7 @@ const exchangeGoogleToken = async (code) => {
     const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
     const clientSecret = import.meta.env.VITE_GOOGLE_CLIENT_SECRET;
     const redirectUri = window.electronAPI?.isElectron 
-        ? 'siteweave://google-callback'
+        ? 'http://127.0.0.1:5000/google-callback'
         : window.location.origin + '/calendar';
 
     const response = await fetch('https://oauth2.googleapis.com/token', {
@@ -138,7 +138,7 @@ const exchangeOutlookToken = async (code) => {
     const clientId = import.meta.env.VITE_MICROSOFT_CLIENT_ID;
     const clientSecret = import.meta.env.VITE_MICROSOFT_CLIENT_SECRET;
     const redirectUri = window.electronAPI?.isElectron 
-        ? 'siteweave://microsoft-callback'
+        ? 'http://127.0.0.1:5000/microsoft-callback'
         : window.location.origin + '/calendar';
 
     const response = await fetch('https://login.microsoftonline.com/common/oauth2/v2.0/token', {
