@@ -295,10 +295,12 @@ function handleProtocolUrl(url) {
   });
 }
 
+// Register protocol BEFORE app is ready
+registerProtocol();
+
 // App event handlers
 app.whenReady().then(() => {
   console.log('App is ready');
-  registerProtocol();
   createWindow();
   createMenu();
   startOAuthServer(); // Start OAuth server
