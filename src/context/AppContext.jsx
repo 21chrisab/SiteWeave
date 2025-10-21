@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useEffect, useReducer, useState } from 'react';
 import { createClient } from '@supabase/supabase-js';
 import dropboxStorage from '../utils/dropboxStorage';
+import supabaseElectronAuth from '../utils/supabaseElectronAuth';
 
 // --- SUPABASE CLIENT ---
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || 'https://tchqmlyiwsqxwopvyxjx.supabase.co';
@@ -122,7 +123,21 @@ export const AppProvider = ({ children }) => {
       }
     );
 
-    return () => subscription.unsubscribe();
+    // Listen for Electron OAuth callbacks
+    const handleElectronOAuthCallback = (event) => {
+      const { session } = event.detail;
+      if (session) {
+        // Set the session in Supabase client
+        supabaseClient.auth.setSession(session);
+      }
+    };
+
+    window.addEventListener('supabase-oauth-callback', handleElectronOAuthCallback);
+
+    return () => {
+      subscription.unsubscribe();
+      window.removeEventListener('supabase-oauth-callback', handleElectronOAuthCallback);
+    };
   }, []);
 
   useEffect(() => {

@@ -46,10 +46,16 @@ function LoginForm() {
 
   const handleGoogleLogin = async () => {
     setIsLoading(true);
+    
+    // Use Electron loopback method if available
+    const redirectTo = window.electronAPI?.isElectron 
+      ? 'http://127.0.0.1:5000/supabase-callback'
+      : window.location.origin;
+
     const { error } = await supabaseClient.auth.signInWithOAuth({
       provider: 'google',
       options: {
-        redirectTo: window.location.origin
+        redirectTo: redirectTo
       }
     });
 
@@ -61,10 +67,16 @@ function LoginForm() {
 
   const handleMicrosoftLogin = async () => {
     setIsLoading(true);
+    
+    // Use Electron loopback method if available
+    const redirectTo = window.electronAPI?.isElectron 
+      ? 'http://127.0.0.1:5000/supabase-callback'
+      : window.location.origin;
+
     const { error } = await supabaseClient.auth.signInWithOAuth({
       provider: 'azure',
       options: {
-        redirectTo: window.location.origin,
+        redirectTo: redirectTo,
         scopes: 'openid email profile'
       }
     });
