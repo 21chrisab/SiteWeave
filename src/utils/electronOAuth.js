@@ -3,7 +3,10 @@
 
 class ElectronOAuth {
   constructor() {
-    this.isElectron = window.electronAPI?.isElectron || false;
+    // More robust Electron detection
+    this.isElectron = !!(window.electronAPI?.isElectron || window.electronAPI);
+    console.log('ElectronOAuth: isElectron =', this.isElectron);
+    console.log('ElectronOAuth: window.electronAPI =', window.electronAPI);
     this.localServer = null;
     this.setupListeners();
   }
@@ -19,14 +22,21 @@ class ElectronOAuth {
 
   // Start OAuth flow using loopback method
   async startOAuthFlow(provider, config) {
+    console.log('Starting OAuth flow for provider:', provider);
+    console.log('isElectron:', this.isElectron);
+    
     const redirectUri = this.isElectron 
       ? `http://127.0.0.1:5000/${provider}-callback`
       : `${window.location.origin}/${provider}-callback`;
 
+    console.log('Using redirect URI:', redirectUri);
+
     const authUrl = this.buildAuthUrl(provider, config, redirectUri);
+    console.log('Generated auth URL:', authUrl);
 
     if (this.isElectron) {
       // In Electron, start local server and open browser
+      console.log('Using Electron OAuth flow');
       await this.startLocalServer(provider);
       window.electronAPI.openExternal(authUrl);
       
@@ -45,6 +55,7 @@ class ElectronOAuth {
       });
     } else {
       // In web browser, use popup
+      console.log('Using web OAuth flow');
       return this.startWebOAuthFlow(authUrl, provider);
     }
   }
