@@ -70,6 +70,7 @@ jobs:
     
     - name: Check if tag exists
       id: tag_check
+      shell: bash
       run: |
         if git rev-parse "v${{ steps.version.outputs.VERSION }}" >/dev/null 2>&1; then
           echo "EXISTS=true" >> $GITHUB_OUTPUT
@@ -79,6 +80,7 @@ jobs:
     
     - name: Create Git tag
       if: steps.tag_check.outputs.EXISTS == 'false'
+      shell: bash
       run: |
         git config --local user.email "action@github.com"
         git config --local user.name "GitHub Action"
