@@ -198,12 +198,13 @@ function createWindow() {
     titleBarStyle: 'default'
   });
 
-  // Load the app
+  // Load the app - always use built files for electron:dev
+  console.log('Loading app from:', path.join(__dirname, '../dist/index.html'));
+  mainWindow.loadFile(path.join(__dirname, '../dist/index.html'));
+  
+  // Open dev tools in development
   if (isDev) {
-    mainWindow.loadURL('http://localhost:5173');
     mainWindow.webContents.openDevTools();
-  } else {
-    mainWindow.loadFile(path.join(__dirname, '../dist/index.html'));
   }
 
   // Show window when ready
