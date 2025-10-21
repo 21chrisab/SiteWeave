@@ -71,6 +71,30 @@ function startOAuthServer() {
           <h2 class="success">✓ Authentication Successful!</h2>
           <p>You can close this window and return to SiteWeave.</p>
           <script>
+            // Extract hash parameters and send to parent window
+            if (window.location.hash) {
+              const hash = window.location.hash.substring(1);
+              console.log('OAuth hash received:', hash);
+              
+              // Try to send to parent window first
+              if (window.opener) {
+                window.opener.postMessage({
+                  type: 'supabase-oauth-callback',
+                  hash: hash,
+                  url: window.location.href
+                }, '*');
+              }
+              
+              // Also try to send to the main window via Electron
+              if (window.electronAPI) {
+                window.electronAPI.sendOAuthCallback({
+                  provider: 'supabase',
+                  hash: hash,
+                  url: window.location.href
+                });
+              }
+            }
+            
             setTimeout(() => {
               window.close();
             }, 2000);
@@ -383,6 +407,14 @@ ipcMain.handle('start-oauth-server', () => {
 
 ipcMain.handle('stop-oauth-server', () => {
   stopOAuthServer();
+  return true;
+});
+
+ipcMain.handle('send-oauth-callback', (event, data) => {
+  console.log('Received OAuth callback from renderer:', data);
+  if (mainWindow) {
+    mainWindow.webContents.send('oauth-callback', data);
+  }
   return true;
 });
 

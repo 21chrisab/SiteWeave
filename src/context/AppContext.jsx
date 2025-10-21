@@ -127,16 +127,63 @@ export const AppProvider = ({ children }) => {
     const handleElectronOAuthCallback = (event) => {
       const { session } = event.detail;
       if (session) {
+        console.log('Setting Supabase session from OAuth callback:', session);
         // Set the session in Supabase client
         supabaseClient.auth.setSession(session);
       }
     };
 
+    // Listen for postMessage from OAuth callback window
+    const handlePostMessage = (event) => {
+      if (event.data && event.data.type === 'supabase-oauth-callback') {
+        console.log('Received OAuth callback via postMessage:', event.data);
+        const { hash } = event.data;
+        
+        if (hash) {
+          // Parse hash parameters
+          const hashParams = new URLSearchParams(hash);
+          const accessToken = hashParams.get('access_token');
+          const refreshToken = hashParams.get('refresh_token');
+          const expiresAt = hashParams.get('expires_at');
+          const tokenType = hashParams.get('token_type') || 'bearer';
+          
+          if (accessToken) {
+            // Parse user from token
+            let user = null;
+            try {
+              const payload = JSON.parse(atob(accessToken.split('.')[1]));
+              user = {
+                id: payload.sub,
+                email: payload.email,
+                user_metadata: payload.user_metadata || {},
+                app_metadata: payload.app_metadata || {}
+              };
+            } catch (error) {
+              console.error('Error parsing token:', error);
+            }
+
+            const session = {
+              access_token: accessToken,
+              refresh_token: refreshToken,
+              expires_at: expiresAt ? parseInt(expiresAt) : null,
+              token_type: tokenType,
+              user: user
+            };
+
+            console.log('Setting session from postMessage:', session);
+            supabaseClient.auth.setSession(session);
+          }
+        }
+      }
+    };
+
     window.addEventListener('supabase-oauth-callback', handleElectronOAuthCallback);
+    window.addEventListener('message', handlePostMessage);
 
     return () => {
       subscription.unsubscribe();
       window.removeEventListener('supabase-oauth-callback', handleElectronOAuthCallback);
+      window.removeEventListener('message', handlePostMessage);
     };
   }, []);
 

@@ -44,6 +44,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
     window.open(url, '_blank');
   },
 
+  // OAuth callback sender
+  sendOAuthCallback: (data) => ipcRenderer.invoke('send-oauth-callback', data),
+
   // Platform detection
   platform: process.platform,
 

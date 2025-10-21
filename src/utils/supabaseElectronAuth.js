@@ -26,22 +26,31 @@ class SupabaseElectronAuth {
       const accessToken = hashParams.get('access_token');
       const refreshToken = hashParams.get('refresh_token');
       const expiresAt = hashParams.get('expires_at');
+      const tokenType = hashParams.get('token_type') || 'bearer';
+      
+      console.log('Parsed tokens:', { accessToken: !!accessToken, refreshToken: !!refreshToken, expiresAt });
       
       if (accessToken) {
         // Create a session object that Supabase can use
         const session = {
           access_token: accessToken,
           refresh_token: refreshToken,
-          expires_at: parseInt(expiresAt),
-          token_type: 'bearer',
+          expires_at: expiresAt ? parseInt(expiresAt) : null,
+          token_type: tokenType,
           user: this.parseUserFromToken(accessToken)
         };
+
+        console.log('Created session:', session);
 
         // Dispatch a custom event that the Supabase client can listen to
         window.dispatchEvent(new CustomEvent('supabase-oauth-callback', {
           detail: { session }
         }));
+      } else {
+        console.error('No access token found in hash:', data.hash);
       }
+    } else {
+      console.log('Not a Supabase callback or no hash data:', data);
     }
   }
 
