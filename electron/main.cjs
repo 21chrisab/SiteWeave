@@ -1,13 +1,23 @@
-import { app, BrowserWindow, Menu, shell, protocol, ipcMain } from 'electron';
-import { autoUpdater } from 'electron-updater';
-import path from 'path';
-import { fileURLToPath } from 'url';
-import { dirname } from 'path';
-import { createServer } from 'http';
-import { parse } from 'url';
+const { app, BrowserWindow, Menu, shell, protocol, ipcMain } = require('electron');
+const { autoUpdater } = require('electron-updater');
+const path = require('path');
+const { createServer } = require('http');
+const { parse } = require('url');
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
+// Prevent multiple instances
+const gotTheLock = app.requestSingleInstanceLock();
+
+if (!gotTheLock) {
+  app.quit();
+} else {
+  app.on('second-instance', () => {
+    // Someone tried to run a second instance, focus our window instead
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.focus();
+    }
+  });
+}
 
 const isDev = process.env.NODE_ENV === 'development';
 
@@ -301,9 +311,13 @@ registerProtocol();
 // App event handlers
 app.whenReady().then(() => {
   console.log('App is ready');
-  createWindow();
-  createMenu();
-  startOAuthServer(); // Start OAuth server
+  
+  // Prevent multiple windows
+  if (BrowserWindow.getAllWindows().length === 0) {
+    createWindow();
+    createMenu();
+    startOAuthServer(); // Start OAuth server
+  }
 
   // Handle protocol URLs
   app.on('open-url', (event, url) => {

@@ -9,15 +9,14 @@
     "type": "git",
     "url": "https://github.com/21chrisab/SiteWeave.git"
   },
-  "main": "dist-electron/main.js",
-  "type": "module",
+  "main": "dist-electron/main.cjs",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
     "build:win": "npm run build && electron-builder --win",
     "build:all": "npm run build && electron-builder --win --mac --linux",
     "electron": "electron .",
-    "electron:dev": "concurrently \"npm run dev\" \"wait-on http://localhost:5173 && electron .\"",
+    "electron:dev": "npm run build && electron .",
     "lint": "eslint .",
     "preview": "vite preview"
   },
