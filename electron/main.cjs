@@ -217,9 +217,7 @@ function createWindow() {
   }, 100);
   
   // Open dev tools in development
-  if (isDev) {
-    mainWindow.webContents.openDevTools();
-  }
+  mainWindow.webContents.openDevTools();
 
   // Show window when ready
   mainWindow.once('ready-to-show', () => {
@@ -236,6 +234,37 @@ function createWindow() {
     mainWindow.focus();
   });
 
+  // Add error handling for renderer process crashes
+  mainWindow.webContents.on('render-process-gone', (event, details) => {
+    console.error('Renderer process crashed:', details);
+  });
+
+  // Add error handling for unresponsive renderer
+  mainWindow.webContents.on('unresponsive', () => {
+    console.error('Renderer process became unresponsive');
+  });
+
+  // Add error handling for responsive renderer
+  mainWindow.webContents.on('responsive', () => {
+    console.log('Renderer process became responsive again');
+  });
+
+  // Add error handling for window closed
+  mainWindow.on('closed', () => {
+    console.log('Main window was closed');
+    mainWindow = null;
+  });
+
+  // Add error handling for window closing
+  mainWindow.on('close', (event) => {
+    console.log('Main window is closing');
+  });
+
+  // Add console message handler to catch JavaScript errors
+  mainWindow.webContents.on('console-message', (event, level, message, line, sourceId) => {
+    console.log(`Console [${level}]: ${message} (${sourceId}:${line})`);
+  });
+
   // Fallback: Force show window after timeout
   setTimeout(() => {
     if (mainWindow && !mainWindow.isVisible()) {
@@ -245,10 +274,6 @@ function createWindow() {
     }
   }, 2000);
 
-  // Handle window closed
-  mainWindow.on('closed', () => {
-    mainWindow = null;
-  });
 
   // Handle external links
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
