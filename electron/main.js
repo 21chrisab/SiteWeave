@@ -86,10 +86,7 @@ function startOAuthServer() {
           code: query.code,
           state: query.state,
           error: query.error,
-          errorDescription: query.error_description,
-          // For Supabase callbacks, include the full URL hash
-          url: req.url,
-          hash: query.access_token ? `#access_token=${query.access_token}&expires_at=${query.expires_at}&expires_in=${query.expires_in}&provider_token=${query.provider_token}&refresh_token=${query.refresh_token}&token_type=${query.token_type}` : null
+          errorDescription: query.error_description
         });
       }
     } else {
