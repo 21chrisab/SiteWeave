@@ -439,10 +439,9 @@ app.whenReady().then(() => {
 app.on('window-all-closed', () => {
   console.log('All windows closed event triggered');
   stopOAuthServer(); // Stop OAuth server
-  // Don't quit on Windows - keep the app running
+  // Quit the app when all windows are closed (except on macOS)
   if (process.platform !== 'darwin') {
-    // Only quit if explicitly requested
-    console.log('All windows closed, but keeping app running');
+    app.quit();
   }
 });
 
