@@ -140,8 +140,27 @@ function createWindow() {
 
   // Show window when ready
   mainWindow.once('ready-to-show', () => {
+    console.log('Window ready to show');
     mainWindow.show();
+    mainWindow.focus();
   });
+
+  // Add error handling for failed loads
+  mainWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription) => {
+    console.error('Failed to load:', errorCode, errorDescription);
+    // Show window even if load fails
+    mainWindow.show();
+    mainWindow.focus();
+  });
+
+  // Fallback: Force show window after timeout
+  setTimeout(() => {
+    if (mainWindow && !mainWindow.isVisible()) {
+      console.log('Force showing window after timeout');
+      mainWindow.show();
+      mainWindow.focus();
+    }
+  }, 2000);
 
   // Handle window closed
   mainWindow.on('closed', () => {
@@ -278,6 +297,7 @@ function handleProtocolUrl(url) {
 
 // App event handlers
 app.whenReady().then(() => {
+  console.log('App is ready');
   registerProtocol();
   createWindow();
   createMenu();
@@ -296,10 +316,13 @@ app.whenReady().then(() => {
   });
 });
 
+// Prevent the app from quitting when all windows are closed
 app.on('window-all-closed', () => {
   stopOAuthServer(); // Stop OAuth server
+  // Don't quit on Windows - keep the app running
   if (process.platform !== 'darwin') {
-    app.quit();
+    // Only quit if explicitly requested
+    console.log('All windows closed, but keeping app running');
   }
 });
 
