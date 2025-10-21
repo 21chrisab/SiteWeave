@@ -16,12 +16,21 @@ export default defineConfig(({ mode }) => {
       electron([
         {
           // Main-Process entry file of the Electron App.
-          entry: 'electron/main.js',
+          entry: 'electron/main.cjs',
           onstart(options) {
             // Notify the Renderer-Process to reload the page when the Preload-Scripts build is complete, 
             // instead of restarting the entire Electron App.
             options.reload()
           },
+          vite: {
+            build: {
+              rollupOptions: {
+                output: {
+                  entryFileNames: 'main.cjs'
+                }
+              }
+            }
+          }
         },
         {
           entry: 'electron/preload.js',
