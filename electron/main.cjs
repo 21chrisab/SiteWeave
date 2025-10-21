@@ -39,6 +39,33 @@ function startOAuthServer() {
     const pathname = parsedUrl.pathname;
     const query = parsedUrl.query;
 
+    // Handle OAuth data POST requests
+    if (pathname === '/oauth-data' && req.method === 'POST') {
+      let body = '';
+      req.on('data', chunk => {
+        body += chunk.toString();
+      });
+      req.on('end', () => {
+        try {
+          const data = JSON.parse(body);
+          console.log('Received OAuth data from callback page:', data);
+          
+          // Send the data to the main window
+          if (mainWindow) {
+            mainWindow.webContents.send('oauth-callback', data);
+          }
+          
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ success: true }));
+        } catch (error) {
+          console.error('Error parsing OAuth data:', error);
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'Invalid JSON' }));
+        }
+      });
+      return;
+    }
+
     // Handle OAuth callbacks
     if (pathname.includes('-callback')) {
       const provider = pathname.replace('/-callback', '').replace('/', '');
@@ -71,28 +98,29 @@ function startOAuthServer() {
           <h2 class="success">✓ Authentication Successful!</h2>
           <p>You can close this window and return to SiteWeave.</p>
           <script>
-            // Extract hash parameters and send to parent window
+            // Extract hash parameters and send to main window
             if (window.location.hash) {
               const hash = window.location.hash.substring(1);
               console.log('OAuth hash received:', hash);
               
-              // Try to send to parent window first
-              if (window.opener) {
-                window.opener.postMessage({
-                  type: 'supabase-oauth-callback',
-                  hash: hash,
-                  url: window.location.href
-                }, '*');
-              }
-              
-              // Also try to send to the main window via Electron
-              if (window.electronAPI) {
-                window.electronAPI.sendOAuthCallback({
+              // Send the hash data back to the server to forward to main window
+              fetch('/oauth-data', {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
                   provider: 'supabase',
                   hash: hash,
                   url: window.location.href
-                });
-              }
+                })
+              }).then(() => {
+                console.log('OAuth data sent to server');
+              }).catch((error) => {
+                console.error('Failed to send OAuth data:', error);
+              });
+            } else {
+              console.log('No hash found in URL:', window.location.href);
             }
             
             setTimeout(() => {
@@ -105,15 +133,18 @@ function startOAuthServer() {
 
       // Send callback data to main window
       if (mainWindow) {
+        // For Supabase callbacks, we need to extract the hash from the URL
+        // The hash is not available in query parameters, so we'll send the full URL
+        // and let the client-side JavaScript extract the hash
         mainWindow.webContents.send('oauth-callback', {
           provider: provider,
           code: query.code,
           state: query.state,
           error: query.error,
           errorDescription: query.error_description,
-          // For Supabase callbacks, include the full URL hash
           url: req.url,
-          hash: query.access_token ? `#access_token=${query.access_token}&expires_at=${query.expires_at}&expires_in=${query.expires_in}&provider_token=${query.provider_token}&refresh_token=${query.refresh_token}&token_type=${query.token_type}` : null
+          fullUrl: `http://127.0.0.1:${OAUTH_PORT}${req.url}`,
+          hash: null // Will be extracted client-side
         });
       }
     } else {
