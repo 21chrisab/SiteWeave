@@ -179,6 +179,8 @@ function stopOAuthServer() {
 const PROTOCOL_NAME = 'siteweave';
 
 function createWindow() {
+  console.log('Creating window...');
+  
   // Create the browser window
   mainWindow = new BrowserWindow({
     width: 1200,
@@ -194,13 +196,25 @@ function createWindow() {
     },
     icon: path.join(__dirname, '../build/icon.png'),
     title: 'SiteWeave',
-    show: false, // Don't show until ready
+    show: true, // Show immediately for debugging
     titleBarStyle: 'default'
   });
 
+  console.log('Window created, loading app...');
+
   // Load the app - always use built files for electron:dev
-  console.log('Loading app from:', path.join(__dirname, '../dist/index.html'));
-  mainWindow.loadFile(path.join(__dirname, '../dist/index.html'));
+  const indexPath = path.join(process.cwd(), 'dist/index.html');
+  console.log('Loading app from:', indexPath);
+  
+  // Add a small delay to ensure window is fully created
+  setTimeout(() => {
+    try {
+      mainWindow.loadFile(indexPath);
+      console.log('App load initiated');
+    } catch (error) {
+      console.error('Failed to load app:', error);
+    }
+  }, 100);
   
   // Open dev tools in development
   if (isDev) {
@@ -373,9 +387,12 @@ app.whenReady().then(() => {
   
   // Prevent multiple windows
   if (BrowserWindow.getAllWindows().length === 0) {
+    console.log('No windows exist, creating new window...');
     createWindow();
     createMenu();
     startOAuthServer(); // Start OAuth server
+  } else {
+    console.log('Windows already exist, skipping window creation');
   }
 
   // Handle protocol URLs
@@ -385,7 +402,9 @@ app.whenReady().then(() => {
   });
 
   app.on('activate', () => {
+    console.log('App activated');
     if (BrowserWindow.getAllWindows().length === 0) {
+      console.log('No windows on activate, creating new window');
       createWindow();
     }
   });
@@ -393,6 +412,7 @@ app.whenReady().then(() => {
 
 // Prevent the app from quitting when all windows are closed
 app.on('window-all-closed', () => {
+  console.log('All windows closed event triggered');
   stopOAuthServer(); // Stop OAuth server
   // Don't quit on Windows - keep the app running
   if (process.platform !== 'darwin') {
