@@ -216,8 +216,10 @@ function createWindow() {
     }
   }, 100);
   
-  // Open dev tools in development
-  mainWindow.webContents.openDevTools();
+  // Open dev tools only in development mode
+  if (isDev) {
+    mainWindow.webContents.openDevTools();
+  }
 
   // Show window when ready
   mainWindow.once('ready-to-show', () => {
