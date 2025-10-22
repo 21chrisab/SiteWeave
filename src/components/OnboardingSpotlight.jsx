@@ -39,7 +39,7 @@ function OnboardingSpotlight({
         borderRadius: '12px',
         border: '4px solid #3b82f6',
         backgroundColor: 'rgba(59, 130, 246, 0.1)',
-        boxShadow: '0 0 0 9999px rgba(0, 0, 0, 0.5)',
+        boxShadow: '0 0 20px rgba(59, 130, 246, 0.5)',
         zIndex: 50,
         pointerEvents: 'none',
         animation: 'pulse 2s infinite'
@@ -63,13 +63,7 @@ function OnboardingSpotlight({
 
   return (
     <>
-      {/* Dark overlay */}
-      <div 
-        className="fixed inset-0 bg-black bg-opacity-50 z-40"
-        onClick={onOverlayClick}
-      />
-      
-      {/* Spotlight effect - this creates the "hole" in the overlay */}
+      {/* Spotlight effect - no dark overlay */}
       {targetElement && (
         <div 
           style={{

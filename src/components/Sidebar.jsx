@@ -42,13 +42,7 @@ function Sidebar() {
         <aside className={`${isCollapsed ? 'w-16' : 'w-64'} bg-white flex flex-col flex-shrink-0 border-r border-gray-100 transition-all duration-300`}>
             <div className="h-16 flex items-center px-6 font-bold text-xl text-gray-800">
                 {!isCollapsed && (
-                    <div className="flex items-center space-x-3">
-                        <img src="/logo.svg" alt="SiteWeave" className="h-8 w-8" />
-                        <span>SiteWeave</span>
-                    </div>
-                )}
-                {isCollapsed && (
-                    <img src="/logo.svg" alt="SiteWeave" className="h-8 w-8 mx-auto" />
+                    <span>SiteWeave</span>
                 )}
                 <button 
                     onClick={() => setIsCollapsed(!isCollapsed)}
