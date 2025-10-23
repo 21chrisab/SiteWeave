@@ -208,7 +208,12 @@ function createWindow() {
   mainWindow.webContents.on('will-navigate', (event, navigationUrl) => {
     const parsedUrl = new URL(navigationUrl);
     
-    if (parsedUrl.origin !== 'http://localhost:5173' && parsedUrl.origin !== 'file://') {
+    // Allow localhost (dev) and file:// protocol (production)
+    // Note: file:// URLs have origin === 'null'
+    const isLocalhost = parsedUrl.protocol === 'http:' && parsedUrl.hostname === 'localhost';
+    const isFileProtocol = parsedUrl.protocol === 'file:';
+    
+    if (!isLocalhost && !isFileProtocol) {
       event.preventDefault();
       shell.openExternal(navigationUrl);
     }
