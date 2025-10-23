@@ -2,6 +2,7 @@ const { app, BrowserWindow, Menu, shell, protocol, ipcMain } = require('electron
 const { autoUpdater } = require('electron-updater');
 const path = require('path');
 const { createServer } = require('http');
+const fs = require('fs');
 const { parse } = require('url');
 
 // Prevent multiple instances
@@ -145,7 +146,27 @@ function createWindow() {
     mainWindow.loadURL('http://localhost:5173');
     mainWindow.webContents.openDevTools();
   } else {
-    mainWindow.loadFile(path.join(__dirname, '../dist/index.html'));
+    // Resolve index.html robustly for various packaging layouts
+    const candidates = [
+      path.join(__dirname, '../dist/index.html'),
+      path.join(process.resourcesPath, 'app.asar', 'dist', 'index.html'),
+      path.join(process.resourcesPath, 'app', 'dist', 'index.html')
+    ];
+    const indexPath = candidates.find(p => {
+      try { return fs.existsSync(p); } catch { return false; }
+    });
+
+    if (indexPath) {
+      mainWindow.loadFile(indexPath);
+    } else {
+      // Last resort: show an error page with the attempted paths
+      const errorHtml = `<!doctype html><html><body>
+        <h2>Failed to locate UI bundle</h2>
+        <p>Searched paths:</p>
+        <pre>${candidates.join('\n')}</pre>
+      </body></html>`;
+      mainWindow.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(errorHtml));
+    }
   }
 
   // Show window when ready
