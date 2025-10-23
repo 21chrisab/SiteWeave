@@ -4,12 +4,17 @@ import dropboxStorage from '../utils/dropboxStorage';
 import supabaseElectronAuth from '../utils/supabaseElectronAuth';
 
 // --- SUPABASE CLIENT ---
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || 'https://tchqmlyiwsqxwopvyxjx.supabase.co';
-const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRjaHFtbHlpd3NxeHdvcHZ5eGp4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTg1MTAzMTcsImV4cCI6MjA3NDA4NjMxN30.8m33JQWP0JjeYIPETjeCcCq29gv2ROxl9hd2G5ugzX4';
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
+const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
 console.log('Environment variables loaded:');
 console.log('SUPABASE_URL:', SUPABASE_URL ? 'Present' : 'Missing');
 console.log('SUPABASE_ANON_KEY:', SUPABASE_ANON_KEY ? 'Present' : 'Missing');
+
+if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
+  // Fail fast instead of silently using an invalid fallback that breaks DNS
+  throw new Error('Missing VITE_SUPABASE_URL or VITE_SUPABASE_ANON_KEY. Set these in your .env before building.');
+}
 
 export const supabaseClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
@@ -21,7 +26,7 @@ const initialState = {
   activeView: 'Dashboard', 
   selectedProjectId: null, 
   selectedChannelId: null,
-  projects: [], contacts: [], tasks: [], files: [], calendarEvents: [], messageChannels: [], messages: [],
+  projects: [], contacts: [], tasks: [], files: [], calendarEvents: [], messageChannels: [], messages: [], activityLog: [],
   user: null, // Changed from hardcoded user to null for proper auth
   userPreferences: null, // Add user preferences for onboarding
   dropboxAccessToken: null, // Dropbox OAuth token
@@ -192,18 +197,60 @@ export const AppProvider = ({ children }) => {
       // Only fetch data if user is authenticated
       async function fetchInitialData() {
         try {
-          const [{ data: projects }, { data: contacts }, { data: tasks }, { data: files }, {data: calendarEvents}, {data: messageChannels}, {data: messages}, { data: userPreferences, error: userPrefsError }] = await Promise.all([
+          // First, check if user has a profile
+          const { data: profile, error: profileError } = await supabaseClient
+            .from('profiles')
+            .select('*')
+            .eq('id', state.user.id)
+            .maybeSingle();
+          
+          console.log('User profile:', profile);
+          if (profileError) {
+            console.error('Profile error:', profileError);
+          }
+          
+          // If no profile exists, create one
+          if (!profile && !profileError) {
+            console.log('Creating profile for user:', state.user.id);
+            const { error: createProfileError } = await supabaseClient
+              .from('profiles')
+              .upsert({
+                id: state.user.id,
+                role: 'Team',
+                contact_id: null
+              }, {
+                onConflict: 'id'
+              });
+            
+            if (createProfileError) {
+              console.error('Error creating profile:', createProfileError);
+            } else {
+              console.log('Profile created successfully');
+            }
+          }
+          
+          const [{ data: projects }, { data: contacts }, { data: tasks }, { data: files }, {data: calendarEvents}, {data: messageChannels}, {data: messages}, { data: userPreferences, error: userPrefsError }, { data: activityLog }] = await Promise.all([
             supabaseClient.from('projects').select('*'),
             supabaseClient.from('contacts').select('*, project_contacts(project_id)'),
-            supabaseClient.from('tasks').select('*, contacts(name, avatar_url)'),
+            supabaseClient.from('tasks').select('*'),
             supabaseClient.from('files').select('*'),
             supabaseClient.from('calendar_events').select('*'),
             supabaseClient.from('message_channels').select('*'),
-            supabaseClient.from('messages').select('*, user:user_id(name, avatar_url)').order('created_at', { ascending: true }),
-            supabaseClient.from('user_preferences').select('*').eq('user_id', state.user.id).maybeSingle()
+            supabaseClient.from('messages').select('*').order('created_at', { ascending: true }),
+            supabaseClient.from('user_preferences').select('*').eq('user_id', state.user.id).maybeSingle(),
+            supabaseClient.from('activity_log').select('*').order('created_at', { ascending: false }).limit(50)
           ]);
           
-          dispatch({ type: 'SET_DATA', payload: { projects: projects || [], contacts: contacts || [], tasks: tasks || [], files: files || [], calendarEvents: calendarEvents || [], messageChannels: messageChannels || [], messages: messages || [] } });
+          dispatch({ type: 'SET_DATA', payload: { 
+            projects: projects || [], 
+            contacts: contacts || [], 
+            tasks: tasks || [], 
+            files: files || [], 
+            calendarEvents: calendarEvents || [], 
+            messageChannels: messageChannels || [], 
+            messages: messages || [],
+            activityLog: activityLog || []
+          } });
           
           // Handle user preferences with error checking
           if (userPrefsError) {

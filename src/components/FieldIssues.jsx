@@ -53,7 +53,7 @@ const FieldIssues = ({ projectId }) => {
                     .from('project_issues')
                     .select(`
                         *,
-                        issue_steps(*, contacts(name, role, avatar_url)),
+                        issue_steps:issue_steps!issue_steps_issue_id_fkey(*, contacts:contacts!fk_issue_steps_assigned_to_contact(name, role, avatar_url)),
                         issue_files(*)
                     `)
                     .eq('project_id', projectId)
@@ -190,7 +190,7 @@ const FieldIssues = ({ projectId }) => {
                 .from('project_issues')
                 .select(`
                     *,
-                    issue_steps(*, contacts(name, role, avatar_url)),
+                    issue_steps:issue_steps!issue_steps_issue_id_fkey(*, contacts:contacts!fk_issue_steps_assigned_to_contact(name, role, avatar_url)),
                     issue_files(*)
                 `)
                 .eq('project_id', projectId)

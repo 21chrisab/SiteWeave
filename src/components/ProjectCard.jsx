@@ -5,8 +5,13 @@ import Avatar from './Avatar';
 import ProjectProgressCard from './ProjectProgressCard';
 
 const ProjectCard = memo(function ProjectCard({ project, onEdit, onDelete }) {
-    const { dispatch } = useAppContext();
+    const { dispatch, state } = useAppContext();
     const [showActions, setShowActions] = useState(false);
+    
+    // Get team members for this project
+    const teamMembers = state.contacts.filter(contact => 
+        contact.project_contacts && contact.project_contacts.some(pc => pc.project_id === project.id) && contact.type === 'Team'
+    );
     
     // Auto-determine status color based on status
     const getStatusColor = (status) => {
@@ -93,9 +98,12 @@ const ProjectCard = memo(function ProjectCard({ project, onEdit, onDelete }) {
                     <p className="text-sm font-medium">{formatDate(project.due_date)}</p>
                 </div>
                 <div className="flex -space-x-2">
-                    <Avatar name="John Doe" size="sm" className="border-2 border-white" />
-                    <Avatar name="Jane Smith" size="sm" className="border-2 border-white" />
-                    <Avatar name="Mike Johnson" size="sm" className="border-2 border-white" />
+                    {teamMembers.slice(0, 3).map(member => (
+                        <Avatar key={member.id} name={member.name} size="sm" className="border-2 border-white" />
+                    ))}
+                    {teamMembers.length === 0 && (
+                        <div className="text-xs text-gray-400 italic">No team assigned</div>
+                    )}
                 </div>
             </div>
             

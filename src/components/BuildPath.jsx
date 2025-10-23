@@ -36,8 +36,9 @@ function BuildPath({ project }) {
     ];
 
     useEffect(() => {
+        if (!project?.id) return;
         loadPhases();
-    }, [project.id]);
+    }, [project?.id]);
 
     const loadPhases = async () => {
         try {
@@ -64,6 +65,7 @@ function BuildPath({ project }) {
 
     const initializeDefaultPhases = async () => {
         try {
+            if (!project?.id) return;
             const phasesWithProjectId = defaultPhases.map(phase => ({
                 ...phase,
                 project_id: project.id

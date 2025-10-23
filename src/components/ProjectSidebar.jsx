@@ -9,11 +9,34 @@ function ProjectSidebar({ project }) {
         contact.project_contacts && contact.project_contacts.some(pc => pc.project_id === project.id) && contact.type === 'Team'
     );
     
-    // Static data for recent activity - in a real app, this would come from a 'activity_log' table
-    const recentActivity = [
-        { id: 1, user: { name: 'Sarah J.', avatar: 'https://i.pravatar.cc/150?u=sarah_j' }, action: 'uploaded 3 photos', time: '2h ago' },
-        { id: 2, user: { name: 'Mike R.', avatar: 'https://i.pravatar.cc/150?u=mike_r' }, action: 'completed task "Review permits"', time: '4h ago' },
-    ];
+    // Get recent activity for this specific project (filtered by RLS)
+    const projectActivity = state.activityLog
+        .filter(activity => activity.project_id === project.id)
+        .slice(0, 2)
+        .map(activity => ({
+            id: activity.id,
+            user: { 
+                name: activity.user_name, 
+                avatar: activity.user_avatar || 'https://i.pravatar.cc/150?u=default' 
+            }, 
+            action: activity.action,
+            time: formatTimeAgo(activity.created_at)
+        }));
+
+    // Helper function to format time ago
+    function formatTimeAgo(dateString) {
+        const now = new Date();
+        const activityDate = new Date(dateString);
+        const diffInMinutes = Math.floor((now - activityDate) / (1000 * 60));
+        
+        if (diffInMinutes < 60) {
+            return `${diffInMinutes}m ago`;
+        } else if (diffInMinutes < 1440) {
+            return `${Math.floor(diffInMinutes / 60)}h ago`;
+        } else {
+            return `${Math.floor(diffInMinutes / 1440)}d ago`;
+        }
+    }
 
     const formatDate = (dateString) => {
         if (!dateString) return '';
@@ -44,23 +67,27 @@ function ProjectSidebar({ project }) {
             
              <div className="p-6 bg-white rounded-xl shadow-sm border border-gray-200">
                 <h3 className="font-bold mb-3">Team ({teamMembers.length} members)</h3>
-                <div className="flex items-center">
-                    <div className="flex -space-x-2">
-                        {teamMembers.slice(0, 5).map(member => (
-                            <img key={member.id} src={member.avatar_url} title={member.name} className="w-10 h-10 rounded-full border-2 border-white" />
-                        ))}
-                    </div>
-                    {teamMembers.length > 5 && (
-                        <div className="w-10 h-10 rounded-full bg-gray-200 flex items-center justify-center text-sm font-semibold text-gray-600 border-2 border-white">
-                            +{teamMembers.length - 5}
+                {teamMembers.length > 0 ? (
+                    <div className="flex items-center">
+                        <div className="flex -space-x-2">
+                            {teamMembers.slice(0, 5).map(member => (
+                                <img key={member.id} src={member.avatar_url} title={member.name} className="w-10 h-10 rounded-full border-2 border-white" />
+                            ))}
                         </div>
-                    )}
-                </div>
+                        {teamMembers.length > 5 && (
+                            <div className="w-10 h-10 rounded-full bg-gray-200 flex items-center justify-center text-sm font-semibold text-gray-600 border-2 border-white">
+                                +{teamMembers.length - 5}
+                            </div>
+                        )}
+                    </div>
+                ) : (
+                    <div className="text-sm text-gray-500 italic">No team members assigned yet</div>
+                )}
             </div>
              <div className="p-6 bg-white rounded-xl shadow-sm border border-gray-200">
                 <h3 className="font-bold mb-3">Recent Activity</h3>
                  <div className="space-y-3">
-                    {recentActivity.map(activity => (
+                    {projectActivity.length > 0 ? projectActivity.map(activity => (
                         <div key={activity.id} className="flex items-start gap-3 text-sm">
                             <img src={activity.user.avatar} className="w-8 h-8 rounded-full mt-1" />
                             <div>
@@ -68,7 +95,9 @@ function ProjectSidebar({ project }) {
                                 <p className="text-xs text-gray-400">{activity.time}</p>
                             </div>
                         </div>
-                    ))}
+                    )) : (
+                        <p className="text-sm text-center py-4 text-gray-400">No recent activity for this project.</p>
+                    )}
                 </div>
             </div>
         </div>
