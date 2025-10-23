@@ -63,21 +63,18 @@ export const handleOutlookCalendarCallback = async (code) => {
 
 export const startOutlookCalendarOAuth = async () => {
     const clientId = import.meta.env.VITE_MICROSOFT_CLIENT_ID;
-    const clientSecret = import.meta.env.VITE_MICROSOFT_CLIENT_SECRET;
     
-    if (!clientId || !clientSecret) {
-        throw new Error('Microsoft OAuth credentials not configured');
+    if (!clientId) {
+        throw new Error('Microsoft OAuth client ID not configured');
     }
 
     try {
         const result = await electronOAuth.startOAuthFlow('microsoft', {
-            clientId: clientId,
-            clientSecret: clientSecret
+            clientId: clientId
         });
 
         const tokenData = await electronOAuth.exchangeCodeForToken('microsoft', result.code, {
-            clientId: clientId,
-            clientSecret: clientSecret
+            clientId: clientId
         });
 
         // Fetch events from Microsoft Graph
@@ -136,10 +133,8 @@ const fetchGoogleCalendarEvents = async (accessToken) => {
 // Microsoft Graph API Integration
 const exchangeOutlookToken = async (code) => {
     const clientId = import.meta.env.VITE_MICROSOFT_CLIENT_ID;
-    const clientSecret = import.meta.env.VITE_MICROSOFT_CLIENT_SECRET;
-    const redirectUri = window.electronAPI?.isElectron 
-        ? 'http://127.0.0.1:5000/microsoft-callback'
-        : window.location.origin + '/calendar';
+    // Use the same redirect URI used during authorization (Calendar page)
+    const redirectUri = window.location.origin + '/calendar';
 
     const response = await fetch('https://login.microsoftonline.com/common/oauth2/v2.0/token', {
         method: 'POST',
@@ -148,11 +143,10 @@ const exchangeOutlookToken = async (code) => {
         },
         body: new URLSearchParams({
             client_id: clientId,
-            client_secret: clientSecret,
             code: code,
             grant_type: 'authorization_code',
             redirect_uri: redirectUri,
-            scope: 'https://graph.microsoft.com/calendars.read',
+            scope: 'https://graph.microsoft.com/Calendars.Read',
         }),
     });
 
@@ -164,18 +158,31 @@ const exchangeOutlookToken = async (code) => {
 };
 
 const fetchOutlookCalendarEvents = async (accessToken) => {
-    const response = await fetch('https://graph.microsoft.com/v1.0/me/events', {
-        headers: {
-            'Authorization': `Bearer ${accessToken}`,
-            'Content-Type': 'application/json',
-        },
-    });
+    // Fetch all pages of events (Graph paginates results)
+    let url = 'https://graph.microsoft.com/v1.0/me/events?$top=100&$orderby=start/dateTime asc';
+    const all = [];
+    let pageCount = 0;
 
-    if (!response.ok) {
-        throw new Error('Failed to fetch Outlook Calendar events');
+    while (url && pageCount < 20) { // hard cap to avoid infinite loops
+        const response = await fetch(url, {
+            headers: {
+                'Authorization': `Bearer ${accessToken}`,
+                'Content-Type': 'application/json',
+            },
+        });
+
+        if (!response.ok) {
+            const text = await response.text();
+            throw new Error('Failed to fetch Outlook Calendar events: ' + text);
+        }
+
+        const data = await response.json();
+        if (Array.isArray(data.value)) all.push(...data.value);
+        url = data['@odata.nextLink'] || null;
+        pageCount += 1;
     }
 
-    return await response.json();
+    return { value: all };
 };
 
 const transformGoogleEvents = (events) => {
@@ -194,20 +201,49 @@ const transformGoogleEvents = (events) => {
     }));
 };
 
+// Decode HTML entities to text
+const decodeHtmlEntities = (text) => {
+    if (!text) return '';
+    const textarea = document.createElement('textarea');
+    textarea.innerHTML = text;
+    return textarea.value;
+};
+
+// Convert HTML string to plain text, preserving basic line breaks
+const htmlToPlainText = (html) => {
+    if (!html) return '';
+    const normalized = html
+        .replace(/<\s*br\s*\/?>/gi, '\n')
+        .replace(/<\s*\/(p|div|li)\s*>/gi, '\n');
+    const container = document.createElement('div');
+    container.innerHTML = normalized;
+    const text = container.textContent || container.innerText || '';
+    return text.replace(/\u00A0/g, ' ') // nbsp
+        .replace(/\n{3,}/g, '\n\n')
+        .trim();
+};
+
 const transformOutlookEvents = (events) => {
-    return events.map(event => ({
-        title: event.subject || 'Untitled Event',
-        description: event.body?.content || '',
-        start_time: event.start?.dateTime || event.start?.date + 'T09:00:00',
-        end_time: event.end?.dateTime || event.end?.date + 'T17:00:00',
-        location: event.location?.displayName || '',
-        attendees: event.attendees?.map(a => a.emailAddress?.address).join(', ') || '',
-        category: 'other',
-        color: '#6B7280',
-        is_all_day: !event.start?.dateTime,
-        external_id: event.id,
-        external_source: 'outlook'
-    }));
+    return events.map(event => {
+        const raw = event.body?.content || '';
+        const description = event.body?.contentType === 'html'
+            ? htmlToPlainText(raw)
+            : decodeHtmlEntities(raw);
+
+        return {
+            title: event.subject || 'Untitled Event',
+            description: description,
+            start_time: event.start?.dateTime || event.start?.date + 'T09:00:00',
+            end_time: event.end?.dateTime || event.end?.date + 'T17:00:00',
+            location: event.location?.displayName || '',
+            attendees: event.attendees?.map(a => a.emailAddress?.address).join(', ') || '',
+            category: 'other',
+            color: '#6B7280',
+            is_all_day: !event.start?.dateTime,
+            external_id: event.id,
+            external_source: 'outlook'
+        };
+    });
 };
 
 // Parse URL parameters for OAuth callbacks
@@ -227,4 +263,21 @@ export const clearOAuthParams = () => {
     url.searchParams.delete('state');
     url.searchParams.delete('error');
     window.history.replaceState({}, document.title, url.pathname);
+};
+
+// Prepare events for DB insert by picking only allowed columns
+export const prepareCalendarEventsForInsert = (events, userId = null) => {
+    return events.map(e => ({
+        title: e.title,
+        description: e.description || '',
+        start_time: e.start_time,
+        end_time: e.end_time,
+        location: e.location || '',
+        attendees: e.attendees || '',
+        category: e.category || 'other',
+        color: e.color || '#6B7280',
+        is_all_day: !!e.is_all_day,
+        recurrence: e.recurrence || null,
+        user_id: userId
+    }));
 };

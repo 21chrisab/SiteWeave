@@ -9,11 +9,16 @@ function ProjectProgressCard({ project }) {
     const [isLoading, setIsLoading] = useState(true);
 
     useEffect(() => {
+        if (!project?.id) return;
         loadPhases();
-    }, [project.id]);
+    }, [project?.id]);
 
     const loadPhases = async () => {
         try {
+            if (!project?.id) {
+                setPhases([]);
+                return;
+            }
             const { data, error } = await supabaseClient
                 .from('project_phases')
                 .select('*')

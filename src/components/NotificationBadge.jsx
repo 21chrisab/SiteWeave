@@ -7,24 +7,42 @@ function NotificationBadge() {
     const [isVisible, setIsVisible] = useState(false);
 
     useEffect(() => {
-        // Simulate real-time notifications based on recent activity
-        const recentActivity = [
-            { id: 1, message: 'New task added to Downtown Office Complex', time: '2m ago', type: 'task' },
-            { id: 2, message: 'Project Oceanview Residence status updated', time: '5m ago', type: 'project' },
-            { id: 3, message: 'File uploaded to Riverside Apartments', time: '8m ago', type: 'file' },
-            { id: 4, message: 'New message in Retail Complex channel', time: '12m ago', type: 'message' },
-        ];
+        // Use real activity data from the database
+        const recentActivity = state.activityLog.slice(0, 4).map(activity => ({
+            id: activity.id,
+            message: `${activity.user_name} ${activity.action}`,
+            time: formatTimeAgo(activity.created_at),
+            type: activity.entity_type || 'general'
+        }));
 
-        setNotifications(recentActivity);
-        setIsVisible(true);
+        // Only show notifications if there's real activity
+        if (recentActivity.length > 0) {
+            setNotifications(recentActivity);
+            setIsVisible(true);
 
-        // Auto-hide after 5 seconds
-        const timer = setTimeout(() => {
-            setIsVisible(false);
-        }, 5000);
+            // Auto-hide after 5 seconds
+            const timer = setTimeout(() => {
+                setIsVisible(false);
+            }, 5000);
 
-        return () => clearTimeout(timer);
-    }, [state.projects.length, state.tasks.length, state.messages.length]);
+            return () => clearTimeout(timer);
+        }
+    }, [state.activityLog]);
+
+    // Helper function to format time ago
+    function formatTimeAgo(dateString) {
+        const now = new Date();
+        const activityDate = new Date(dateString);
+        const diffInMinutes = Math.floor((now - activityDate) / (1000 * 60));
+        
+        if (diffInMinutes < 60) {
+            return `${diffInMinutes}m ago`;
+        } else if (diffInMinutes < 1440) {
+            return `${Math.floor(diffInMinutes / 60)}h ago`;
+        } else {
+            return `${Math.floor(diffInMinutes / 1440)}d ago`;
+        }
+    }
 
     if (!isVisible || notifications.length === 0) return null;
 

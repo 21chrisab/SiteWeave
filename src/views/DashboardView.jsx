@@ -27,11 +27,21 @@ function DashboardView() {
     const handleSaveProject = async (projectData) => {
         if (editingProject) {
             setIsUpdatingProject(true);
-            const { error } = await supabaseClient.from('projects').update(projectData).eq('id', editingProject.id);
+            const projectDataWithAudit = {
+                ...projectData,
+                updated_by_user_id: state.user.id,
+                updated_at: new Date().toISOString()
+            };
+            const { data: updatedProject, error } = await supabaseClient
+                .from('projects')
+                .update(projectDataWithAudit)
+                .eq('id', editingProject.id)
+                .select()
+                .single();
             if (error) {
                 addToast('Error updating project: ' + error.message, 'error');
             } else {
-                dispatch({ type: 'UPDATE_PROJECT', payload: projectData });
+                dispatch({ type: 'UPDATE_PROJECT', payload: updatedProject });
                 addToast('Project updated successfully!', 'success');
                 setShowModal(false);
                 setEditingProject(null);
@@ -39,11 +49,24 @@ function DashboardView() {
             setIsUpdatingProject(false);
         } else {
             setIsCreatingProject(true);
-            const { error } = await supabaseClient.from('projects').insert(projectData);
+            const projectDataWithAudit = {
+                ...projectData,
+                project_manager_id: state.user.id,
+                created_by_user_id: state.user.id,
+                updated_by_user_id: state.user.id,
+                updated_at: new Date().toISOString()
+            };
+            console.log('Creating project with data:', projectDataWithAudit);
+            const { data: createdProject, error } = await supabaseClient
+                .from('projects')
+                .insert(projectDataWithAudit)
+                .select()
+                .single();
             if (error) {
+                console.error('Project creation error:', error);
                 addToast('Error creating project: ' + error.message, 'error');
             } else {
-                dispatch({ type: 'ADD_PROJECT', payload: projectData });
+                dispatch({ type: 'ADD_PROJECT', payload: createdProject });
                 addToast('Project created successfully!', 'success');
                 setShowModal(false);
             }
