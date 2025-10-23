@@ -132,7 +132,7 @@ function createWindow() {
       nodeIntegration: false,
       contextIsolation: true,
       enableRemoteModule: false,
-      webSecurity: true,
+      webSecurity: !isDev, // Disable in production to allow file:// resources
       preload: path.join(__dirname, 'preload.js')
     },
     icon: path.join(__dirname, '../build/icon.png'),
@@ -204,18 +204,25 @@ function createWindow() {
     return { action: 'deny' };
   });
 
-  // Prevent navigation to external URLs
+  // Prevent navigation to external URLs (but allow same-origin)
   mainWindow.webContents.on('will-navigate', (event, navigationUrl) => {
-    const parsedUrl = new URL(navigationUrl);
-    
-    // Allow localhost (dev) and file:// protocol (production)
-    // Note: file:// URLs have origin === 'null'
-    const isLocalhost = parsedUrl.protocol === 'http:' && parsedUrl.hostname === 'localhost';
-    const isFileProtocol = parsedUrl.protocol === 'file:';
-    
-    if (!isLocalhost && !isFileProtocol) {
+    try {
+      const currentUrl = mainWindow.webContents.getURL();
+      const parsedNav = new URL(navigationUrl);
+      const parsedCurrent = new URL(currentUrl);
+      
+      // Allow same-origin navigation (includes file:// within same directory)
+      if (parsedNav.protocol === parsedCurrent.protocol && 
+          (parsedNav.protocol === 'file:' || parsedNav.host === parsedCurrent.host)) {
+        return; // Allow navigation
+      }
+      
+      // Block and open externally
       event.preventDefault();
       shell.openExternal(navigationUrl);
+    } catch (err) {
+      console.error('Navigation check error:', err);
+      // On error, allow navigation (fail open)
     }
   });
 }
