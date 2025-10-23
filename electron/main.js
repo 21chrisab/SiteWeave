@@ -27,7 +27,12 @@ let oauthServer = null;
 const OAUTH_PORT = 5000;
 
 // Configure auto-updater
-autoUpdater.checkForUpdatesAndNotify();
+// Only check for updates in production builds from official releases
+if (!isDev && process.env.PORTABLE_EXECUTABLE_DIR === undefined) {
+  autoUpdater.checkForUpdatesAndNotify().catch(err => {
+    console.log('Auto-update check skipped or failed:', err.message);
+  });
+}
 
 // OAuth Server for loopback method
 function startOAuthServer() {
@@ -146,27 +151,16 @@ function createWindow() {
     mainWindow.loadURL('http://localhost:5173');
     mainWindow.webContents.openDevTools();
   } else {
-    // Resolve index.html robustly for various packaging layouts
-    const candidates = [
-      path.join(__dirname, '../dist/index.html'),
-      path.join(process.resourcesPath, 'app.asar', 'dist', 'index.html'),
-      path.join(process.resourcesPath, 'app', 'dist', 'index.html')
-    ];
-    const indexPath = candidates.find(p => {
-      try { return fs.existsSync(p); } catch { return false; }
-    });
-
-    if (indexPath) {
-      mainWindow.loadFile(indexPath);
-    } else {
-      // Last resort: show an error page with the attempted paths
-      const errorHtml = `<!doctype html><html><body>
-        <h2>Failed to locate UI bundle</h2>
-        <p>Searched paths:</p>
-        <pre>${candidates.join('\n')}</pre>
-      </body></html>`;
-      mainWindow.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(errorHtml));
-    }
+    // In production, __dirname is inside app.asar/dist-electron
+    // We need to go up to resources and into app.asar/dist
+    const indexPath = path.join(__dirname, '../dist/index.html');
+    
+    console.log('Production mode - Loading from:', indexPath);
+    console.log('__dirname:', __dirname);
+    console.log('process.resourcesPath:', process.resourcesPath);
+    console.log('File exists:', fs.existsSync(indexPath));
+    
+    mainWindow.loadFile(indexPath);
   }
 
   // Show window when ready
