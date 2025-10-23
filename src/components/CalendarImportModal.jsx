@@ -2,9 +2,10 @@ import React, { useState, useRef } from 'react';
 import { useAppContext, supabaseClient } from '../context/AppContext';
 import { useToast } from '../context/ToastContext';
 import LoadingSpinner from './LoadingSpinner';
+import { startOutlookCalendarOAuth, prepareCalendarEventsForInsert } from '../utils/calendarIntegration';
 
 const CalendarImportModal = ({ onClose, importType = 'file' }) => {
-    const { dispatch } = useAppContext();
+    const { state, dispatch } = useAppContext();
     const { addToast } = useToast();
     const [isImporting, setIsImporting] = useState(false);
     const [importedEvents, setImportedEvents] = useState([]);
@@ -137,25 +138,56 @@ const CalendarImportModal = ({ onClose, importType = 'file' }) => {
         addToast('Please complete the Google Calendar authorization in the popup window.', 'info');
     };
 
-    const handleOutlookCalendarImport = () => {
-        // Hardcoded Microsoft Client ID for testing - will redirect to login screen
-        const clientId = '0a27b1b4-df05-40c1-860d-2ae87e696541'; // From your .env file
-        
-        console.log('=== OUTLOOK CALENDAR INTEGRATION ===');
-        console.log('Using hardcoded Client ID:', clientId);
-        console.log('Current URL:', window.location.origin);
-        console.log('=====================================');
+    const handleOutlookCalendarImport = async () => {
+        // If running in Electron, use loopback OAuth and import directly
+        if (window.electronAPI?.isElectron) {
+            setIsImporting(true);
+            try {
+                const events = await startOutlookCalendarOAuth();
+                if (!state?.user?.id) {
+                    addToast('Please sign in before importing Outlook events.', 'error');
+                    setIsImporting(false);
+                    return;
+                }
 
-        // Store OAuth state
+                if (events && events.length > 0) {
+                    const prepared = prepareCalendarEventsForInsert(events, state.user.id);
+                    const { data, error } = await supabaseClient
+                        .from('calendar_events')
+                        .insert(prepared)
+                        .select();
+
+                    if (error) throw error;
+
+                    data.forEach(event => {
+                        dispatch({ type: 'ADD_EVENT', payload: event });
+                    });
+
+                    addToast(`Successfully imported ${data.length} Outlook events!`, 'success');
+                    onClose();
+                } else {
+                    addToast('No Outlook events found to import.', 'info');
+                }
+            } catch (e) {
+                console.error('Outlook import failed:', e);
+                addToast('Outlook import failed: ' + e.message, 'error');
+            } finally {
+                setIsImporting(false);
+            }
+            return;
+        }
+
+        // Browser fallback: redirect to web OAuth flow (Calendar route)
+        const clientId = import.meta.env.VITE_MICROSOFT_CLIENT_ID;
+        if (!clientId) {
+            addToast('Outlook integration not configured. Missing VITE_MICROSOFT_CLIENT_ID.', 'error');
+            return;
+        }
+
         localStorage.setItem('oauth_state', 'outlook');
-
-        const scope = 'https://graph.microsoft.com/calendars.read';
+        const scope = 'https://graph.microsoft.com/Calendars.Read';
         const redirectUri = window.location.origin + '/calendar';
         const authUrl = `https://login.microsoftonline.com/common/oauth2/v2.0/authorize?client_id=${clientId}&response_type=code&redirect_uri=${encodeURIComponent(redirectUri)}&scope=${encodeURIComponent(scope)}&response_mode=query&prompt=consent`;
-
-        console.log('Opening auth URL:', authUrl);
-        
-        // Redirect to Microsoft login screen
         window.location.href = authUrl;
     };
 

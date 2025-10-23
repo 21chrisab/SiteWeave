@@ -19,13 +19,31 @@ function MyDaySidebar() {
         new Date(event.start_time).toDateString() === today.toDateString()
     );
 
-    // Static data for recent activity - in a real app, this would come from a 'activity_log' table
-    const recentActivity = [
-        { id: 1, user: { name: 'Sarah J.', avatar: 'https://i.pravatar.cc/150?u=sarah_j' }, action: 'uploaded 3 photos to Oceanview Residence', time: '2h ago' },
-        { id: 2, user: { name: 'Mike R.', avatar: 'https://i.pravatar.cc/150?u=mike_r' }, action: 'completed task "Review permits" on Downtown Office Complex', time: '4h ago' },
-        { id: 3, user: { name: 'Tom K.', avatar: 'https://i.pravatar.cc/150?u=tom_k' }, action: 'added new milestone to Riverside Apartments', time: '1d ago' },
-        { id: 4, user: { name: 'Lisa M.', avatar: 'https://i.pravatar.cc/150?u=lisa_m' }, action: 'updated budget spreadsheet for Retail Complex', time: '2d ago' },
-    ];
+    // Get recent activity from the database (filtered by RLS)
+    const recentActivity = state.activityLog.slice(0, 4).map(activity => ({
+        id: activity.id,
+        user: { 
+            name: activity.user_name, 
+            avatar: activity.user_avatar || 'https://i.pravatar.cc/150?u=default' 
+        }, 
+        action: activity.action,
+        time: formatTimeAgo(activity.created_at)
+    }));
+
+    // Helper function to format time ago
+    function formatTimeAgo(dateString) {
+        const now = new Date();
+        const activityDate = new Date(dateString);
+        const diffInMinutes = Math.floor((now - activityDate) / (1000 * 60));
+        
+        if (diffInMinutes < 60) {
+            return `${diffInMinutes}m ago`;
+        } else if (diffInMinutes < 1440) {
+            return `${Math.floor(diffInMinutes / 60)}h ago`;
+        } else {
+            return `${Math.floor(diffInMinutes / 1440)}d ago`;
+        }
+    }
 
     return (
         <div className="space-y-6">
@@ -50,7 +68,7 @@ function MyDaySidebar() {
             <div>
                 <h3 className="text-sm font-semibold text-gray-500 mb-3">RECENT ACTIVITY</h3>
                  <div className="space-y-3">
-                    {recentActivity.map(activity => (
+                    {recentActivity.length > 0 ? recentActivity.map(activity => (
                         <div key={activity.id} className="flex items-start gap-3 text-sm">
                             <img src={activity.user.avatar} className="w-8 h-8 rounded-full mt-1" />
                             <div>
@@ -58,7 +76,9 @@ function MyDaySidebar() {
                                 <p className="text-xs text-gray-400">{activity.time}</p>
                             </div>
                         </div>
-                    ))}
+                    )) : (
+                        <p className="text-sm text-center py-4 text-gray-400">No recent activity.</p>
+                    )}
                 </div>
             </div>
             <div>

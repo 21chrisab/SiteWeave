@@ -5,7 +5,7 @@ import timeGridPlugin from '@fullcalendar/timegrid';
 import interactionPlugin from '@fullcalendar/interaction';
 import { useAppContext, supabaseClient } from '../context/AppContext';
 import { useToast } from '../context/ToastContext';
-import { parseOAuthCallback, clearOAuthParams, handleGoogleCalendarCallback, handleOutlookCalendarCallback } from '../utils/calendarIntegration';
+import { parseOAuthCallback, clearOAuthParams, handleGoogleCalendarCallback, handleOutlookCalendarCallback, prepareCalendarEventsForInsert } from '../utils/calendarIntegration';
 import EventModal from '../components/EventModal';
 import ConfirmDialog from '../components/ConfirmDialog';
 import LoadingSpinner from '../components/LoadingSpinner';
@@ -166,21 +166,21 @@ function CalendarView() {
             let events = [];
             
             // Determine which service based on the current URL or stored state
-            const state = localStorage.getItem('oauth_state');
+            const oauthState = localStorage.getItem('oauth_state');
             
-            if (state === 'google') {
+            if (oauthState === 'google') {
                 events = await handleGoogleCalendarCallback(code);
-            } else if (state === 'outlook') {
+            } else if (oauthState === 'outlook') {
                 events = await handleOutlookCalendarCallback(code);
             } else {
                 throw new Error('Unknown OAuth provider');
             }
 
             if (events.length > 0) {
-                // Save events to database
+                const prepared = prepareCalendarEventsForInsert(events, state.user?.id || null);
                 const { data, error } = await supabaseClient
                     .from('calendar_events')
-                    .insert(events)
+                    .insert(prepared)
                     .select();
 
                 if (error) {
@@ -192,7 +192,7 @@ function CalendarView() {
                     dispatch({ type: 'ADD_EVENT', payload: event });
                 });
 
-                addToast(`Successfully imported ${data.length} events from ${state === 'google' ? 'Google' : 'Outlook'} Calendar!`, 'success');
+                addToast(`Successfully imported ${data.length} events from ${oauthState === 'google' ? 'Google' : 'Outlook'} Calendar!`, 'success');
             } else {
                 addToast('No events found to import.', 'info');
             }
@@ -370,7 +370,7 @@ function CalendarView() {
             setIsCreatingEvent(true);
             const { data, error } = await supabaseClient
                 .from('calendar_events')
-                .insert(eventData)
+                .insert({ ...eventData, user_id: state.user?.id || null })
                 .select()
                 .single();
             

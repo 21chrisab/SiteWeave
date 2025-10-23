@@ -31,7 +31,16 @@ class ElectronOAuth {
 
     console.log('Using redirect URI:', redirectUri);
 
-    const authUrl = this.buildAuthUrl(provider, config, redirectUri);
+    // For Microsoft in Electron (public client), use PKCE
+    let pkceConfig = { ...config };
+    if (provider === 'microsoft' && this.isElectron) {
+      const codeVerifier = this.generateCodeVerifier();
+      const codeChallenge = await this.generateCodeChallenge(codeVerifier);
+      this.msCodeVerifier = codeVerifier;
+      pkceConfig = { ...pkceConfig, codeChallenge };
+    }
+
+    const authUrl = this.buildAuthUrl(provider, pkceConfig, redirectUri);
     console.log('Generated auth URL:', authUrl);
 
     if (this.isElectron) {
@@ -103,7 +112,7 @@ class ElectronOAuth {
 
     const scopes = {
       google: 'https://www.googleapis.com/auth/calendar.readonly',
-      microsoft: 'https://graph.microsoft.com/calendars.read',
+      microsoft: 'https://graph.microsoft.com/Calendars.Read',
       dropbox: ''
     };
 
@@ -120,6 +129,12 @@ class ElectronOAuth {
         url.searchParams.set('code_challenge', config.codeChallenge);
         url.searchParams.set('code_challenge_method', 'S256');
       }
+    }
+
+    // Microsoft: include PKCE in Electron/public client flow
+    if (provider === 'microsoft' && config.codeChallenge) {
+      url.searchParams.set('code_challenge', config.codeChallenge);
+      url.searchParams.set('code_challenge_method', 'S256');
     }
 
     if (config.state) {
@@ -213,11 +228,20 @@ class ElectronOAuth {
 
     const body = new URLSearchParams({
       client_id: config.clientId,
-      client_secret: config.clientSecret,
       code: code,
       grant_type: 'authorization_code',
       redirect_uri: redirectUri
     });
+
+    // Only include client_secret for confidential clients (web/backend). Public clients (Electron) must not send it.
+    if (!(provider === 'microsoft' && this.isElectron) && config.clientSecret) {
+      body.set('client_secret', config.clientSecret);
+    }
+
+    // Microsoft public client requires PKCE code_verifier
+    if (provider === 'microsoft' && this.isElectron && this.msCodeVerifier) {
+      body.set('code_verifier', this.msCodeVerifier);
+    }
 
     if (provider === 'dropbox' && config.codeVerifier) {
       body.set('code_verifier', config.codeVerifier);
@@ -236,7 +260,12 @@ class ElectronOAuth {
       throw new Error(`Token exchange failed: ${error}`);
     }
 
-    return await response.json();
+    const json = await response.json();
+    // Clear one-time verifier after successful exchange
+    if (provider === 'microsoft') {
+      this.msCodeVerifier = null;
+    }
+    return json;
   }
 }
 
