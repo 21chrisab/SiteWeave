@@ -29,8 +29,17 @@ const OAUTH_PORT = 5000;
 // Configure auto-updater
 // Only check for updates in production builds from official releases
 if (!isDev && process.env.PORTABLE_EXECUTABLE_DIR === undefined) {
+  // Configure auto-updater settings
+  autoUpdater.autoDownload = true;
+  autoUpdater.autoInstallOnAppQuit = true;
+  
+  // Check for updates with better error handling
   autoUpdater.checkForUpdatesAndNotify().catch(err => {
     console.log('Auto-update check skipped or failed:', err.message);
+    // Don't show error to user if it's just that no update is available
+    if (!err.message.includes('latest.yml') && !err.message.includes('404')) {
+      console.error('Auto-updater error:', err);
+    }
   });
 }
 
@@ -156,16 +165,73 @@ function createWindow() {
     mainWindow.loadURL('http://localhost:5173');
     mainWindow.webContents.openDevTools();
   } else {
-    // In production, __dirname is inside app.asar/dist-electron
-    // We need to go up to resources and into app.asar/dist
-    const indexPath = path.join(__dirname, '../dist/index.html');
+    // In production, handle both unpacked and packaged scenarios
+    let indexPath;
     
-    console.log('Production mode - Loading from:', indexPath);
-    console.log('__dirname:', __dirname);
-    console.log('process.resourcesPath:', process.resourcesPath);
-    console.log('File exists:', fs.existsSync(indexPath));
+    // Check if we're in a packaged app
+    if (app.isPackaged) {
+      // For packaged apps, the files are in resources/app.asar/dist
+      // The dist folder is at the root of the asar file
+      indexPath = path.join(process.resourcesPath, 'app.asar', 'dist', 'index.html');
+      console.log('Packaged app - Loading from:', indexPath);
+      console.log('process.resourcesPath:', process.resourcesPath);
+      console.log('File exists:', fs.existsSync(indexPath));
+      
+      // If not found in app.asar, try the unpacked location
+      if (!fs.existsSync(indexPath)) {
+        indexPath = path.join(process.resourcesPath, 'app.asar.unpacked', 'dist', 'index.html');
+        console.log('Trying unpacked location:', indexPath);
+        console.log('File exists:', fs.existsSync(indexPath));
+      }
+    } else {
+      // For development builds, use relative path
+      indexPath = path.join(__dirname, '../dist/index.html');
+      console.log('Development build - Loading from:', indexPath);
+      console.log('__dirname:', __dirname);
+      console.log('File exists:', fs.existsSync(indexPath));
+    }
     
-    mainWindow.loadFile(indexPath);
+    // Final fallback - try multiple possible locations
+    if (!fs.existsSync(indexPath)) {
+      const possiblePaths = [
+        path.join(process.resourcesPath, 'app.asar', 'dist', 'index.html'),
+        path.join(process.resourcesPath, 'app.asar.unpacked', 'dist', 'index.html'),
+        path.join(__dirname, '../dist/index.html'),
+        path.join(__dirname, '../../dist/index.html'),
+        path.join(process.cwd(), 'dist', 'index.html')
+      ];
+      
+      for (const testPath of possiblePaths) {
+        console.log('Trying path:', testPath);
+        if (fs.existsSync(testPath)) {
+          indexPath = testPath;
+          console.log('Found valid path:', indexPath);
+          break;
+        }
+      }
+    }
+    
+    if (fs.existsSync(indexPath)) {
+      console.log('Loading app from:', indexPath);
+      // Use loadURL for packaged apps to avoid file:// protocol issues
+      if (app.isPackaged) {
+        const fileUrl = `file://${indexPath.replace(/\\/g, '/')}`;
+        console.log('Using file URL:', fileUrl);
+        mainWindow.loadURL(fileUrl);
+      } else {
+        mainWindow.loadFile(indexPath);
+      }
+    } else {
+      console.error('Could not find index.html in any expected location');
+      console.error('Searched paths:');
+      console.error('- process.resourcesPath/app.asar/dist/index.html');
+      console.error('- process.resourcesPath/app.asar.unpacked/dist/index.html');
+      console.error('- __dirname/../dist/index.html');
+      console.error('- process.cwd()/dist/index.html');
+      
+      // Show error page
+      mainWindow.loadURL('data:text/html,<h1>Error: Could not load application</h1><p>Please reinstall the application.</p>');
+    }
   }
 
   // Show window when ready
@@ -412,7 +478,10 @@ autoUpdater.on('update-downloaded', () => {
 
 autoUpdater.on('error', (error) => {
   console.error('Auto-updater error:', error);
-  mainWindow?.webContents.send('update-error', error.message);
+  // Only send error to renderer if it's not a "no update available" error
+  if (!error.message.includes('latest.yml') && !error.message.includes('404')) {
+    mainWindow?.webContents.send('update-error', error.message);
+  }
 });
 
 // IPC handlers
