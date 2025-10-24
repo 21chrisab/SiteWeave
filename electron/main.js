@@ -150,7 +150,7 @@ function createWindow() {
       nodeIntegration: false,
       contextIsolation: true,
       enableRemoteModule: false,
-      webSecurity: !isDev, // Disable in production to allow file:// resources
+      webSecurity: false, // Disable web security for file:// protocol
       preload: path.join(__dirname, 'preload.js')
     },
     icon: path.join(__dirname, '../build/icon.png'),
@@ -164,71 +164,25 @@ function createWindow() {
     mainWindow.loadURL('http://localhost:5173');
     mainWindow.webContents.openDevTools();
   } else {
-    // In production, handle both unpacked and packaged scenarios
+    // In production, use the correct path for packaged apps
     let indexPath;
     
-    // Check if we're in a packaged app
     if (app.isPackaged) {
-      // For packaged apps, the files are in resources/app.asar/dist
-      // The dist folder is at the root of the asar file
+      // For packaged apps, the dist folder is at the root of the asar file
       indexPath = path.join(process.resourcesPath, 'app.asar', 'dist', 'index.html');
-      console.log('Packaged app - Loading from:', indexPath);
-      console.log('process.resourcesPath:', process.resourcesPath);
-      console.log('File exists:', fs.existsSync(indexPath));
-      
-      // If not found in app.asar, try the unpacked location
-      if (!fs.existsSync(indexPath)) {
-        indexPath = path.join(process.resourcesPath, 'app.asar.unpacked', 'dist', 'index.html');
-        console.log('Trying unpacked location:', indexPath);
-        console.log('File exists:', fs.existsSync(indexPath));
-      }
     } else {
-      // For development builds, use relative path
+      // For development builds
       indexPath = path.join(__dirname, '../dist/index.html');
-      console.log('Development build - Loading from:', indexPath);
-      console.log('__dirname:', __dirname);
-      console.log('File exists:', fs.existsSync(indexPath));
     }
     
-    // Final fallback - try multiple possible locations
-    if (!fs.existsSync(indexPath)) {
-      const possiblePaths = [
-        path.join(process.resourcesPath, 'app.asar', 'dist', 'index.html'),
-        path.join(process.resourcesPath, 'app.asar.unpacked', 'dist', 'index.html'),
-        path.join(__dirname, '../dist/index.html'),
-        path.join(__dirname, '../../dist/index.html'),
-        path.join(process.cwd(), 'dist', 'index.html')
-      ];
-      
-      for (const testPath of possiblePaths) {
-        console.log('Trying path:', testPath);
-        if (fs.existsSync(testPath)) {
-          indexPath = testPath;
-          console.log('Found valid path:', indexPath);
-          break;
-        }
-      }
-    }
+    console.log('Production - Loading from:', indexPath);
+    console.log('File exists:', fs.existsSync(indexPath));
     
     if (fs.existsSync(indexPath)) {
-      console.log('Loading app from:', indexPath);
-      // Use loadURL for packaged apps to avoid file:// protocol issues
-      if (app.isPackaged) {
-        const fileUrl = `file://${indexPath.replace(/\\/g, '/')}`;
-        console.log('Using file URL:', fileUrl);
-        mainWindow.loadURL(fileUrl);
-      } else {
-        mainWindow.loadFile(indexPath);
-      }
+      // Use loadFile for better compatibility
+      mainWindow.loadFile(indexPath);
     } else {
-      console.error('Could not find index.html in any expected location');
-      console.error('Searched paths:');
-      console.error('- process.resourcesPath/app.asar/dist/index.html');
-      console.error('- process.resourcesPath/app.asar.unpacked/dist/index.html');
-      console.error('- __dirname/../dist/index.html');
-      console.error('- process.cwd()/dist/index.html');
-      
-      // Show error page
+      console.error('Could not find index.html at:', indexPath);
       mainWindow.loadURL('data:text/html,<h1>Error: Could not load application</h1><p>Please reinstall the application.</p>');
     }
   }
