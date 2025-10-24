@@ -33,7 +33,10 @@ const UpdateNotification = () => {
     try {
       await window.electronAPI.checkForUpdates();
     } catch (error) {
-      console.error('Failed to check for updates:', error);
+      // Only log error if it's not a "no update available" error
+      if (!error.message?.includes('latest.yml') && !error.message?.includes('404')) {
+        console.error('Failed to check for updates:', error);
+      }
     }
   };
 
