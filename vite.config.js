@@ -46,6 +46,8 @@ export default defineConfig(({ mode }) => {
     base: './', // Required for Electron file:// protocol
     define: {
       // Explicitly expose environment variables to the client
+      'import.meta.env.VITE_SUPABASE_URL': JSON.stringify(env.VITE_SUPABASE_URL),
+      'import.meta.env.VITE_SUPABASE_ANON_KEY': JSON.stringify(env.VITE_SUPABASE_ANON_KEY),
       'import.meta.env.VITE_GOOGLE_CLIENT_ID': JSON.stringify(env.VITE_GOOGLE_CLIENT_ID),
       'import.meta.env.VITE_MICROSOFT_CLIENT_ID': JSON.stringify(env.VITE_MICROSOFT_CLIENT_ID),
       'import.meta.env.VITE_DROPBOX_APP_KEY': JSON.stringify(env.VITE_DROPBOX_APP_KEY),

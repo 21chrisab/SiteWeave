@@ -16,7 +16,7 @@ jobs:
     - name: Setup Node.js
       uses: actions/setup-node@v4
       with:
-        node-version: '18'
+        node-version: '20'
         cache: 'npm'
         
     - name: Install dependencies
@@ -27,13 +27,13 @@ jobs:
       
     - name: Build Windows executable
       run: npm run build:win
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       
     - name: Create Release
       uses: softprops/action-gh-release@v1
       with:
-        files: |
-          release/SiteWeave Setup *.exe
-          release/latest.yml
+        files: release/*.exe
         draft: false
         prerelease: false
       env:
