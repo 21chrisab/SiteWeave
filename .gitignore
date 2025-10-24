@@ -141,6 +141,7 @@ vite.config.ts.timestamp-*
 
 # Electron-builder output
 /release/
+/release-new/
 /build/
 /dist-electron/
 
