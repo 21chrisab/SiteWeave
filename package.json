@@ -1,7 +1,7 @@
 {
   "name": "siteweave",
   "private": true,
-  "version": "1.0.7",
+  "version": "1.0.8",
   "description": "SiteWeave - Project Management and Collaboration Tool",
   "author": "21chrisab",
   "homepage": "https://github.com/21chrisab/SiteWeave",
@@ -54,12 +54,11 @@
     "appId": "com.siteweave.app",
     "productName": "SiteWeave",
     "directories": {
-      "output": "release"
+      "output": "release-new"
     },
     "files": [
       "dist-electron/**/*",
-      "dist/**/*",
-      "node_modules/**/*"
+      "dist/**/*"
     ],
     "win": {
       "target": "nsis",
