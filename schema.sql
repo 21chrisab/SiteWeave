@@ -31,7 +31,9 @@ CREATE TABLE IF NOT EXISTS contacts (
     company TEXT,
     trade TEXT,
     status TEXT DEFAULT 'Available',
-    avatar_url TEXT
+    avatar_url TEXT,
+    email TEXT,
+    phone TEXT
 );
 
 -- Profiles Table (Links auth.users to contacts and stores roles)
@@ -210,6 +212,22 @@ CREATE TABLE IF NOT EXISTS activity_log (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT now()
 );
 
+-- Invitations Table (for inviting external users to projects and tasks)
+CREATE TABLE IF NOT EXISTS invitations (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    email TEXT NOT NULL,
+    project_id UUID,
+    issue_id INTEGER,
+    step_id INTEGER,
+    invited_by_user_id UUID,
+    status TEXT DEFAULT 'pending' CHECK (status IN ('pending', 'accepted', 'expired', 'cancelled')),
+    invitation_token TEXT UNIQUE,
+    expires_at TIMESTAMP WITH TIME ZONE DEFAULT (now() + INTERVAL '7 days'),
+    accepted_at TIMESTAMP WITH TIME ZONE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT now(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT now()
+);
+
 -- User Preferences Table
 CREATE TABLE IF NOT EXISTS user_preferences (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -219,6 +237,24 @@ CREATE TABLE IF NOT EXISTS user_preferences (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT now(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT now()
 );
+
+-- ============================================================================
+-- ADD NEW COLUMNS TO EXISTING TABLES
+-- ============================================================================
+
+-- Add email and phone columns to contacts table (if they don't exist)
+DO $$ 
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
+                   WHERE table_name = 'contacts' AND column_name = 'email') THEN
+        ALTER TABLE contacts ADD COLUMN email TEXT;
+    END IF;
+    
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
+                   WHERE table_name = 'contacts' AND column_name = 'phone') THEN
+        ALTER TABLE contacts ADD COLUMN phone TEXT;
+    END IF;
+END $$;
 
 -- ============================================================================
 -- ADD AUDIT FIELDS TO EXISTING TABLES
@@ -492,6 +528,23 @@ BEGIN
     END IF;
 END $$;
 
+-- Invitations constraints
+DO $$ 
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_invitations_project_id') THEN
+        ALTER TABLE invitations ADD CONSTRAINT fk_invitations_project_id FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_invitations_issue_id') THEN
+        ALTER TABLE invitations ADD CONSTRAINT fk_invitations_issue_id FOREIGN KEY (issue_id) REFERENCES project_issues(id) ON DELETE CASCADE;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_invitations_step_id') THEN
+        ALTER TABLE invitations ADD CONSTRAINT fk_invitations_step_id FOREIGN KEY (step_id) REFERENCES issue_steps(id) ON DELETE CASCADE;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_invitations_invited_by') THEN
+        ALTER TABLE invitations ADD CONSTRAINT fk_invitations_invited_by FOREIGN KEY (invited_by_user_id) REFERENCES auth.users(id);
+    END IF;
+END $$;
+
 -- ============================================================================
 -- HELPER FUNCTIONS
 -- ============================================================================
@@ -627,6 +680,11 @@ DROP POLICY IF EXISTS "Users can create activity logs for accessible projects" O
 DROP POLICY IF EXISTS "Users can update their own activity logs" ON public.activity_log;
 DROP POLICY IF EXISTS "Users can delete their own activity logs" ON public.activity_log;
 
+DROP POLICY IF EXISTS "Users can see invitations they sent or received" ON public.invitations;
+DROP POLICY IF EXISTS "Authenticated users can create invitations" ON public.invitations;
+DROP POLICY IF EXISTS "Users can update their sent invitations" ON public.invitations;
+DROP POLICY IF EXISTS "Users can delete their sent invitations" ON public.invitations;
+
 -- Enable RLS on all tables
 ALTER TABLE projects ENABLE ROW LEVEL SECURITY;
 -- DISABLED to prevent infinite recursion
@@ -646,111 +704,7 @@ ALTER TABLE project_phases ENABLE ROW LEVEL SECURITY;
 ALTER TABLE tasks ENABLE ROW LEVEL SECURITY;
 ALTER TABLE user_preferences ENABLE ROW LEVEL SECURITY;
 ALTER TABLE activity_log ENABLE ROW LEVEL SECURITY;
-
--- ============================================================================
--- CALENDAR EVENTS TABLE POLICIES
--- ============================================================================
-
--- Allow authenticated users to view their own events, admins everything,
--- and users with access to the related project (PM or project contact)
-CREATE POLICY "Users can view calendar events"
-ON public.calendar_events
-FOR SELECT
-USING (
-  auth.uid() IS NOT NULL AND (
-    (user_id = auth.uid())
-    OR (get_user_role() = 'Admin')
-    OR (
-      project_id IS NOT NULL AND (
-        project_id IN (SELECT id FROM public.projects WHERE project_manager_id = auth.uid())
-        OR project_id IN (
-          SELECT pc.project_id
-          FROM public.project_contacts pc
-          WHERE pc.contact_id = get_user_contact_id()
-        )
-      )
-    )
-  )
-);
-
--- Allow creating events that belong to the current user or to projects they manage/are assigned to
-CREATE POLICY "Users can create calendar events"
-ON public.calendar_events
-FOR INSERT
-WITH CHECK (
-  auth.uid() IS NOT NULL AND (
-    (user_id = auth.uid())
-    OR (get_user_role() = 'Admin')
-    OR (
-      project_id IS NOT NULL AND (
-        project_id IN (SELECT id FROM public.projects WHERE project_manager_id = auth.uid())
-        OR project_id IN (
-          SELECT pc.project_id
-          FROM public.project_contacts pc
-          WHERE pc.contact_id = get_user_contact_id()
-        )
-      )
-    )
-  )
-);
-
--- Allow updating events that the user owns, admins, or those tied to projects they manage/are assigned to
-CREATE POLICY "Users can update calendar events"
-ON public.calendar_events
-FOR UPDATE
-USING (
-  auth.uid() IS NOT NULL AND (
-    (user_id = auth.uid())
-    OR (get_user_role() = 'Admin')
-    OR (
-      project_id IS NOT NULL AND (
-        project_id IN (SELECT id FROM public.projects WHERE project_manager_id = auth.uid())
-        OR project_id IN (
-          SELECT pc.project_id
-          FROM public.project_contacts pc
-          WHERE pc.contact_id = get_user_contact_id()
-        )
-      )
-    )
-  )
-)
-WITH CHECK (
-  auth.uid() IS NOT NULL AND (
-    (user_id = auth.uid())
-    OR (get_user_role() = 'Admin')
-    OR (
-      project_id IS NOT NULL AND (
-        project_id IN (SELECT id FROM public.projects WHERE project_manager_id = auth.uid())
-        OR project_id IN (
-          SELECT pc.project_id
-          FROM public.project_contacts pc
-          WHERE pc.contact_id = get_user_contact_id()
-        )
-      )
-    )
-  )
-);
-
--- Allow deleting events that the user owns, admins, or PM/assigned project members
-CREATE POLICY "Users can delete calendar events"
-ON public.calendar_events
-FOR DELETE
-USING (
-  auth.uid() IS NOT NULL AND (
-    (user_id = auth.uid())
-    OR (get_user_role() = 'Admin')
-    OR (
-      project_id IS NOT NULL AND (
-        project_id IN (SELECT id FROM public.projects WHERE project_manager_id = auth.uid())
-        OR project_id IN (
-          SELECT pc.project_id
-          FROM public.project_contacts pc
-          WHERE pc.contact_id = get_user_contact_id()
-        )
-      )
-    )
-  )
-);
+ALTER TABLE invitations ENABLE ROW LEVEL SECURITY;
 
 -- ============================================================================
 -- PROJECTS TABLE POLICIES
@@ -1477,6 +1431,44 @@ FOR DELETE
 USING (user_id = auth.uid());
 
 -- ============================================================================
+-- INVITATIONS TABLE POLICIES
+-- ============================================================================
+
+-- Invitations SELECT policy
+CREATE POLICY "Users can see invitations they sent or received"
+ON public.invitations
+FOR SELECT
+USING (
+  (invited_by_user_id = auth.uid()) -- Invitations they sent
+  OR
+  (email IN (SELECT email FROM auth.users WHERE id = auth.uid())) -- Invitations to their email
+);
+
+-- Invitations INSERT policy
+CREATE POLICY "Authenticated users can create invitations"
+ON public.invitations
+FOR INSERT
+WITH CHECK (
+  auth.uid() IS NOT NULL
+  AND (
+    invited_by_user_id = auth.uid() -- Can only create invitations as themselves
+  )
+);
+
+-- Invitations UPDATE policy
+CREATE POLICY "Users can update their sent invitations"
+ON public.invitations
+FOR UPDATE
+USING (invited_by_user_id = auth.uid())
+WITH CHECK (invited_by_user_id = auth.uid());
+
+-- Invitations DELETE policy
+CREATE POLICY "Users can delete their sent invitations"
+ON public.invitations
+FOR DELETE
+USING (invited_by_user_id = auth.uid());
+
+-- ============================================================================
 -- INDEXES FOR PERFORMANCE
 -- ============================================================================
 
@@ -1486,6 +1478,7 @@ CREATE INDEX IF NOT EXISTS idx_calendar_events_user_id ON calendar_events(user_i
 CREATE INDEX IF NOT EXISTS idx_calendar_events_start_time ON calendar_events(start_time);
 CREATE INDEX IF NOT EXISTS idx_contacts_type ON contacts(type);
 CREATE INDEX IF NOT EXISTS idx_contacts_status ON contacts(status);
+CREATE INDEX IF NOT EXISTS idx_contacts_email ON contacts(email);
 CREATE INDEX IF NOT EXISTS idx_files_project_id ON files(project_id);
 CREATE INDEX IF NOT EXISTS idx_issue_comments_issue_id ON issue_comments(issue_id);
 CREATE INDEX IF NOT EXISTS idx_issue_comments_step_id ON issue_comments(step_id);
@@ -1525,3 +1518,10 @@ CREATE INDEX IF NOT EXISTS idx_activity_log_project_id ON activity_log(project_i
 CREATE INDEX IF NOT EXISTS idx_activity_log_user_id ON activity_log(user_id);
 CREATE INDEX IF NOT EXISTS idx_activity_log_created_at ON activity_log(created_at);
 CREATE INDEX IF NOT EXISTS idx_activity_log_entity_type ON activity_log(entity_type);
+
+-- Invitations indexes
+CREATE INDEX IF NOT EXISTS idx_invitations_email ON invitations(email);
+CREATE INDEX IF NOT EXISTS idx_invitations_status ON invitations(status);
+CREATE INDEX IF NOT EXISTS idx_invitations_token ON invitations(invitation_token);
+CREATE INDEX IF NOT EXISTS idx_invitations_project_id ON invitations(project_id);
+CREATE INDEX IF NOT EXISTS idx_invitations_invited_by ON invitations(invited_by_user_id);

@@ -108,7 +108,12 @@ function startOAuthServer() {
 
   oauthServer.on('error', (err) => {
     if (err.code === 'EADDRINUSE') {
-      console.log(`Port ${OAUTH_PORT} is already in use`);
+      console.log(`Port ${OAUTH_PORT} is already in use, trying next port...`);
+      // Try next available port
+      oauthServer.listen(0, '127.0.0.1', () => {
+        const actualPort = oauthServer.address().port;
+        console.log(`OAuth server listening on http://127.0.0.1:${actualPort}`);
+      });
     } else {
       console.error('OAuth server error:', err);
     }
@@ -178,6 +183,22 @@ function createWindow() {
     mainWindow.focus();
   });
 
+  // Add error handling for renderer process crashes
+  mainWindow.webContents.on('crashed', (event) => {
+    console.error('Renderer process crashed');
+    // Don't close the window, just log the error
+  });
+
+  // Add error handling for unresponsive renderer
+  mainWindow.webContents.on('unresponsive', () => {
+    console.warn('Renderer process became unresponsive');
+  });
+
+  // Add error handling for responsive renderer
+  mainWindow.webContents.on('responsive', () => {
+    console.log('Renderer process became responsive again');
+  });
+
   // Fallback: Force show window after timeout
   setTimeout(() => {
     if (mainWindow && !mainWindow.isVisible()) {
@@ -189,7 +210,14 @@ function createWindow() {
 
   // Handle window closed
   mainWindow.on('closed', () => {
+    console.log('Main window was closed');
     mainWindow = null;
+  });
+
+  // Prevent window from closing on error
+  mainWindow.on('close', (event) => {
+    console.log('Window close event triggered');
+    // Don't prevent closing, just log it
   });
 
   // Handle external links
