@@ -19,7 +19,9 @@ if (!gotTheLock) {
   });
 }
 
-const isDev = process.env.NODE_ENV === 'development';
+// Use vite-plugin-electron environment variables
+const VITE_DEV_SERVER_URL = process.env.VITE_DEV_SERVER_URL;
+const DIST_PATH = process.env.DIST;
 
 let mainWindow;
 let oauthServer = null;
@@ -191,34 +193,33 @@ function createWindow() {
       nodeIntegration: false,
       contextIsolation: true,
       enableRemoteModule: false,
-      webSecurity: true,
+      webSecurity: false, // Disable web security for file:// protocol
       preload: path.join(__dirname, 'preload.js')
     },
-    icon: path.join(__dirname, '../build/icon.png'),
+    icon: app.isPackaged 
+      ? path.join(process.resourcesPath, 'app.asar', 'build', 'icon.png')
+      : path.join(__dirname, '../build/icon.png'),
     title: 'SiteWeave',
-    show: true, // Show immediately for debugging
+    show: false, // Don't show until ready
     titleBarStyle: 'default'
   });
 
   console.log('Window created, loading app...');
 
-  // Load the app - always use built files for electron:dev
-  const indexPath = path.join(process.cwd(), 'dist/index.html');
-  console.log('Loading app from:', indexPath);
-  
-  // Add a small delay to ensure window is fully created
-  setTimeout(() => {
-    try {
-      mainWindow.loadFile(indexPath);
-      console.log('App load initiated');
-    } catch (error) {
-      console.error('Failed to load app:', error);
-    }
-  }, 100);
-  
-  // Open dev tools only in development mode
-  if (isDev) {
+  // Use vite-plugin-electron environment variables for loading
+  if (VITE_DEV_SERVER_URL) {
+    // Development: Load from the Vite dev server
+    console.log('Loading from Vite dev server:', VITE_DEV_SERVER_URL);
+    mainWindow.loadURL(VITE_DEV_SERVER_URL);
     mainWindow.webContents.openDevTools();
+  } else {
+    // Production: Load the built index.html file
+    // In packaged apps, the dist folder is at the root of the asar file
+    const indexPath = app.isPackaged 
+      ? path.join(process.resourcesPath, 'app.asar', 'dist', 'index.html')
+      : path.join(DIST_PATH || 'dist', 'index.html');
+    console.log('Loading from production build:', indexPath);
+    mainWindow.loadFile(indexPath);
   }
 
   // Show window when ready
@@ -231,50 +232,15 @@ function createWindow() {
   // Add error handling for failed loads
   mainWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription) => {
     console.error('Failed to load:', errorCode, errorDescription);
-    // Show window even if load fails
     mainWindow.show();
     mainWindow.focus();
   });
 
-  // Add error handling for renderer process crashes
-  mainWindow.webContents.on('render-process-gone', (event, details) => {
-    console.error('Renderer process crashed:', details);
-  });
-
-  // Add error handling for unresponsive renderer
-  mainWindow.webContents.on('unresponsive', () => {
-    console.error('Renderer process became unresponsive');
-  });
-
-  // Add error handling for responsive renderer
-  mainWindow.webContents.on('responsive', () => {
-    console.log('Renderer process became responsive again');
-  });
-
-  // Add error handling for window closed
+  // Handle window closed
   mainWindow.on('closed', () => {
     console.log('Main window was closed');
     mainWindow = null;
   });
-
-  // Add error handling for window closing
-  mainWindow.on('close', (event) => {
-    console.log('Main window is closing');
-  });
-
-  // Add console message handler to catch JavaScript errors
-  mainWindow.webContents.on('console-message', (event, level, message, line, sourceId) => {
-    console.log(`Console [${level}]: ${message} (${sourceId}:${line})`);
-  });
-
-  // Fallback: Force show window after timeout
-  setTimeout(() => {
-    if (mainWindow && !mainWindow.isVisible()) {
-      console.log('Force showing window after timeout');
-      mainWindow.show();
-      mainWindow.focus();
-    }
-  }, 2000);
 
 
   // Handle external links
@@ -287,9 +253,18 @@ function createWindow() {
   mainWindow.webContents.on('will-navigate', (event, navigationUrl) => {
     const parsedUrl = new URL(navigationUrl);
     
-    if (parsedUrl.origin !== 'http://localhost:5173' && parsedUrl.origin !== 'file://') {
-      event.preventDefault();
-      shell.openExternal(navigationUrl);
+    if (VITE_DEV_SERVER_URL) {
+      // In development, allow localhost:5173
+      if (parsedUrl.origin !== 'http://localhost:5173' && parsedUrl.origin !== 'file://') {
+        event.preventDefault();
+        shell.openExternal(navigationUrl);
+      }
+    } else {
+      // In production, only allow file:// protocol
+      if (parsedUrl.origin !== 'file://') {
+        event.preventDefault();
+        shell.openExternal(navigationUrl);
+      }
     }
   });
 }
