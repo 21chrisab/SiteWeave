@@ -54,7 +54,7 @@
     "appId": "com.siteweave.app",
     "productName": "SiteWeave",
     "directories": {
-      "output": "release-new"
+      "output": "release"
     },
     "files": [
       "dist-electron/**/*",

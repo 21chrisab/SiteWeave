@@ -37,7 +37,7 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: SiteWeave-Windows
-        path: dist/*.exe
+        path: release/*.exe
         retention-days: 30
 
   release:
