@@ -42,7 +42,15 @@ function ContactCard({ contact, onAction, actionType, onEdit, onDelete, showActi
             <div className="flex items-center gap-3 flex-1">
                 <img src={contact.avatar_url} alt={contact.name} className="w-10 h-10 rounded-full" />
                 <div className="flex-1">
-                    <p className="font-semibold">{contact.name}</p>
+                    <div className="flex items-center gap-2">
+                        <p className="font-semibold">{contact.name}</p>
+                        {contact.email && (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium bg-blue-100 text-blue-800 rounded-full" title={`Email: ${contact.email}`}>
+                                <Icon name="mail" className="w-3 h-3" />
+                                Email
+                            </span>
+                        )}
+                    </div>
                     <p className="text-sm text-gray-500">{contact.role}</p>
                     {contact.company && contact.company !== 'SiteWeave' && (
                         <p className="text-xs text-gray-400">{contact.company}</p>
