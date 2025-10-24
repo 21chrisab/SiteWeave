@@ -4,6 +4,7 @@ import { useToast } from '../context/ToastContext';
 import Icon from './Icon';
 import Avatar from './Avatar';
 import dropboxStorage from '../utils/dropboxStorage';
+import { sendTaskAssignmentEmail } from '../utils/emailNotifications';
 
 const FieldIssues = ({ projectId }) => {
     const { state } = useAppContext();
@@ -314,12 +315,46 @@ const FieldIssues = ({ projectId }) => {
                 assigned_to_role: step.assigned_to_role
             }));
 
-            const { error: stepsError } = await supabaseClient
+            const { data: insertedSteps, error: stepsError } = await supabaseClient
                 .from('issue_steps')
-                .insert(stepsToInsert);
+                .insert(stepsToInsert)
+                .select();
 
             if (stepsError) {
                 throw stepsError;
+            }
+
+            // Send email notifications to contacts (non-users)
+            const project = state.projects.find(p => p.id === projectId);
+            const assignerName = state.user?.user_metadata?.full_name || state.user?.email || 'Project Manager';
+            
+            for (const step of workflowSteps) {
+                const contact = state.contacts.find(c => c.id === step.assigned_to_contact_id);
+                
+                // Only send email if contact has an email address and is not a user
+                if (contact && contact.email) {
+                    const emailResult = await sendTaskAssignmentEmail(
+                        contact.email,
+                        {
+                            description: step.description,
+                            issueTitle: newIssue.title,
+                            priority: newIssue.priority,
+                            dueDate: newIssue.dueDate
+                        },
+                        {
+                            name: project?.name || 'Project',
+                            address: project?.address
+                        },
+                        assignerName
+                    );
+
+                    if (emailResult.success) {
+                        console.log(`Email sent to ${contact.name} (${contact.email})`);
+                    } else {
+                        console.warn(`Failed to send email to ${contact.name}:`, emailResult.error);
+                        // Don't block the UI, just log the warning
+                    }
+                }
             }
 
             addToast('Issue created successfully!', 'success');

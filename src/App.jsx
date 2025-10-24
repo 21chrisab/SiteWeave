@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { BrowserRouter, Routes, Route, useParams, useNavigate } from 'react-router-dom';
 import { useAppContext } from './context/AppContext';
 import { ToastProvider } from './context/ToastContext';
 import Sidebar from './components/Sidebar';
@@ -20,6 +21,7 @@ import OnboardingTour from './components/OnboardingTour';
 import OnboardingProgress from './components/OnboardingProgress';
 import GlobalSearch from './components/GlobalSearch';
 import UpdateNotification from './components/UpdateNotification';
+import AcceptInvitationView from './views/AcceptInvitationView';
 import { useOnboarding } from './hooks/useOnboarding';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 
@@ -276,9 +278,14 @@ function AppContent() {
 
 function App() {
   return (
-    <ToastProvider>
-      <AppContent />
-    </ToastProvider>
+    <BrowserRouter>
+      <ToastProvider>
+        <Routes>
+          <Route path="/invite/:token" element={<AcceptInvitationView />} />
+          <Route path="/*" element={<AppContent />} />
+        </Routes>
+      </ToastProvider>
+    </BrowserRouter>
   );
 }
 
