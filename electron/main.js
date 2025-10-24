@@ -35,10 +35,9 @@ if (!isDev && process.env.PORTABLE_EXECUTABLE_DIR === undefined) {
   
   // Check for updates with better error handling
   autoUpdater.checkForUpdatesAndNotify().catch(err => {
-    console.log('Auto-update check skipped or failed:', err.message);
-    // Don't show error to user if it's just that no update is available
+    // Only log if it's not a "no update available" error
     if (!err.message.includes('latest.yml') && !err.message.includes('404')) {
-      console.error('Auto-updater error:', err);
+      console.log('Auto-update check failed:', err.message);
     }
   });
 }
@@ -477,9 +476,9 @@ autoUpdater.on('update-downloaded', () => {
 });
 
 autoUpdater.on('error', (error) => {
-  console.error('Auto-updater error:', error);
-  // Only send error to renderer if it's not a "no update available" error
+  // Only log and send error if it's not a "no update available" error
   if (!error.message.includes('latest.yml') && !error.message.includes('404')) {
+    console.error('Auto-updater error:', error);
     mainWindow?.webContents.send('update-error', error.message);
   }
 });
