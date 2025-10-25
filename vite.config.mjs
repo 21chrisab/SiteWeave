@@ -6,7 +6,17 @@ import renderer from 'vite-plugin-electron-renderer'
 // https://vite.dev/config/
 export default defineConfig(({ mode }) => {
   // Load env file based on `mode` in the current working directory.
-  const env = loadEnv(mode, process.cwd(), '')
+  // In CI/CD, process.env will have the values set by GitHub Actions
+  const fileEnv = loadEnv(mode, process.cwd(), '')
+  const env = {
+    ...fileEnv,
+    // Override with process.env if available (for CI/CD)
+    VITE_SUPABASE_URL: process.env.VITE_SUPABASE_URL || fileEnv.VITE_SUPABASE_URL,
+    VITE_SUPABASE_ANON_KEY: process.env.VITE_SUPABASE_ANON_KEY || fileEnv.VITE_SUPABASE_ANON_KEY,
+    VITE_GOOGLE_CLIENT_ID: process.env.VITE_GOOGLE_CLIENT_ID || fileEnv.VITE_GOOGLE_CLIENT_ID,
+    VITE_MICROSOFT_CLIENT_ID: process.env.VITE_MICROSOFT_CLIENT_ID || fileEnv.VITE_MICROSOFT_CLIENT_ID,
+    VITE_DROPBOX_APP_KEY: process.env.VITE_DROPBOX_APP_KEY || fileEnv.VITE_DROPBOX_APP_KEY,
+  }
   
   const isDev = mode === 'development'
   
