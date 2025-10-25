@@ -1,4 +1,4 @@
-name: Build and Release
+name: CI Build
 
 on:
   push:
@@ -47,76 +47,3 @@ jobs:
         name: SiteWeave-Windows
         path: release/*.exe
         retention-days: 30
-
-  release:
-    needs: build
-    runs-on: windows-latest
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-    
-    steps:
-    - uses: actions/checkout@v4
-      with:
-        fetch-depth: 0  # Fetch all history for tags
-        token: ${{ secrets.GITHUB_TOKEN }}
-    
-    - name: Setup Node.js
-      uses: actions/setup-node@v4
-      with:
-        node-version: '20'
-        cache: 'npm'
-    
-    - name: Install dependencies
-      run: npm ci
-    
-    - name: Build application
-      run: npm run build
-      env:
-        VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
-        VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
-        VITE_GOOGLE_CLIENT_ID: ${{ secrets.VITE_GOOGLE_CLIENT_ID }}
-        VITE_GOOGLE_CLIENT_SECRET: ${{ secrets.VITE_GOOGLE_CLIENT_SECRET }}
-        VITE_MICROSOFT_CLIENT_ID: ${{ secrets.VITE_MICROSOFT_CLIENT_ID }}
-        VITE_MICROSOFT_CLIENT_SECRET: ${{ secrets.VITE_MICROSOFT_CLIENT_SECRET }}
-        VITE_DROPBOX_APP_KEY: ${{ secrets.VITE_DROPBOX_APP_KEY }}
-    
-    - name: Build Electron app
-      run: npm run build:win
-      env:
-        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-    
-    - name: Get version from package.json
-      id: version
-      shell: bash
-      run: echo "VERSION=$(node -p "require('./package.json').version")" >> $GITHUB_OUTPUT
-    
-    - name: Check if tag exists
-      id: tag_check
-      shell: bash
-      run: |
-        if git rev-parse "v${{ steps.version.outputs.VERSION }}" >/dev/null 2>&1; then
-          echo "EXISTS=true" >> $GITHUB_OUTPUT
-        else
-          echo "EXISTS=false" >> $GITHUB_OUTPUT
-        fi
-    
-    - name: Create Git tag
-      if: steps.tag_check.outputs.EXISTS == 'false'
-      shell: bash
-      run: |
-        git config --local user.email "action@github.com"
-        git config --local user.name "GitHub Action"
-        git tag "v${{ steps.version.outputs.VERSION }}"
-        git push origin "v${{ steps.version.outputs.VERSION }}"
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-    
-    - name: Create Release
-      uses: softprops/action-gh-release@v1
-      with:
-        files: release/*.exe
-        tag_name: v${{ steps.version.outputs.VERSION }}
-        generate_release_notes: true
-        draft: false
-        prerelease: false
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
