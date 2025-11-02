@@ -70,6 +70,7 @@ function appReducer(state, action) {
       calendarEvents: state.calendarEvents.filter(event => event.id !== action.payload) 
     };
     case 'ADD_MESSAGE': return { ...state, messages: [...state.messages, action.payload] };
+    case 'ADD_CHANNEL': return { ...state, messageChannels: [...state.messageChannels, action.payload] };
     case 'ADD_ACTIVITY': return { ...state, activityLog: [action.payload, ...state.activityLog].slice(0, 50) }; // Keep latest 50
     case 'ADD_CONTACT': {
       // Ensure project_contacts is always an array and prevent duplicates
@@ -397,6 +398,12 @@ export const AppProvider = ({ children }) => {
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, async (payload) => {
         const { data: newMessage } = await supabaseClient.from('messages').select('*, user:user_id(name, avatar_url)').eq('id', payload.new.id).single();
         if (newMessage) dispatch({ type: 'ADD_MESSAGE', payload: newMessage });
+      })
+      .subscribe();
+
+    const messageChannelsSubscription = supabaseClient.channel('public:message_channels')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'message_channels' }, (payload) => {
+        dispatch({ type: 'ADD_CHANNEL', payload: payload.new });
       })
       .subscribe();
 
