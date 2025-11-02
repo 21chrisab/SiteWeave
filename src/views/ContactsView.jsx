@@ -38,8 +38,19 @@ function ContactsView() {
     const teamMembers = state.contacts.filter(c => c.type === 'Team');
     const subcontractors = state.contacts.filter(c => c.type === 'Subcontractor');
 
-    const assignedTeam = teamMembers.filter(c => Array.isArray(c.project_contacts) && c.project_contacts.some(pc => pc.project_id === selectedProjectId));
-    const availablePersonnel = teamMembers.filter(c => !Array.isArray(c.project_contacts) || !c.project_contacts.some(pc => pc.project_id === selectedProjectId));
+    // Helper to check if contact is assigned to selected project
+    const isAssignedToProject = (contact) => {
+        if (!contact.project_contacts) return false;
+        if (!Array.isArray(contact.project_contacts)) return false;
+        // Handle both formats: {project_id: uuid} or just the project_id string
+        return contact.project_contacts.some(pc => {
+            const projectId = typeof pc === 'object' ? pc.project_id : pc;
+            return projectId === selectedProjectId;
+        });
+    };
+
+    const assignedTeam = teamMembers.filter(c => isAssignedToProject(c));
+    const availablePersonnel = teamMembers.filter(c => !isAssignedToProject(c));
 
     // Filter contacts based on search and status
     const filteredContacts = useMemo(() => {
@@ -62,22 +73,87 @@ function ContactsView() {
     }, [activeTab, teamMembers, subcontractors, searchTerm, statusFilter]);
 
     const handleAddMember = async (contactId) => {
-        const { error } = await supabaseClient.from('project_contacts').insert({ project_id: selectedProjectId, contact_id: contactId });
+        if (!selectedProjectId) {
+            addToast('Please select a project first', 'error');
+            return;
+        }
+
+        const { error } = await supabaseClient
+            .from('project_contacts')
+            .insert({ project_id: selectedProjectId, contact_id: contactId });
+        
         if (error) {
+            console.error('Error adding project contact:', error);
             addToast('Error adding member: ' + error.message, 'error');
-        } else {
-            addToast('Member added to project successfully!', 'success');
+            return;
+        }
+        
+        // Success - refetch the specific contact with its relationships to ensure data is accurate
+        const { data: updatedContact, error: fetchError } = await supabaseClient
+            .from('contacts')
+            .select('*, project_contacts!fk_project_contacts_contact_id(project_id)')
+            .eq('id', contactId)
+            .single();
+        
+        if (fetchError) {
+            console.error('Error fetching updated contact:', fetchError);
+            // Fallback: use reducer to manually update
             dispatch({ type: 'ADD_PROJECT_CONTACT', payload: { project_id: selectedProjectId, contact_id: contactId } });
+            addToast('Member added to project successfully!', 'success');
+        } else if (updatedContact) {
+            // Ensure project_contacts is an array
+            if (!updatedContact.project_contacts) {
+                updatedContact.project_contacts = [];
+            }
+            // Update the contact in state with fresh data from database
+            dispatch({ type: 'UPDATE_CONTACT', payload: updatedContact });
+            console.log('Contact updated with project_contacts:', updatedContact.project_contacts);
+            addToast('Member added to project successfully!', 'success');
+        } else {
+            addToast('Member added but could not refresh contact data', 'warning');
         }
     };
 
     const handleRemoveMember = async (contactId) => {
-        const { error } = await supabaseClient.from('project_contacts').delete().match({ project_id: selectedProjectId, contact_id: contactId });
+        if (!selectedProjectId) {
+            addToast('Please select a project first', 'error');
+            return;
+        }
+
+        const { error } = await supabaseClient
+            .from('project_contacts')
+            .delete()
+            .match({ project_id: selectedProjectId, contact_id: contactId });
+        
         if (error) {
+            console.error('Error removing project contact:', error);
             addToast('Error removing member: ' + error.message, 'error');
-        } else {
-            addToast('Member removed from project successfully!', 'success');
+            return;
+        }
+        
+        // Success - refetch the specific contact with its relationships to ensure data is accurate
+        const { data: updatedContact, error: fetchError } = await supabaseClient
+            .from('contacts')
+            .select('*, project_contacts!fk_project_contacts_contact_id(project_id)')
+            .eq('id', contactId)
+            .single();
+        
+        if (fetchError) {
+            console.error('Error fetching updated contact:', fetchError);
+            // Fallback: use reducer to manually update
             dispatch({ type: 'REMOVE_PROJECT_CONTACT', payload: { project_id: selectedProjectId, contact_id: contactId } });
+            addToast('Member removed from project successfully!', 'success');
+        } else if (updatedContact) {
+            // Ensure project_contacts is an array
+            if (!updatedContact.project_contacts) {
+                updatedContact.project_contacts = [];
+            }
+            // Update the contact in state with fresh data from database
+            dispatch({ type: 'UPDATE_CONTACT', payload: updatedContact });
+            console.log('Contact updated with project_contacts:', updatedContact.project_contacts);
+            addToast('Member removed from project successfully!', 'success');
+        } else {
+            addToast('Member removed but could not refresh contact data', 'warning');
         }
     };
     

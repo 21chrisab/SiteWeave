@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAppContext } from '../context/AppContext';
+import Avatar from './Avatar';
 
 function MyDaySidebar() {
     const { state } = useAppContext();
@@ -24,7 +25,7 @@ function MyDaySidebar() {
         id: activity.id,
         user: { 
             name: activity.user_name, 
-            avatar: activity.user_avatar || 'https://i.pravatar.cc/150?u=default' 
+            avatar: activity.user_avatar || null // null means use default Avatar component
         }, 
         action: activity.action,
         time: formatTimeAgo(activity.created_at)
@@ -70,7 +71,13 @@ function MyDaySidebar() {
                  <div className="space-y-3">
                     {recentActivity.length > 0 ? recentActivity.map(activity => (
                         <div key={activity.id} className="flex items-start gap-3 text-sm">
-                            <img src={activity.user.avatar} className="w-8 h-8 rounded-full mt-1" />
+                            {activity.user.avatar ? (
+                                <img src={activity.user.avatar} alt={activity.user.name} className="w-8 h-8 rounded-full mt-1" />
+                            ) : (
+                                <div className="mt-1">
+                                    <Avatar name={activity.user.name} size="sm" />
+                                </div>
+                            )}
                             <div>
                                 <p><span className="font-semibold">{activity.user.name}</span> {activity.action}</p>
                                 <p className="text-xs text-gray-400">{activity.time}</p>
