@@ -91,34 +91,24 @@ const TaskItem = memo(function TaskItem({ task, onToggle, onEdit, onDelete, isSe
             aria-label={`Task: ${task.text}, Priority: ${task.priority}, Due: ${formatDate(task.due_date)}`}
         >
             <div className="flex items-center gap-4">
-                {/* Show selection checkbox when bulk actions are active, otherwise show completion checkbox */}
-                {onSelect ? (
-                    <input
-                        type="checkbox"
-                        checked={isSelected}
-                        onChange={() => onSelect(task.id)}
-                        className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                        aria-label={`Select task: ${task.text}`}
+                {/* Always show completion checkbox that directly toggles task completion */}
+                <div className="relative">
+                    <input 
+                        type="checkbox" 
+                        checked={task.completed} 
+                        onChange={() => onToggle(task.id, task.completed)}
+                        className={`h-5 w-5 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer transition-all ${
+                            task.completed ? 'hover:scale-105 hover:shadow-sm' : ''
+                        }`}
+                        title={task.completed ? 'Click to uncomplete task' : 'Click to complete task'}
+                        aria-label={task.completed ? `Mark task as incomplete: ${task.text}` : `Mark task as complete: ${task.text}`}
                     />
-                ) : (
-                    <div className="relative">
-                        <input 
-                            type="checkbox" 
-                            checked={task.completed} 
-                            onChange={() => onToggle(task.id, task.completed)}
-                            className={`h-5 w-5 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer transition-all ${
-                                task.completed ? 'hover:scale-105 hover:shadow-sm' : ''
-                            }`}
-                            title={task.completed ? 'Click to uncomplete task' : 'Click to complete task'}
-                            aria-label={task.completed ? `Mark task as incomplete: ${task.text}` : `Mark task as complete: ${task.text}`}
-                        />
-                        {task.completed && (
-                            <div className="absolute -top-1 -right-1 w-3 h-3 bg-green-500 rounded-full border-2 border-white flex items-center justify-center">
-                                <div className="w-1.5 h-1.5 bg-white rounded-full"></div>
-                            </div>
-                        )}
-                    </div>
-                )}
+                    {task.completed && (
+                        <div className="absolute -top-1 -right-1 w-3 h-3 bg-green-500 rounded-full border-2 border-white flex items-center justify-center">
+                            <div className="w-1.5 h-1.5 bg-white rounded-full"></div>
+                        </div>
+                    )}
+                </div>
                 <div className="flex-1">
                     <p className={`font-semibold transition-all ${task.completed ? 'line-through text-gray-400' : ''}`}>
                         {task.text}

@@ -173,7 +173,7 @@ function AcceptInvitationView() {
             <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-purple-50 p-4">
                 <div className="max-w-md w-full bg-white rounded-xl shadow-lg p-8 text-center">
                     <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                        <Icon name="alert-circle" className="w-8 h-8 text-red-600" />
+                        <Icon path="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z" className="w-8 h-8 text-red-600" />
                     </div>
                     <h1 className="text-2xl font-bold text-gray-900 mb-2">Invalid Invitation</h1>
                     <p className="text-gray-600 mb-6">{error}</p>
@@ -195,7 +195,7 @@ function AcceptInvitationView() {
                 <div className="bg-gradient-to-br from-blue-600 to-purple-600 p-8 text-white flex flex-col justify-center">
                     <div className="mb-6">
                         <div className="w-16 h-16 bg-white/20 backdrop-blur rounded-full flex items-center justify-center mb-4">
-                            <Icon name="mail" className="w-8 h-8 text-white" />
+                            <Icon path="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" className="w-8 h-8 text-white" />
                         </div>
                         <h1 className="text-3xl font-bold mb-2">You're Invited!</h1>
                         <p className="text-blue-100 text-lg">Join your team on SiteWeave</p>
@@ -219,7 +219,7 @@ function AcceptInvitationView() {
                         )}
 
                         <div className="flex items-start gap-3 pt-4">
-                            <Icon name="check" className="w-5 h-5 text-green-300 mt-0.5" />
+                            <Icon path="M5 13l4 4L19 7" className="w-5 h-5 text-green-300 mt-0.5" />
                             <div>
                                 <p className="font-medium">Instant Collaboration</p>
                                 <p className="text-sm text-blue-100">Access project files, tasks, and team communication</p>
@@ -329,7 +329,7 @@ function AcceptInvitationView() {
                             ) : (
                                 <>
                                     {isSignUp ? 'Accept Invitation & Sign Up' : 'Accept Invitation & Sign In'}
-                                    <Icon name="arrow-right" className="w-5 h-5" />
+                                    <Icon path="M13.5 4.5L21 12m0 0l-7.5 7.5M21 12H3" className="w-5 h-5" />
                                 </>
                             )}
                         </button>

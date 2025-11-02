@@ -108,7 +108,7 @@ function InvitationManager({ projectId }) {
                             >
                                 <div className="flex-1">
                                     <div className="flex items-center gap-2 mb-1">
-                                        <Icon name="mail" className="w-4 h-4 text-blue-600" />
+                                        <Icon path="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" className="w-4 h-4 text-blue-600" />
                                         <span className="font-medium text-gray-900">{invitation.email}</span>
                                         <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${getStatusBadge(invitation.status)}`}>
                                             {invitation.status}
@@ -132,7 +132,7 @@ function InvitationManager({ projectId }) {
                                             <LoadingSpinner size="sm" text="" />
                                         ) : (
                                             <>
-                                                <Icon name="refresh-cw" className="w-4 h-4 inline mr-1" />
+                                                <Icon path="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" className="w-4 h-4 inline mr-1" />
                                                 Resend
                                             </>
                                         )}
@@ -147,7 +147,7 @@ function InvitationManager({ projectId }) {
                                             <LoadingSpinner size="sm" text="" />
                                         ) : (
                                             <>
-                                                <Icon name="x" className="w-4 h-4 inline mr-1" />
+                                                <Icon path="M6 18L18 6M6 6l12 12" className="w-4 h-4 inline mr-1" />
                                                 Cancel
                                             </>
                                         )}
@@ -171,7 +171,7 @@ function InvitationManager({ projectId }) {
                             >
                                 <div className="flex-1">
                                     <div className="flex items-center gap-2 mb-1">
-                                        <Icon name="mail" className="w-4 h-4 text-gray-400" />
+                                        <Icon path="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" className="w-4 h-4 text-gray-400" />
                                         <span className="font-medium text-gray-700">{invitation.email}</span>
                                         <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${getStatusBadge(
                                             isExpired(invitation.expires_at) ? 'expired' : invitation.status
@@ -196,7 +196,7 @@ function InvitationManager({ projectId }) {
             {/* Empty State */}
             {invitations.length === 0 && (
                 <div className="text-center py-12 bg-gray-50 rounded-lg border-2 border-dashed border-gray-300">
-                    <Icon name="mail" className="w-12 h-12 text-gray-400 mx-auto mb-3" />
+                    <Icon path="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" className="w-12 h-12 text-gray-400 mx-auto mb-3" />
                     <p className="text-gray-600 font-medium">No invitations yet</p>
                     <p className="text-sm text-gray-500 mt-1">Invite team members by assigning tasks to their email addresses</p>
                 </div>
