@@ -107,7 +107,7 @@ function ContactsView() {
             const { data, error } = await supabaseClient
                 .from('contacts')
                 .insert(contactDataWithAudit)
-                .select()
+                .select('*, project_contacts(project_id)')
                 .single();
             
             if (error) {

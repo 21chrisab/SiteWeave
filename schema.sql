@@ -632,6 +632,7 @@ ALTER TABLE profiles DISABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS "All authenticated users can view contacts" ON public.contacts;
 DROP POLICY IF EXISTS "Only admins can create contacts" ON public.contacts;
+DROP POLICY IF EXISTS "Authenticated users can create contacts" ON public.contacts;
 DROP POLICY IF EXISTS "Only admins can update contacts" ON public.contacts;
 DROP POLICY IF EXISTS "Only admins can delete contacts" ON public.contacts;
 
@@ -823,10 +824,10 @@ FOR SELECT
 USING (auth.uid() IS NOT NULL);
 
 -- Contacts INSERT policy
-CREATE POLICY "Only admins can create contacts"
+CREATE POLICY "Authenticated users can create contacts"
 ON public.contacts
 FOR INSERT
-WITH CHECK (get_user_role() = 'Admin');
+WITH CHECK (auth.uid() IS NOT NULL);
 
 -- Contacts UPDATE policy
 CREATE POLICY "Only admins can update contacts"
