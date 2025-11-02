@@ -70,6 +70,7 @@ function appReducer(state, action) {
       calendarEvents: state.calendarEvents.filter(event => event.id !== action.payload) 
     };
     case 'ADD_MESSAGE': return { ...state, messages: [...state.messages, action.payload] };
+    case 'ADD_ACTIVITY': return { ...state, activityLog: [action.payload, ...state.activityLog].slice(0, 50) }; // Keep latest 50
     case 'ADD_CONTACT': {
       // Ensure project_contacts is always an array and prevent duplicates
       const newContact = { ...action.payload, project_contacts: Array.isArray(action.payload.project_contacts) ? action.payload.project_contacts : [] };
@@ -267,7 +268,7 @@ export const AppProvider = ({ children }) => {
           
           const [{ data: projects }, { data: contacts }, { data: tasks }, { data: files }, {data: calendarEvents}, {data: messageChannels}, {data: messages}, { data: userPreferences, error: userPrefsError }, { data: activityLog }] = await Promise.all([
             supabaseClient.from('projects').select('*'),
-            supabaseClient.from('contacts').select('*, project_contacts(project_id)'),
+            supabaseClient.from('contacts').select('*, project_contacts!fk_project_contacts_contact_id(project_id)'),
             supabaseClient.from('tasks').select('*'),
             supabaseClient.from('files').select('*'),
             supabaseClient.from('calendar_events').select('*'),
@@ -340,7 +341,7 @@ export const AppProvider = ({ children }) => {
         // Re-fetch the contact with relationships to match initial load structure
         const { data: fullContact } = await supabaseClient
           .from('contacts')
-          .select('*, project_contacts(project_id)')
+          .select('*, project_contacts!fk_project_contacts_contact_id(project_id)')
           .eq('id', payload.new.id)
           .single();
         if (fullContact) {
@@ -354,7 +355,7 @@ export const AppProvider = ({ children }) => {
         // Re-fetch the contact with relationships
         const { data: fullContact } = await supabaseClient
           .from('contacts')
-          .select('*, project_contacts(project_id)')
+          .select('*, project_contacts!fk_project_contacts_contact_id(project_id)')
           .eq('id', payload.new.id)
           .single();
         if (fullContact) {
@@ -404,6 +405,12 @@ export const AppProvider = ({ children }) => {
         if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
           dispatch({ type: 'SET_USER_PREFERENCES', payload: payload.new });
         }
+      })
+      .subscribe();
+
+    const activityLogSubscription = supabaseClient.channel('public:activity_log')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'activity_log' }, (payload) => {
+        dispatch({ type: 'ADD_ACTIVITY', payload: payload.new });
       })
       .subscribe();
 
