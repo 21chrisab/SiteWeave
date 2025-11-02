@@ -12,6 +12,7 @@ import { useTaskShortcuts } from '../hooks/useKeyboardShortcuts';
 import { handleApiError, createOptimisticUpdate } from '../utils/errorHandling';
 import dropboxStorage from '../utils/dropboxStorage';
 import { parseRecurrence } from '../utils/recurrenceService';
+import { logTaskCreated, logTaskCompleted, logTaskUncompleted, logTaskUpdated, logTaskDeleted } from '../utils/activityLogger';
 
 function ProjectDetailsView() {
     const { state, dispatch } = useAppContext();
@@ -94,6 +95,9 @@ function ProjectDetailsView() {
             dispatch({ type: 'ADD_TASK', payload: data });
             addToast('Task added successfully!', 'success');
             setShowTaskModal(false);
+            
+            // Log activity
+            logTaskCreated(data, state.user, project.id);
         } catch (error) {
             addToast(handleApiError(error, 'Could not add task'), 'error');
         } finally {
@@ -132,8 +136,17 @@ function ProjectDetailsView() {
                 throw error;
             }
 
-            // Generate next instance if this is a recurring parent task being completed
-            if (isRecurringParent) {
+            // Log activity
+            if (!currentStatus) {
+                // Task was completed
+                logTaskCompleted(task, state.user, task.project_id);
+            } else {
+                // Task was uncompleted
+                logTaskUncompleted(task, state.user, task.project_id);
+            }
+
+            // Generate next instance if this is a recurring parent task being completed (not uncompleted)
+            if (isRecurringParent && !currentStatus) {
                 try {
                     const recurrence = parseRecurrence(task.recurrence);
                     if (recurrence) {
