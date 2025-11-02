@@ -9,7 +9,6 @@ import ConfirmDialog from '../components/ConfirmDialog';
 import TaskBulkActions from '../components/TaskBulkActions';
 import FieldIssues from '../components/FieldIssues';
 import { useTaskShortcuts } from '../hooks/useKeyboardShortcuts';
-import { useDragAndDrop } from '../hooks/useDragAndDrop';
 import { handleApiError, createOptimisticUpdate } from '../utils/errorHandling';
 import dropboxStorage from '../utils/dropboxStorage';
 import { parseRecurrence } from '../utils/recurrenceService';
@@ -51,6 +50,7 @@ function ProjectDetailsView() {
         return true; // 'all'
     });
     
+    // Sort tasks based on selected sort option
     const tasks = filteredTasks.sort((a, b) => {
         switch (taskSort) {
             case 'priority':
@@ -64,29 +64,6 @@ function ProjectDetailsView() {
                 return new Date(a.due_date) - new Date(b.due_date);
         }
     });
-
-    // Drag and drop functionality
-    const handleTaskReorder = async (reorderedTasks) => {
-        try {
-            // For now, just update the local state without persisting order
-            // The order will be maintained during the session
-            dispatch({ type: 'REORDER_TASKS', payload: reorderedTasks });
-            addToast('Tasks reordered successfully!', 'success');
-        } catch (error) {
-            addToast(handleApiError(error, 'Could not reorder tasks'), 'error');
-        }
-    };
-
-    const {
-        draggedItem,
-        dragOverIndex,
-        isDragging,
-        handleDragStart,
-        handleDragEnd,
-        handleDragOver,
-        handleDragLeave,
-        handleDrop
-    } = useDragAndDrop(tasks, handleTaskReorder);
     
     if (!project) {
         return (
@@ -436,24 +413,15 @@ function ProjectDetailsView() {
                                 />
                                 {tasks.length > 0 ? (
                                     <ul className="space-y-3">
-                                        {tasks.map((task, index) => (
+                                        {tasks.map((task) => (
                                             <TaskItem 
                                                 key={task.id} 
-                                                task={task} 
-                                                index={index}
+                                                task={task}
                                                 onToggle={handleToggleTask} 
                                                 onEdit={handleEditTask} 
                                                 onDelete={handleDeleteTask}
                                                 isSelected={selectedTasks.includes(task.id)}
                                                 onSelect={handleTaskSelect}
-                                                isDragging={isDragging}
-                                                draggedItem={draggedItem}
-                                                dragOverIndex={dragOverIndex}
-                                                onDragStart={handleDragStart}
-                                                onDragEnd={handleDragEnd}
-                                                onDragOver={handleDragOver}
-                                                onDragLeave={handleDragLeave}
-                                                onDrop={handleDrop}
                                             />
                                         ))}
                                     </ul>

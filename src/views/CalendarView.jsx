@@ -73,11 +73,18 @@ function MiniCalendar({ currentDate, setCurrentDate }) {
                 {days.map((day, index) => {
                     const isCurrentMonth = day.getMonth() === currentDate.getMonth();
                     const isSelected = day.toDateString() === currentDate.toDateString();
+                    const isToday = day.toDateString() === today.toDateString();
                     return (
                         <button 
                             key={index} 
                             onClick={() => setCurrentDate(day)}
-                            className={`py-1 rounded-full ${isCurrentMonth ? 'text-gray-700' : 'text-gray-300'} ${isSelected ? 'bg-blue-600 text-white font-bold' : 'hover:bg-gray-100'}`}
+                            className={`py-1 rounded-full ${isCurrentMonth ? 'text-gray-700' : 'text-gray-300'} ${
+                                isSelected 
+                                    ? 'bg-blue-600 text-white font-bold' 
+                                    : isToday 
+                                        ? 'bg-blue-100 text-blue-700 font-semibold' 
+                                        : 'hover:bg-gray-100'
+                            }`}
                         >
                             {day.getDate()}
                         </button>
@@ -873,7 +880,19 @@ function CalendarView() {
                             slotMaxTime="22:00:00"
                             eventDisplay="block"
                             eventTextColor="white"
-                            dayHeaderFormat={{ weekday: 'short', month: 'short', day: 'numeric' }}
+                            dayHeaderFormat={(date, { view }) => {
+                                // For month view, use the viewed month (activeStart) for all headers
+                                if (view.type === 'dayGridMonth') {
+                                    const viewedMonth = view.activeStart.getMonth();
+                                    const viewedMonthName = new Date(view.activeStart.getFullYear(), viewedMonth, 1)
+                                        .toLocaleDateString('en-US', { month: 'short' });
+                                    const day = date.getDate();
+                                    const weekday = date.toLocaleDateString('en-US', { weekday: 'short' });
+                                    return `${weekday}, ${viewedMonthName} ${day}`;
+                                }
+                                // For day/week views, show weekday, month, and day (each day's own month)
+                                return date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+                            }}
                             slotLabelFormat={{
                                 hour: 'numeric',
                                 minute: '2-digit',

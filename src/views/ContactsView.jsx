@@ -38,8 +38,8 @@ function ContactsView() {
     const teamMembers = state.contacts.filter(c => c.type === 'Team');
     const subcontractors = state.contacts.filter(c => c.type === 'Subcontractor');
 
-    const assignedTeam = teamMembers.filter(c => c.project_contacts.some(pc => pc.project_id === selectedProjectId));
-    const availablePersonnel = teamMembers.filter(c => !c.project_contacts.some(pc => pc.project_id === selectedProjectId));
+    const assignedTeam = teamMembers.filter(c => Array.isArray(c.project_contacts) && c.project_contacts.some(pc => pc.project_id === selectedProjectId));
+    const availablePersonnel = teamMembers.filter(c => !Array.isArray(c.project_contacts) || !c.project_contacts.some(pc => pc.project_id === selectedProjectId));
 
     // Filter contacts based on search and status
     const filteredContacts = useMemo(() => {
@@ -113,8 +113,14 @@ function ContactsView() {
             if (error) {
                 addToast('Error creating contact: ' + error.message, 'error');
             } else {
+                // Ensure the contact data has all required fields before dispatching
+                const contactWithDefaults = {
+                    ...data,
+                    project_contacts: data.project_contacts || [],
+                    status: data.status || 'Available'
+                };
                 addToast('Contact created successfully!', 'success');
-                dispatch({ type: 'ADD_CONTACT', payload: data });
+                dispatch({ type: 'ADD_CONTACT', payload: contactWithDefaults });
                 setShowAddModal(false);
             }
             setIsCreatingContact(false);
