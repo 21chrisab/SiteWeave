@@ -58,7 +58,9 @@ CREATE TABLE IF NOT EXISTS calendar_events (
     attendees TEXT,
     is_all_day BOOLEAN DEFAULT false,
     recurrence TEXT,
-    user_id UUID
+    user_id UUID,
+    external_id TEXT,
+    external_source TEXT
 );
 
 -- Event Categories Table
@@ -194,6 +196,9 @@ CREATE TABLE IF NOT EXISTS tasks (
     priority TEXT,
     completed BOOLEAN DEFAULT false,
     assignee_id UUID,
+    recurrence TEXT,
+    parent_task_id UUID REFERENCES tasks(id),
+    is_recurring_instance BOOLEAN DEFAULT false,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT now()
 );
 
@@ -271,6 +276,10 @@ ALTER TABLE calendar_events ADD COLUMN IF NOT EXISTS created_by_user_id UUID;
 ALTER TABLE calendar_events ADD COLUMN IF NOT EXISTS updated_by_user_id UUID;
 ALTER TABLE calendar_events ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT now();
 
+-- Add external calendar sync fields
+ALTER TABLE calendar_events ADD COLUMN IF NOT EXISTS external_id TEXT;
+ALTER TABLE calendar_events ADD COLUMN IF NOT EXISTS external_source TEXT;
+
 -- Add RLS audit fields to files table
 ALTER TABLE files ADD COLUMN IF NOT EXISTS created_by_user_id UUID;
 ALTER TABLE files ADD COLUMN IF NOT EXISTS updated_by_user_id UUID;
@@ -279,6 +288,11 @@ ALTER TABLE files ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE D
 -- Add RLS audit fields to issue_steps table
 ALTER TABLE issue_steps ADD COLUMN IF NOT EXISTS created_by_user_id UUID;
 ALTER TABLE issue_steps ADD COLUMN IF NOT EXISTS updated_by_user_id UUID;
+
+-- Add recurrence fields to tasks table
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS recurrence TEXT;
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS parent_task_id UUID REFERENCES tasks(id);
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS is_recurring_instance BOOLEAN DEFAULT false;
 
 -- ============================================================================
 -- DATA CLEANUP BEFORE FOREIGN KEY CONSTRAINTS

@@ -85,8 +85,8 @@ class DropboxStorage {
   }
 
 
-  // Upload file to Dropbox
-  async uploadFile(file, folderPath, fileName) {
+  // Upload file to Dropbox with retry and error handling
+  async uploadFile(file, folderPath, fileName, retries = 2) {
     if (!this.isConnected || !this.dbx) {
       throw new Error('Not connected to Dropbox. Please connect your account first.');
     }
@@ -116,8 +116,22 @@ class DropboxStorage {
         dropboxId: response.result.id
       };
     } catch (error) {
+      // Handle token expiration
+      if (error.status === 401 || error.status === 403) {
+        console.warn('Dropbox token expired during upload');
+        this.setAccessToken(null);
+        throw new Error('Dropbox connection expired. Please reconnect your account in Settings.');
+      }
+
+      // Retry on network errors
+      if (retries > 0 && (error.status >= 500 || error.status === 0)) {
+        console.log(`Retrying upload (${retries} attempts left)...`);
+        await new Promise(resolve => setTimeout(resolve, 1000)); // Wait 1 second
+        return this.uploadFile(file, folderPath, fileName, retries - 1);
+      }
+
       console.error('Dropbox upload error:', error);
-      throw new Error(`Failed to upload file to Dropbox: ${error.message}`);
+      throw new Error(`Failed to upload file to Dropbox: ${error.message || 'Unknown error'}`);
     }
   }
 
@@ -137,8 +151,14 @@ class DropboxStorage {
 
       return response.result.url;
     } catch (error) {
+      // Handle token expiration
+      if (error.status === 401 || error.status === 403) {
+        this.setAccessToken(null);
+        throw new Error('Dropbox connection expired. Please reconnect your account in Settings.');
+      }
+
       console.error('Error getting shared link:', error);
-      throw new Error(`Failed to get shared link: ${error.message}`);
+      throw new Error(`Failed to get shared link: ${error.message || 'Unknown error'}`);
     }
   }
 
@@ -166,8 +186,20 @@ class DropboxStorage {
       await this.dbx.filesDeleteV2({ path: filePath });
       return true;
     } catch (error) {
+      // Handle token expiration
+      if (error.status === 401 || error.status === 403) {
+        this.setAccessToken(null);
+        throw new Error('Dropbox connection expired. Please reconnect your account in Settings.');
+      }
+
+      // Handle file not found gracefully
+      if (error.status === 409 || error.status === 404) {
+        console.warn('File not found, may have already been deleted:', filePath);
+        return true; // Consider it successful if file doesn't exist
+      }
+
       console.error('Error deleting file:', error);
-      throw new Error(`Failed to delete file: ${error.message}`);
+      throw new Error(`Failed to delete file: ${error.message || 'Unknown error'}`);
     }
   }
 
@@ -181,8 +213,14 @@ class DropboxStorage {
       const response = await this.dbx.usersGetCurrentAccount();
       return response.result;
     } catch (error) {
+      // Handle token expiration
+      if (error.status === 401 || error.status === 403) {
+        this.setAccessToken(null);
+        throw new Error('Dropbox connection expired. Please reconnect your account in Settings.');
+      }
+
       console.error('Error getting account info:', error);
-      throw new Error(`Failed to get account info: ${error.message}`);
+      throw new Error(`Failed to get account info: ${error.message || 'Unknown error'}`);
     }
   }
 
@@ -196,6 +234,87 @@ class DropboxStorage {
   // Check if connected
   isDropboxConnected() {
     return this.isConnected && !!this.accessToken;
+  }
+
+  // Check connection status by making a lightweight API call
+  async checkConnection() {
+    if (!this.isConnected || !this.dbx) {
+      return false;
+    }
+
+    try {
+      // Make a lightweight API call to verify token is still valid
+      await this.dbx.usersGetCurrentAccount();
+      return true;
+    } catch (error) {
+      // If token is expired or invalid, clear it
+      if (error.status === 401 || error.status === 403) {
+        console.warn('Dropbox token expired or invalid');
+        this.setAccessToken(null);
+        return false;
+      }
+      // For other errors, assume connection is still valid but API call failed
+      return true;
+    }
+  }
+
+  // Attempt to refresh token (Note: Dropbox PKCE doesn't use refresh tokens)
+  // This would require re-authentication in most cases
+  async refreshToken() {
+    // Dropbox PKCE flow doesn't provide refresh tokens
+    // User needs to reconnect via OAuth
+    throw new Error('Token refresh requires re-authentication. Please reconnect your Dropbox account.');
+  }
+
+  // Get storage usage information
+  async getStorageUsage() {
+    if (!this.isConnected || !this.dbx) {
+      throw new Error('Not connected to Dropbox');
+    }
+
+    try {
+      const response = await this.dbx.usersGetSpaceUsage();
+      return {
+        used: response.result.used,
+        allocation: response.result.allocation['.tag'] === 'individual' 
+          ? response.result.allocation.allocated 
+          : null,
+        type: response.result.allocation['.tag']
+      };
+    } catch (error) {
+      console.error('Error getting storage usage:', error);
+      throw new Error(`Failed to get storage usage: ${error.message}`);
+    }
+  }
+
+  // List files in a folder
+  async listFiles(folderPath = '/SiteWeave') {
+    if (!this.isConnected || !this.dbx) {
+      throw new Error('Not connected to Dropbox');
+    }
+
+    try {
+      const response = await this.dbx.filesListFolder({
+        path: folderPath
+      });
+
+      return response.result.entries.map(entry => ({
+        id: entry.id,
+        name: entry.name,
+        path: entry.path_display,
+        size: entry.size,
+        isFolder: entry['.tag'] === 'folder',
+        modified: entry.server_modified || entry.client_modified,
+        sharedUrl: null // Would need to fetch separately
+      }));
+    } catch (error) {
+      if (error.status === 409) {
+        // Folder doesn't exist yet
+        return [];
+      }
+      console.error('Error listing files:', error);
+      throw new Error(`Failed to list files: ${error.message}`);
+    }
   }
 }
 

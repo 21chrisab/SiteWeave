@@ -31,7 +31,13 @@ function InvitationManager({ projectId }) {
         const result = await resendInvitation(invitationId);
         
         if (result.success) {
-            addToast('Invitation resent successfully', 'success');
+            if (result.emailSent) {
+                addToast('Invitation email resent successfully', 'success');
+            } else {
+                addToast('Invitation resent (email may not have been delivered)', 'warning');
+            }
+            // Reload to get updated status
+            loadInvitations();
         } else {
             addToast(result.error || 'Failed to resend invitation', 'error');
         }
@@ -108,9 +114,11 @@ function InvitationManager({ projectId }) {
                                             {invitation.status}
                                         </span>
                                     </div>
-                                    <p className="text-sm text-gray-500">
-                                        Sent {formatDate(invitation.created_at)} • Expires {formatDate(invitation.expires_at)}
-                                    </p>
+                                    <div className="flex items-center gap-3 text-sm text-gray-500">
+                                        <span>Sent {formatDate(invitation.created_at)}</span>
+                                        <span>•</span>
+                                        <span>Expires {formatDate(invitation.expires_at)}</span>
+                                    </div>
                                 </div>
                                 
                                 <div className="flex items-center gap-2">
@@ -198,6 +206,19 @@ function InvitationManager({ projectId }) {
 }
 
 export default InvitationManager;
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

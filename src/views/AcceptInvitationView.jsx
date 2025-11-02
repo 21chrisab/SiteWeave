@@ -82,7 +82,13 @@ function AcceptInvitationView() {
             });
 
             if (signUpError) {
-                setError(signUpError.message);
+                setError(signUpError.message || 'Failed to create account. Please try again.');
+                setIsAccepting(false);
+                return;
+            }
+
+            if (!authData?.user) {
+                setError('Account created but user data is missing. Please try signing in.');
                 setIsAccepting(false);
                 return;
             }
@@ -91,7 +97,7 @@ function AcceptInvitationView() {
             const result = await acceptInvitation(token, authData.user.id);
 
             if (!result.success) {
-                setError(result.error);
+                setError(result.error || 'Failed to accept invitation. Please contact the project manager.');
                 setIsAccepting(false);
                 return;
             }
@@ -121,7 +127,13 @@ function AcceptInvitationView() {
             });
 
             if (signInError) {
-                setError(signInError.message);
+                setError(signInError.message || 'Invalid email or password. Please try again.');
+                setIsAccepting(false);
+                return;
+            }
+
+            if (!authData?.user) {
+                setError('Sign in failed. Please try again.');
                 setIsAccepting(false);
                 return;
             }
@@ -130,7 +142,7 @@ function AcceptInvitationView() {
             const result = await acceptInvitation(token, authData.user.id);
 
             if (!result.success) {
-                setError(result.error);
+                setError(result.error || 'Failed to accept invitation. Please contact the project manager.');
                 setIsAccepting(false);
                 return;
             }
@@ -333,6 +345,19 @@ function AcceptInvitationView() {
 }
 
 export default AcceptInvitationView;
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

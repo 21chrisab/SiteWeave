@@ -5,7 +5,22 @@ import timeGridPlugin from '@fullcalendar/timegrid';
 import interactionPlugin from '@fullcalendar/interaction';
 import { useAppContext, supabaseClient } from '../context/AppContext';
 import { useToast } from '../context/ToastContext';
-import { parseOAuthCallback, clearOAuthParams, handleGoogleCalendarCallback, handleOutlookCalendarCallback, prepareCalendarEventsForInsert } from '../utils/calendarIntegration';
+import { 
+    parseOAuthCallback, 
+    clearOAuthParams, 
+    handleGoogleCalendarCallback, 
+    handleOutlookCalendarCallback, 
+    prepareCalendarEventsForInsert,
+    createGoogleCalendarEvent,
+    createOutlookCalendarEvent,
+    updateGoogleCalendarEvent,
+    updateOutlookCalendarEvent,
+    deleteGoogleCalendarEvent,
+    deleteOutlookCalendarEvent,
+    storeCalendarToken,
+    getStoredCalendarToken
+} from '../utils/calendarIntegration';
+import { generateRecurringInstances } from '../utils/recurrenceService';
 import EventModal from '../components/EventModal';
 import ConfirmDialog from '../components/ConfirmDialog';
 import LoadingSpinner from '../components/LoadingSpinner';
@@ -216,7 +231,14 @@ function CalendarView() {
             return acc;
         }, {});
 
-        return state.calendarEvents.map(event => {
+        // Get calendar view date range (rough estimate for recurring generation)
+        const now = new Date();
+        const viewStart = new Date(now.getFullYear(), now.getMonth() - 1, 1); // 1 month before
+        const viewEnd = new Date(now.getFullYear(), now.getMonth() + 3, 0); // 3 months ahead
+
+        const allEvents = [];
+
+        state.calendarEvents.forEach(event => {
             // Use category color, fallback to 'other' if category not found
             let eventColor = categoryColors[event.category] || categoryColors.other || '#8B5CF6';
             
@@ -234,11 +256,10 @@ function CalendarView() {
                 }
             }
 
-            return {
+            // Base event properties
+            const baseEventProps = {
                 id: event.id,
                 title: event.title,
-                start: event.start_time,
-                end: event.end_time,
                 backgroundColor: eventColor,
                 borderColor: eventColor,
                 allDay: event.is_all_day || false,
@@ -253,7 +274,45 @@ function CalendarView() {
                     color: eventColor
                 }
             };
+
+            // If recurring, generate instances
+            if (event.recurrence) {
+                try {
+                    const instances = generateRecurringInstances(event, viewStart, viewEnd);
+                    instances.forEach(instance => {
+                        allEvents.push({
+                            ...baseEventProps,
+                            id: `${event.id}_${instance.start_time}`,
+                            title: event.title,
+                            start: instance.start_time,
+                            end: instance.end_time,
+                            extendedProps: {
+                                ...baseEventProps.extendedProps,
+                                is_recurring_instance: true,
+                                parent_event_id: event.id
+                            }
+                        });
+                    });
+                } catch (error) {
+                    console.error('Error generating recurring instances:', error);
+                    // Fallback to single event if recurrence fails
+                    allEvents.push({
+                        ...baseEventProps,
+                        start: event.start_time,
+                        end: event.end_time
+                    });
+                }
+            } else {
+                // Non-recurring event
+                allEvents.push({
+                    ...baseEventProps,
+                    start: event.start_time,
+                    end: event.end_time
+                });
+            }
         });
+
+        return allEvents;
     }, [state.calendarEvents, state.projects, categories]);
 
     const handleDateClick = (arg) => {
@@ -293,14 +352,35 @@ function CalendarView() {
             // Update local state
             const updatedEvent = state.calendarEvents.find(e => e.id === eventId);
             if (updatedEvent) {
+                const finalEvent = {
+                    ...updatedEvent, 
+                    start_time: updateData.start_time,
+                    end_time: updateData.end_time
+                };
                 dispatch({ 
                     type: 'UPDATE_EVENT', 
-                    payload: { 
-                        ...updatedEvent, 
-                        start_time: updateData.start_time,
-                        end_time: updateData.end_time
-                    } 
+                    payload: finalEvent
                 });
+                
+                // Sync to external calendars if event is synced
+                if (finalEvent.external_id) {
+                    try {
+                        if (finalEvent.external_source === 'google') {
+                            const token = getStoredCalendarToken('google');
+                            if (token) {
+                                await updateGoogleCalendarEvent(finalEvent, finalEvent.external_id, token);
+                            }
+                        } else if (finalEvent.external_source === 'outlook') {
+                            const token = getStoredCalendarToken('outlook');
+                            if (token) {
+                                await updateOutlookCalendarEvent(finalEvent, finalEvent.external_id, token);
+                            }
+                        }
+                    } catch (syncError) {
+                        console.error('Error syncing event drag to external calendar:', syncError);
+                        // Don't show error toast for drag operations - just log it
+                    }
+                }
             }
 
             addToast('Event moved successfully!', 'success');
@@ -332,13 +412,34 @@ function CalendarView() {
             // Update local state
             const updatedEvent = state.calendarEvents.find(e => e.id === eventId);
             if (updatedEvent) {
+                const finalEvent = {
+                    ...updatedEvent, 
+                    end_time: updateData.end_time
+                };
                 dispatch({ 
                     type: 'UPDATE_EVENT', 
-                    payload: { 
-                        ...updatedEvent, 
-                        end_time: updateData.end_time
-                    } 
+                    payload: finalEvent
                 });
+                
+                // Sync to external calendars if event is synced
+                if (finalEvent.external_id) {
+                    try {
+                        if (finalEvent.external_source === 'google') {
+                            const token = getStoredCalendarToken('google');
+                            if (token) {
+                                await updateGoogleCalendarEvent(finalEvent, finalEvent.external_id, token);
+                            }
+                        } else if (finalEvent.external_source === 'outlook') {
+                            const token = getStoredCalendarToken('outlook');
+                            if (token) {
+                                await updateOutlookCalendarEvent(finalEvent, finalEvent.external_id, token);
+                            }
+                        }
+                    } catch (syncError) {
+                        console.error('Error syncing event resize to external calendar:', syncError);
+                        // Don't show error toast for resize operations - just log it
+                    }
+                }
             }
 
             addToast('Event resized successfully!', 'success');
@@ -350,25 +451,154 @@ function CalendarView() {
     };
 
     const handleSaveEvent = async (eventData) => {
+        const syncToGoogle = eventData.sync_to_google && getStoredCalendarToken('google');
+        const syncToOutlook = eventData.sync_to_outlook && getStoredCalendarToken('outlook');
+        
         if (editingEvent) {
             setIsUpdatingEvent(true);
-            const { error } = await supabaseClient
+            
+            // Update in database first
+            const { data: updatedEvent, error } = await supabaseClient
                 .from('calendar_events')
                 .update(eventData)
-                .eq('id', eventData.id);
+                .eq('id', eventData.id)
+                .select()
+                .single();
             
             if (error) {
                 addToast("Error updating event: " + error.message, 'error');
-            } else {
-                addToast('Event updated successfully!', 'success');
-                dispatch({ type: 'UPDATE_EVENT', payload: { ...eventData, id: editingEvent.id } });
-                setShowModal(false);
-                setEditingEvent(null);
+                setIsUpdatingEvent(false);
+                return;
             }
+            
+            // Sync to external calendars
+            try {
+                // Handle unsyncing (if user unchecks sync checkbox)
+                if (!eventData.sync_to_google && updatedEvent.external_source === 'google') {
+                    const token = getStoredCalendarToken('google');
+                    if (token && updatedEvent.external_id) {
+                        try {
+                            await deleteGoogleCalendarEvent(updatedEvent.external_id, token);
+                        } catch (delError) {
+                            console.warn('Failed to delete from Google Calendar:', delError);
+                        }
+                    }
+                    // Remove external sync info from database
+                    const { data: unsynced } = await supabaseClient
+                        .from('calendar_events')
+                        .update({ external_id: null, external_source: null })
+                        .eq('id', eventData.id)
+                        .select()
+                        .single();
+                    if (unsynced) {
+                        updatedEvent.external_id = null;
+                        updatedEvent.external_source = null;
+                    }
+                }
+                if (!eventData.sync_to_outlook && updatedEvent.external_source === 'outlook') {
+                    const token = getStoredCalendarToken('outlook');
+                    if (token && updatedEvent.external_id) {
+                        try {
+                            await deleteOutlookCalendarEvent(updatedEvent.external_id, token);
+                        } catch (delError) {
+                            console.warn('Failed to delete from Outlook Calendar:', delError);
+                        }
+                    }
+                    // Remove external sync info from database
+                    const { data: unsynced } = await supabaseClient
+                        .from('calendar_events')
+                        .update({ external_id: null, external_source: null })
+                        .eq('id', eventData.id)
+                        .select()
+                        .single();
+                    if (unsynced) {
+                        updatedEvent.external_id = null;
+                        updatedEvent.external_source = null;
+                    }
+                }
+
+                // Update existing synced events
+                if (syncToGoogle && updatedEvent.external_id && updatedEvent.external_source === 'google') {
+                    const token = getStoredCalendarToken('google');
+                    if (token) {
+                        await updateGoogleCalendarEvent(eventData, updatedEvent.external_id, token);
+                    }
+                }
+                if (syncToOutlook && updatedEvent.external_id && updatedEvent.external_source === 'outlook') {
+                    const token = getStoredCalendarToken('outlook');
+                    if (token) {
+                        await updateOutlookCalendarEvent(eventData, updatedEvent.external_id, token);
+                    }
+                }
+                
+                // If enabling new sync, create in external calendar
+                if (syncToGoogle && (!updatedEvent.external_id || updatedEvent.external_source !== 'google')) {
+                    const token = getStoredCalendarToken('google');
+                    if (!token) {
+                        throw new Error('Google Calendar token not found. Please reconnect your calendar.');
+                    }
+                    const syncResult = await createGoogleCalendarEvent(eventData, token);
+                    // Update event with external ID
+                    const { error: updateError } = await supabaseClient
+                        .from('calendar_events')
+                        .update({ 
+                            external_id: syncResult.external_id,
+                            external_source: syncResult.external_source
+                        })
+                        .eq('id', eventData.id);
+                    if (updateError) {
+                        // Try to clean up external event if DB update fails
+                        try {
+                            await deleteGoogleCalendarEvent(syncResult.external_id, token);
+                        } catch (cleanupError) {
+                            console.error('Failed to clean up external event:', cleanupError);
+                        }
+                        throw new Error('Failed to save external calendar sync info: ' + updateError.message);
+                    }
+                    updatedEvent.external_id = syncResult.external_id;
+                    updatedEvent.external_source = syncResult.external_source;
+                }
+                if (syncToOutlook && (!updatedEvent.external_id || updatedEvent.external_source !== 'outlook')) {
+                    const token = getStoredCalendarToken('outlook');
+                    if (!token) {
+                        throw new Error('Outlook Calendar token not found. Please reconnect your calendar.');
+                    }
+                    const syncResult = await createOutlookCalendarEvent(eventData, token);
+                    // Update event with external ID
+                    const { error: updateError } = await supabaseClient
+                        .from('calendar_events')
+                        .update({ 
+                            external_id: syncResult.external_id,
+                            external_source: syncResult.external_source
+                        })
+                        .eq('id', eventData.id);
+                    if (updateError) {
+                        // Try to clean up external event if DB update fails
+                        try {
+                            await deleteOutlookCalendarEvent(syncResult.external_id, token);
+                        } catch (cleanupError) {
+                            console.error('Failed to clean up external event:', cleanupError);
+                        }
+                        throw new Error('Failed to save external calendar sync info: ' + updateError.message);
+                    }
+                    updatedEvent.external_id = syncResult.external_id;
+                    updatedEvent.external_source = syncResult.external_source;
+                }
+            } catch (syncError) {
+                console.error('Error syncing to external calendar:', syncError);
+                addToast('Event updated, but sync to external calendar failed: ' + syncError.message, 'warning');
+            }
+            
+            addToast('Event updated successfully!', 'success');
+            dispatch({ type: 'UPDATE_EVENT', payload: updatedEvent });
+            setShowModal(false);
+            setEditingEvent(null);
             setIsUpdatingEvent(false);
         } else {
             setIsCreatingEvent(true);
-            const { data, error } = await supabaseClient
+            
+            // Create in database first
+            const { data: newEvent, error } = await supabaseClient
                 .from('calendar_events')
                 .insert({ ...eventData, user_id: state.user?.id || null })
                 .select()
@@ -376,11 +606,79 @@ function CalendarView() {
             
             if (error) {
                 addToast("Error saving event: " + error.message, 'error');
-            } else {
-                addToast('Event saved successfully!', 'success');
-                dispatch({ type: 'ADD_EVENT', payload: data });
-                setShowModal(false);
+                setIsCreatingEvent(false);
+                return;
             }
+            
+            // Sync to external calendars
+            try {
+                let finalEvent = { ...newEvent };
+                
+                if (syncToGoogle) {
+                    const token = getStoredCalendarToken('google');
+                    if (!token) {
+                        throw new Error('Google Calendar token not found. Please reconnect your calendar.');
+                    }
+                    const syncResult = await createGoogleCalendarEvent(eventData, token);
+                    // Update event with external ID
+                    const { data: updated, error: updateError } = await supabaseClient
+                        .from('calendar_events')
+                        .update({ 
+                            external_id: syncResult.external_id,
+                            external_source: syncResult.external_source
+                        })
+                        .eq('id', newEvent.id)
+                        .select()
+                        .single();
+                    if (updateError) {
+                        // Try to clean up external event if DB update fails
+                        try {
+                            await deleteGoogleCalendarEvent(syncResult.external_id, token);
+                        } catch (cleanupError) {
+                            console.error('Failed to clean up external event:', cleanupError);
+                        }
+                        throw new Error('Failed to save external calendar sync info: ' + updateError.message);
+                    }
+                    if (updated) finalEvent = updated;
+                }
+                if (syncToOutlook) {
+                    const token = getStoredCalendarToken('outlook');
+                    if (!token) {
+                        throw new Error('Outlook Calendar token not found. Please reconnect your calendar.');
+                    }
+                    const syncResult = await createOutlookCalendarEvent(eventData, token);
+                    // Update event with external ID (overwrite if Google already set, or set if not)
+                    const updateData = { 
+                        external_id: syncResult.external_id,
+                        external_source: syncResult.external_source
+                    };
+                    const { data: updated, error: updateError } = await supabaseClient
+                        .from('calendar_events')
+                        .update(updateData)
+                        .eq('id', newEvent.id)
+                        .select()
+                        .single();
+                    if (updateError) {
+                        // Try to clean up external event if DB update fails
+                        try {
+                            await deleteOutlookCalendarEvent(syncResult.external_id, token);
+                        } catch (cleanupError) {
+                            console.error('Failed to clean up external event:', cleanupError);
+                        }
+                        throw new Error('Failed to save external calendar sync info: ' + updateError.message);
+                    }
+                    if (updated) finalEvent = updated;
+                }
+                
+                dispatch({ type: 'ADD_EVENT', payload: finalEvent });
+                addToast('Event saved and synced successfully!', 'success');
+            } catch (syncError) {
+                console.error('Error syncing to external calendar:', syncError);
+                dispatch({ type: 'ADD_EVENT', payload: newEvent });
+                addToast('Event saved, but sync to external calendar failed: ' + syncError.message, 'warning');
+            }
+            
+            setShowModal(false);
             setIsCreatingEvent(false);
         }
     };
@@ -397,6 +695,28 @@ function CalendarView() {
         if (!eventToDelete) return;
         
         setIsDeletingEvent(true);
+        
+        // Delete from external calendars first
+        try {
+            if (eventToDelete.external_id) {
+                if (eventToDelete.external_source === 'google') {
+                    const token = getStoredCalendarToken('google');
+                    if (token) {
+                        await deleteGoogleCalendarEvent(eventToDelete.external_id, token);
+                    }
+                } else if (eventToDelete.external_source === 'outlook') {
+                    const token = getStoredCalendarToken('outlook');
+                    if (token) {
+                        await deleteOutlookCalendarEvent(eventToDelete.external_id, token);
+                    }
+                }
+            }
+        } catch (syncError) {
+            console.error('Error deleting from external calendar:', syncError);
+            // Continue with local deletion even if external delete fails
+        }
+        
+        // Delete from database
         const { error } = await supabaseClient
             .from('calendar_events')
             .delete()
@@ -407,13 +727,11 @@ function CalendarView() {
         } else {
             addToast('Event deleted successfully!', 'success');
             dispatch({ type: 'DELETE_EVENT', payload: eventToDelete.id });
-            setShowModal(false);
-            setEditingEvent(null);
+            setShowDeleteConfirm(false);
+            setEventToDelete(null);
         }
         
         setIsDeletingEvent(false);
-        setShowDeleteConfirm(false);
-        setEventToDelete(null);
     };
 
     const handleViewChange = (view) => {

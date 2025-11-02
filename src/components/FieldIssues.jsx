@@ -3,6 +3,7 @@ import { useAppContext, supabaseClient } from '../context/AppContext';
 import { useToast } from '../context/ToastContext';
 import Icon from './Icon';
 import Avatar from './Avatar';
+import DateDropdown from './DateDropdown';
 import dropboxStorage from '../utils/dropboxStorage';
 import { sendTaskAssignmentEmail } from '../utils/emailNotifications';
 
@@ -328,36 +329,54 @@ const FieldIssues = ({ projectId }) => {
             const project = state.projects.find(p => p.id === projectId);
             const assignerName = state.user?.user_metadata?.full_name || state.user?.email || 'Project Manager';
             
+            let emailSentCount = 0;
+            let emailFailedCount = 0;
+            
             for (const step of workflowSteps) {
                 const contact = state.contacts.find(c => c.id === step.assigned_to_contact_id);
                 
                 // Only send email if contact has an email address and is not a user
                 if (contact && contact.email) {
-                    const emailResult = await sendTaskAssignmentEmail(
-                        contact.email,
-                        {
-                            description: step.description,
-                            issueTitle: newIssue.title,
-                            priority: newIssue.priority,
-                            dueDate: newIssue.dueDate
-                        },
-                        {
-                            name: project?.name || 'Project',
-                            address: project?.address
-                        },
-                        assignerName
-                    );
+                    try {
+                        const emailResult = await sendTaskAssignmentEmail(
+                            contact.email,
+                            {
+                                description: step.description,
+                                issueTitle: newIssue.title,
+                                priority: newIssue.priority,
+                                dueDate: newIssue.dueDate
+                            },
+                            {
+                                name: project?.name || 'Project',
+                                address: project?.address
+                            },
+                            assignerName
+                        );
 
-                    if (emailResult.success) {
-                        console.log(`Email sent to ${contact.name} (${contact.email})`);
-                    } else {
-                        console.warn(`Failed to send email to ${contact.name}:`, emailResult.error);
-                        // Don't block the UI, just log the warning
+                        if (emailResult.success) {
+                            emailSentCount++;
+                            console.log(`Email sent to ${contact.name} (${contact.email})`);
+                        } else {
+                            emailFailedCount++;
+                            console.warn(`Failed to send email to ${contact.name}:`, emailResult.error);
+                        }
+                    } catch (emailError) {
+                        emailFailedCount++;
+                        console.error(`Error sending email to ${contact.name}:`, emailError);
                     }
                 }
             }
 
-            addToast('Issue created successfully!', 'success');
+            // Show appropriate success message
+            if (emailSentCount > 0 && emailFailedCount === 0) {
+                addToast(`Issue created successfully! ${emailSentCount} notification email${emailSentCount > 1 ? 's' : ''} sent.`, 'success');
+            } else if (emailSentCount > 0 && emailFailedCount > 0) {
+                addToast(`Issue created successfully! ${emailSentCount} email${emailSentCount > 1 ? 's' : ''} sent, ${emailFailedCount} failed.`, 'warning');
+            } else if (emailFailedCount > 0) {
+                addToast(`Issue created successfully, but ${emailFailedCount} email notification${emailFailedCount > 1 ? 's' : ''} failed to send.`, 'warning');
+            } else {
+                addToast('Issue created successfully!', 'success');
+            }
             setShowCreateModal(false);
             setNewIssue({ title: '', description: '', priority: 'Medium', dueDate: '' });
             setWorkflowSteps([{ step_order: 1, description: '', assigned_to_contact_id: '', assigned_to_name: '', assigned_to_role: '' }]);
@@ -588,17 +607,11 @@ const FieldIssues = ({ projectId }) => {
                                             <option value="Critical">Critical</option>
                                         </select>
                                     </div>
-                                    <div>
-                                        <label className="block text-sm font-medium text-gray-700 mb-2">
-                                            Due Date
-                                        </label>
-                                        <input
-                                            type="date"
-                                            value={newIssue.dueDate}
-                                            onChange={(e) => setNewIssue({...newIssue, dueDate: e.target.value})}
-                                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                                        />
-                                    </div>
+                                    <DateDropdown 
+                                        value={newIssue.dueDate} 
+                                        onChange={(value) => setNewIssue({...newIssue, dueDate: value})} 
+                                        label="Due Date"
+                                    />
                                 </div>
                             </div>
 

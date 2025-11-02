@@ -24,17 +24,19 @@ export async function sendInvitation(email, projectId, issueId = null, stepId = 
             return { success: false, error: 'Invalid email address' };
         }
 
-        // Check if user already exists with this email
-        const { data: existingUser } = await supabaseClient
-            .from('auth.users')
-            .select('id, email')
-            .eq('email', email.toLowerCase())
-            .single();
+        // Note: We can't directly query auth.users from client
+        // Instead, we'll check profiles table which links to auth.users
+        // If a profile exists with this email (via contact record), user likely exists
+        const { data: existingProfile } = await supabaseClient
+            .from('profiles')
+            .select('*, contacts!inner(email)')
+            .eq('contacts.email', email.toLowerCase())
+            .maybeSingle();
 
-        if (existingUser) {
+        if (existingProfile) {
             return { 
                 success: false, 
-                error: 'User with this email already exists. Please assign them directly.' 
+                error: 'User with this email already exists. Please assign them directly to the project.' 
             };
         }
 
@@ -98,26 +100,41 @@ export async function sendInvitation(email, projectId, issueId = null, stepId = 
         const invitationUrl = `${appUrl}/invite/${invitationToken}`;
 
         // Send invitation email
-        const emailResult = await supabaseClient.functions.invoke('send-invitation-email', {
-            body: {
-                to: email,
-                inviterName: inviterName,
-                projectName: project?.name || 'a project',
-                invitationUrl: invitationUrl,
-                issueId: issueId,
-                stepId: stepId
-            }
-        });
+        let emailSent = false;
+        let emailError = null;
+        
+        try {
+            const emailResult = await supabaseClient.functions.invoke('send-invitation-email', {
+                body: {
+                    to: email,
+                    inviterName: inviterName,
+                    projectName: project?.name || 'a project',
+                    invitationUrl: invitationUrl,
+                    issueId: issueId,
+                    stepId: stepId
+                }
+            });
 
-        if (emailResult.error) {
-            console.error('Error sending invitation email:', emailResult.error);
-            // Don't fail the invitation creation, just log the error
+            if (emailResult.error) {
+                console.error('Error sending invitation email:', emailResult.error);
+                emailError = emailResult.error.message || 'Failed to send email';
+            } else if (emailResult.data?.error) {
+                console.error('Email service error:', emailResult.data.error);
+                emailError = emailResult.data.error;
+            } else {
+                emailSent = true;
+            }
+        } catch (err) {
+            console.error('Exception sending invitation email:', err);
+            emailError = err.message || 'Failed to send email';
         }
 
         return { 
             success: true, 
             invitationId: invitation.id,
-            invitationToken: invitationToken
+            invitationToken: invitationToken,
+            emailSent: emailSent,
+            emailError: emailError
         };
 
     } catch (error) {
@@ -339,22 +356,37 @@ export async function resendInvitation(invitationId) {
         const invitationUrl = `${appUrl}/invite/${invitation.invitation_token}`;
 
         // Resend email
-        const emailResult = await supabaseClient.functions.invoke('send-invitation-email', {
-            body: {
-                to: invitation.email,
-                inviterName: inviterName,
-                projectName: project?.name || 'a project',
-                invitationUrl: invitationUrl,
-                issueId: invitation.issue_id,
-                stepId: invitation.step_id
-            }
-        });
+        let emailSent = false;
+        let emailError = null;
+        
+        try {
+            const emailResult = await supabaseClient.functions.invoke('send-invitation-email', {
+                body: {
+                    to: invitation.email,
+                    inviterName: inviterName,
+                    projectName: project?.name || 'a project',
+                    invitationUrl: invitationUrl,
+                    issueId: invitation.issue_id,
+                    stepId: invitation.step_id
+                }
+            });
 
-        if (emailResult.error) {
-            return { success: false, error: 'Failed to send email' };
+            if (emailResult.error) {
+                emailError = emailResult.error.message || 'Failed to send email';
+            } else if (emailResult.data?.error) {
+                emailError = emailResult.data.error;
+            } else {
+                emailSent = true;
+            }
+        } catch (err) {
+            emailError = err.message || 'Failed to send email';
         }
 
-        return { success: true };
+        if (!emailSent) {
+            return { success: false, error: emailError || 'Failed to send email' };
+        }
+
+        return { success: true, emailSent: true };
     } catch (error) {
         console.error('Error in resendInvitation:', error);
         return { success: false, error: error.message };
