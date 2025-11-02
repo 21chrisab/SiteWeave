@@ -342,7 +342,12 @@ function ProjectDetailsView() {
                 </div>
                 <div className="flex items-center gap-4">
                     <span className={`px-3 py-1 text-sm font-semibold rounded-full ${project.status_color === 'green' ? 'bg-green-100 text-green-800' : 'bg-orange-100 text-orange-800'}`}>{project.status}</span>
-                    <button className="px-4 py-2 text-sm font-semibold text-white bg-blue-600 rounded-lg shadow-sm">+ Add Team Member</button>
+                    <button 
+                        onClick={() => dispatch({ type: 'SET_VIEW', payload: 'Contacts' })}
+                        className="px-4 py-2 text-sm font-semibold text-white bg-blue-600 rounded-lg shadow-sm hover:bg-blue-700 transition-colors"
+                    >
+                        + Add Team Member
+                    </button>
                 </div>
             </header>
 

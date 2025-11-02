@@ -67,6 +67,23 @@ function DashboardView() {
                 console.error('Project creation error:', error);
                 addToast('Error creating project: ' + error.message, 'error');
             } else {
+                // Create a message channel for the project
+                const { data: messageChannel, error: channelError } = await supabaseClient
+                    .from('message_channels')
+                    .insert({
+                        project_id: createdProject.id,
+                        name: `${createdProject.name} Discussion`
+                    })
+                    .select()
+                    .single();
+
+                if (channelError) {
+                    console.error('Error creating message channel:', channelError);
+                    addToast('Project created, but message channel could not be created', 'warning');
+                } else {
+                    dispatch({ type: 'ADD_CHANNEL', payload: messageChannel });
+                }
+
                 // Add selected contacts to the project
                 if (selectedContacts && selectedContacts.length > 0) {
                     const projectContactsData = selectedContacts.map(contactId => ({

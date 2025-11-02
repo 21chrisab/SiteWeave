@@ -881,22 +881,32 @@ function CalendarView() {
                             eventDisplay="block"
                             eventTextColor="white"
                             dayHeaderFormat={(date, options) => {
-                                // Ensure date is a Date object
-                                const dateObj = date instanceof Date ? date : new Date(date);
-                                
-                                // Check if options and view exist before accessing
-                                if (options?.view?.type === 'dayGridMonth') {
-                                    // For month view, use the viewed month (activeStart) for all headers
-                                    const viewedMonth = options.view.activeStart.getMonth();
-                                    const viewedMonthName = new Date(options.view.activeStart.getFullYear(), viewedMonth, 1)
-                                        .toLocaleDateString('en-US', { month: 'short' });
-                                    const day = dateObj.getDate();
-                                    const weekday = dateObj.toLocaleDateString('en-US', { weekday: 'short' });
-                                    return `${weekday}, ${viewedMonthName} ${day}`;
+                                try {
+                                    // Ensure date is a Date object
+                                    const dateObj = date instanceof Date ? date : new Date(date);
+                                    
+                                    // Validate that we have a valid date
+                                    if (isNaN(dateObj.getTime())) {
+                                        return 'Invalid Date';
+                                    }
+                                    
+                                    // Check if options and view exist before accessing
+                                    if (options?.view?.type === 'dayGridMonth') {
+                                        // For month view, use the viewed month (activeStart) for all headers
+                                        const viewedMonth = options.view.activeStart.getMonth();
+                                        const viewedMonthName = new Date(options.view.activeStart.getFullYear(), viewedMonth, 1)
+                                            .toLocaleDateString('en-US', { month: 'short' });
+                                        const day = dateObj.getDate();
+                                        const weekday = dateObj.toLocaleDateString('en-US', { weekday: 'short' });
+                                        return `${weekday}, ${viewedMonthName} ${day}`;
+                                    }
+                                    // For day/week views, show weekday, month, and day (each day's own month)
+                                    // Fallback to default format if options/view is missing
+                                    return dateObj.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+                                } catch (error) {
+                                    console.error('Error formatting date:', error, date);
+                                    return String(date);
                                 }
-                                // For day/week views, show weekday, month, and day (each day's own month)
-                                // Fallback to default format if options/view is missing
-                                return dateObj.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
                             }}
                             slotLabelFormat={{
                                 hour: 'numeric',

@@ -532,7 +532,7 @@ BEGIN
         ALTER TABLE tasks ADD CONSTRAINT fk_tasks_project_id FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE;
     END IF;
     IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_tasks_assignee_id') THEN
-        ALTER TABLE tasks ADD CONSTRAINT fk_tasks_assignee_id FOREIGN KEY (assignee_id) REFERENCES auth.users(id);
+        ALTER TABLE tasks ADD CONSTRAINT fk_tasks_assignee_id FOREIGN KEY (assignee_id) REFERENCES contacts(id);
     END IF;
 END $$;
 
@@ -631,10 +631,13 @@ DROP POLICY IF EXISTS "Only admins can delete profiles" ON public.profiles;
 ALTER TABLE profiles DISABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS "All authenticated users can view contacts" ON public.contacts;
+DROP POLICY IF EXISTS "Users can view their own contacts" ON public.contacts;
 DROP POLICY IF EXISTS "Only admins can create contacts" ON public.contacts;
 DROP POLICY IF EXISTS "Authenticated users can create contacts" ON public.contacts;
 DROP POLICY IF EXISTS "Only admins can update contacts" ON public.contacts;
+DROP POLICY IF EXISTS "Users can update their own contacts" ON public.contacts;
 DROP POLICY IF EXISTS "Only admins can delete contacts" ON public.contacts;
+DROP POLICY IF EXISTS "Users can delete their own contacts" ON public.contacts;
 
 DROP POLICY IF EXISTS "Users can see events for projects they have access to" ON public.calendar_events;
 DROP POLICY IF EXISTS "Users can create events for accessible projects" ON public.calendar_events;
@@ -818,10 +821,10 @@ USING (
 -- ============================================================================
 
 -- Contacts SELECT policy
-CREATE POLICY "All authenticated users can view contacts"
+CREATE POLICY "Users can view their own contacts"
 ON public.contacts
 FOR SELECT
-USING (auth.uid() IS NOT NULL);
+USING (created_by_user_id = auth.uid());
 
 -- Contacts INSERT policy
 CREATE POLICY "Authenticated users can create contacts"
@@ -830,16 +833,16 @@ FOR INSERT
 WITH CHECK (auth.uid() IS NOT NULL);
 
 -- Contacts UPDATE policy
-CREATE POLICY "Only admins can update contacts"
+CREATE POLICY "Users can update their own contacts"
 ON public.contacts
 FOR UPDATE
-USING (get_user_role() = 'Admin');
+USING (created_by_user_id = auth.uid());
 
 -- Contacts DELETE policy
-CREATE POLICY "Only admins can delete contacts"
+CREATE POLICY "Users can delete their own contacts"
 ON public.contacts
 FOR DELETE
-USING (get_user_role() = 'Admin');
+USING (created_by_user_id = auth.uid());
 
 -- ============================================================================
 -- CALENDAR EVENTS TABLE POLICIES
