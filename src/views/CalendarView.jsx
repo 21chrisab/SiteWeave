@@ -82,7 +82,7 @@ function MiniCalendar({ currentDate, setCurrentDate }) {
                                 isSelected 
                                     ? 'bg-blue-600 text-white font-bold' 
                                     : isToday 
-                                        ? 'bg-blue-100 text-blue-700 font-semibold' 
+                                        ? 'bg-blue-200 text-blue-800 font-semibold' 
                                         : 'hover:bg-gray-100'
                             }`}
                         >
@@ -882,12 +882,38 @@ function CalendarView() {
                             eventTextColor="white"
                             dayHeaderFormat={(date, options) => {
                                 try {
-                                    // Ensure date is a Date object
-                                    const dateObj = date instanceof Date ? date : new Date(date);
+                                    // Handle different date formats that FullCalendar might pass
+                                    let dateObj;
+                                    if (date instanceof Date) {
+                                        dateObj = date;
+                                    } else if (typeof date === 'string') {
+                                        dateObj = new Date(date);
+                                    } else if (date && typeof date === 'object' && 'date' in date) {
+                                        // FullCalendar might pass an object with a date property
+                                        dateObj = date.date instanceof Date ? date.date : new Date(date.date);
+                                    } else {
+                                        // Try to construct from options if available
+                                        if (options?.view?.activeStart) {
+                                            dateObj = new Date(options.view.activeStart);
+                                        } else {
+                                            dateObj = new Date();
+                                        }
+                                    }
                                     
                                     // Validate that we have a valid date
-                                    if (isNaN(dateObj.getTime())) {
-                                        return 'Invalid Date';
+                                    if (!dateObj || isNaN(dateObj.getTime())) {
+                                        // Fallback: try to get date from calendar API
+                                        if (calendarRef.current) {
+                                            const calendarApi = calendarRef.current.getApi();
+                                            const view = calendarApi.view;
+                                            if (view && view.activeStart) {
+                                                dateObj = new Date(view.activeStart);
+                                            }
+                                        }
+                                        // Final fallback to today
+                                        if (!dateObj || isNaN(dateObj.getTime())) {
+                                            dateObj = new Date();
+                                        }
                                     }
                                     
                                     // Check if options and view exist before accessing
@@ -905,7 +931,19 @@ function CalendarView() {
                                     return dateObj.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
                                 } catch (error) {
                                     console.error('Error formatting date:', error, date);
-                                    return String(date);
+                                    // Final fallback - try to get current view date
+                                    try {
+                                        if (calendarRef.current) {
+                                            const calendarApi = calendarRef.current.getApi();
+                                            const view = calendarApi.view;
+                                            if (view && view.activeStart) {
+                                                return new Date(view.activeStart).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+                                            }
+                                        }
+                                    } catch (e) {
+                                        // Ignore errors in fallback
+                                    }
+                                    return new Date().toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
                                 }
                             }}
                             slotLabelFormat={{

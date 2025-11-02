@@ -245,17 +245,68 @@ function ProjectDetailsView() {
     };
 
     const confirmDeleteTask = async () => {
-        if (taskToDelete) {
+        if (!taskToDelete) {
+            setShowDeleteConfirm(false);
+            setTaskToDelete(null);
+            return;
+        }
+
+        try {
+            // First, find all child tasks (subtasks) that reference this task as parent
+            const { data: childTasks, error: fetchError } = await supabaseClient
+                .from('tasks')
+                .select('id')
+                .eq('parent_task_id', taskToDelete.id);
+
+            if (fetchError) {
+                addToast('Error checking for subtasks: ' + fetchError.message, 'error');
+                setShowDeleteConfirm(false);
+                setTaskToDelete(null);
+                return;
+            }
+
+            // If there are child tasks, set their parent_task_id to null first
+            if (childTasks && childTasks.length > 0) {
+                const { error: updateError } = await supabaseClient
+                    .from('tasks')
+                    .update({ parent_task_id: null })
+                    .eq('parent_task_id', taskToDelete.id);
+
+                if (updateError) {
+                    addToast('Error updating subtasks: ' + updateError.message, 'error');
+                    setShowDeleteConfirm(false);
+                    setTaskToDelete(null);
+                    return;
+                }
+
+                // Update child tasks in state
+                childTasks.forEach(childTask => {
+                    const updatedTask = { ...state.tasks.find(t => t.id === childTask.id), parent_task_id: null };
+                    dispatch({ type: 'UPDATE_TASK', payload: updatedTask });
+                });
+            }
+
+            // Now delete the parent task
             const { error } = await supabaseClient.from('tasks').delete().eq('id', taskToDelete.id);
+            
             if (error) {
                 addToast('Error deleting task: ' + error.message, 'error');
             } else {
                 dispatch({ type: 'DELETE_TASK', payload: taskToDelete.id });
-                addToast('Task deleted successfully!', 'success');
+                const childCount = childTasks?.length || 0;
+                if (childCount > 0) {
+                    addToast(`Task deleted successfully! ${childCount} subtask${childCount > 1 ? 's' : ''} converted to top-level tasks.`, 'success');
+                } else {
+                    addToast('Task deleted successfully!', 'success');
+                }
             }
+        } catch (error) {
+            console.error('Error deleting task:', error);
+            addToast('Error deleting task: ' + error.message, 'error');
+        } finally {
+            setShowDeleteConfirm(false);
+            setTaskToDelete(null);
         }
-        setShowDeleteConfirm(false);
-        setTaskToDelete(null);
     };
 
     const handleTaskSelect = (taskId) => {
@@ -282,16 +333,58 @@ function ProjectDetailsView() {
     };
 
     const handleBulkDelete = async (taskIds) => {
-        const { error } = await supabaseClient.from('tasks').delete().in('id', taskIds);
-        if (error) {
+        try {
+            // First, find all child tasks that reference any of these tasks as parent
+            const { data: childTasks, error: fetchError } = await supabaseClient
+                .from('tasks')
+                .select('id, parent_task_id')
+                .in('parent_task_id', taskIds);
+
+            if (fetchError) {
+                addToast('Error checking for subtasks: ' + fetchError.message, 'error');
+                return;
+            }
+
+            // If there are child tasks, set their parent_task_id to null first
+            if (childTasks && childTasks.length > 0) {
+                const { error: updateError } = await supabaseClient
+                    .from('tasks')
+                    .update({ parent_task_id: null })
+                    .in('parent_task_id', taskIds);
+
+                if (updateError) {
+                    addToast('Error updating subtasks: ' + updateError.message, 'error');
+                    return;
+                }
+
+                // Update child tasks in state
+                childTasks.forEach(childTask => {
+                    const updatedTask = { ...state.tasks.find(t => t.id === childTask.id), parent_task_id: null };
+                    dispatch({ type: 'UPDATE_TASK', payload: updatedTask });
+                });
+            }
+
+            // Now delete the selected tasks
+            const { error } = await supabaseClient.from('tasks').delete().in('id', taskIds);
+            
+            if (error) {
+                addToast('Error deleting tasks: ' + error.message, 'error');
+            } else {
+                // Remove each task from the state
+                taskIds.forEach(taskId => {
+                    dispatch({ type: 'DELETE_TASK', payload: taskId });
+                });
+                const childCount = childTasks?.length || 0;
+                if (childCount > 0) {
+                    addToast(`${taskIds.length} task${taskIds.length > 1 ? 's' : ''} deleted successfully! ${childCount} subtask${childCount > 1 ? 's' : ''} converted to top-level tasks.`, 'success');
+                } else {
+                    addToast(`${taskIds.length} task${taskIds.length > 1 ? 's' : ''} deleted successfully!`, 'success');
+                }
+                setSelectedTasks([]);
+            }
+        } catch (error) {
+            console.error('Error in bulk delete:', error);
             addToast('Error deleting tasks: ' + error.message, 'error');
-        } else {
-            // Remove each task from the state
-            taskIds.forEach(taskId => {
-                dispatch({ type: 'DELETE_TASK', payload: taskId });
-            });
-            addToast(`${taskIds.length} tasks deleted successfully!`, 'success');
-            setSelectedTasks([]);
         }
     };
 

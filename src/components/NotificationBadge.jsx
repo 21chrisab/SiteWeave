@@ -1,32 +1,92 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useAppContext } from '../context/AppContext';
 
 function NotificationBadge() {
     const { state } = useAppContext();
     const [notifications, setNotifications] = useState([]);
     const [isVisible, setIsVisible] = useState(false);
+    const hasShownSessionRef = useRef(false);
+    const lastActivityIdsRef = useRef(new Set());
 
     useEffect(() => {
-        // Use real activity data from the database
-        const recentActivity = state.activityLog.slice(0, 4).map(activity => ({
-            id: activity.id,
-            message: `${activity.user_name} ${activity.action}`,
-            time: formatTimeAgo(activity.created_at),
-            type: activity.entity_type || 'general'
-        }));
-
-        // Only show notifications if there's real activity
-        if (recentActivity.length > 0) {
-            setNotifications(recentActivity);
-            setIsVisible(true);
-
-            // Auto-hide after 5 seconds
-            const timer = setTimeout(() => {
-                setIsVisible(false);
-            }, 5000);
-
-            return () => clearTimeout(timer);
+        // Only show notifications for NEW activities since last session, or once per app session
+        const recentActivity = state.activityLog.slice(0, 4);
+        
+        if (recentActivity.length === 0) {
+            return;
         }
+
+        // On first load, check if we've shown notifications this session
+        if (!hasShownSessionRef.current) {
+            // Check localStorage for last shown activity ID
+            const lastShownId = localStorage.getItem('lastShownActivityId');
+            const lastActivityId = recentActivity[0]?.id;
+            
+            // Only show if there are new activities (different ID) or if no previous ID stored
+            if (!lastShownId || lastActivityId !== lastShownId) {
+                const formattedActivity = recentActivity.map(activity => ({
+                    id: activity.id,
+                    message: `${activity.user_name} ${activity.action}`,
+                    time: formatTimeAgo(activity.created_at),
+                    type: activity.entity_type || 'general'
+                }));
+
+                setNotifications(formattedActivity);
+                setIsVisible(true);
+                hasShownSessionRef.current = true;
+                
+                // Store the latest activity ID
+                if (lastActivityId) {
+                    localStorage.setItem('lastShownActivityId', lastActivityId);
+                }
+
+                // Auto-hide after 5 seconds
+                const timer = setTimeout(() => {
+                    setIsVisible(false);
+                }, 5000);
+
+                return () => clearTimeout(timer);
+            }
+        } else {
+            // After initial show, only show for NEW activities (not already shown)
+            const newActivities = recentActivity.filter(activity => 
+                !lastActivityIdsRef.current.has(activity.id)
+            );
+            
+            if (newActivities.length > 0) {
+                // Update the ref with new activity IDs
+                newActivities.forEach(activity => {
+                    lastActivityIdsRef.current.add(activity.id);
+                });
+                
+                const formattedActivity = newActivities.slice(0, 4).map(activity => ({
+                    id: activity.id,
+                    message: `${activity.user_name} ${activity.action}`,
+                    time: formatTimeAgo(activity.created_at),
+                    type: activity.entity_type || 'general'
+                }));
+
+                setNotifications(formattedActivity);
+                setIsVisible(true);
+                
+                // Store the latest activity ID
+                if (newActivities[0]?.id) {
+                    localStorage.setItem('lastShownActivityId', newActivities[0].id);
+                }
+
+                // Auto-hide after 5 seconds
+                const timer = setTimeout(() => {
+                    setIsVisible(false);
+                }, 5000);
+
+                return () => clearTimeout(timer);
+            }
+        }
+        
+        // Initialize the ref with current activity IDs
+        recentActivity.forEach(activity => {
+            lastActivityIdsRef.current.add(activity.id);
+        });
     }, [state.activityLog]);
 
     // Helper function to format time ago
