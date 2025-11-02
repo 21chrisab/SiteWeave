@@ -20,6 +20,12 @@ const UpdateNotification = () => {
     });
 
     window.electronAPI.onUpdateError((error) => {
+      // Filter out 404/latest.yml errors - these are normal when release artifacts aren't ready yet
+      if (error && (error.includes('latest.yml') || error.includes('404'))) {
+        console.log('Update check skipped: Release artifacts not available yet');
+        return;
+      }
+      // Only show non-404 errors in UI
       setUpdateError(error);
       setUpdateAvailable(false);
       setUpdateDownloaded(false);
@@ -57,16 +63,20 @@ const UpdateNotification = () => {
   };
 
   if (updateError) {
+    // Truncate error message to first 100 characters
+    const shortError = updateError.length > 100 ? updateError.substring(0, 100) + '...' : updateError;
+    
     return (
-      <div className="fixed top-4 right-4 bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded-lg shadow-lg z-50 max-w-sm">
-        <div className="flex items-center justify-between">
-          <div>
-            <h4 className="font-semibold">Update Error</h4>
-            <p className="text-sm">{updateError}</p>
+      <div className="fixed top-4 right-4 bg-red-100 border border-red-400 text-red-700 px-3 py-2 rounded-lg shadow-lg z-50 max-w-xs text-xs">
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex-1">
+            <h4 className="font-semibold text-xs mb-1">Update Error</h4>
+            <p className="text-xs">{shortError}</p>
           </div>
           <button
             onClick={dismissNotification}
-            className="ml-4 text-red-500 hover:text-red-700"
+            className="text-red-500 hover:text-red-700 text-sm flex-shrink-0"
+            title="Dismiss"
           >
             ✕
           </button>

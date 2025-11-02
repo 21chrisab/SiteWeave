@@ -436,8 +436,13 @@ autoUpdater.on('update-downloaded', () => {
 });
 
 autoUpdater.on('error', (error) => {
-  console.error('Auto-updater error:', error);
-  mainWindow?.webContents.send('update-error', error.message);
+  // Only log 404/latest.yml errors to console, don't send to UI
+  if (error.message && (error.message.includes('latest.yml') || error.message.includes('404'))) {
+    console.log('Update check: No release artifacts found (this is normal for new releases)', error.message);
+    return;
+  }
+  // For other errors, log to console only (don't show UI)
+  console.error('Auto-updater error:', error.message || error);
 });
 
 // IPC handlers
