@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import Icon from './Icon';
+import Avatar from './Avatar';
 
 function ContactCard({ contact, onAction, actionType, onEdit, onDelete, showActions = false }) {
     const [showActionsMenu, setShowActionsMenu] = useState(false);
@@ -40,7 +41,11 @@ function ContactCard({ contact, onAction, actionType, onEdit, onDelete, showActi
     return (
         <li className="flex items-center justify-between p-3 rounded-lg hover:bg-gray-50 group relative">
             <div className="flex items-center gap-3 flex-1">
-                <img src={contact.avatar_url} alt={contact.name} className="w-10 h-10 rounded-full" />
+                {contact.avatar_url ? (
+                    <img src={contact.avatar_url} alt={contact.name} className="w-10 h-10 rounded-full" />
+                ) : (
+                    <Avatar name={contact.name} size="lg" />
+                )}
                 <div className="flex-1">
                     <div className="flex items-center gap-2">
                         <p className="font-semibold">{contact.name}</p>

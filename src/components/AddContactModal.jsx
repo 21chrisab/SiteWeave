@@ -32,7 +32,7 @@ function AddContactModal({ onClose, onSave, contact = null, isLoading = false })
             type,
             company: type === 'Subcontractor' ? company : 'SiteWeave',
             trade: type === 'Subcontractor' ? trade : 'Internal',
-            avatar_url: `https://i.pravatar.cc/150?u=${name.replace(/\s/g, '_').toLowerCase()}`,
+            avatar_url: null, // Will use Avatar component with initials
             email,
             phone,
             status: 'Available'

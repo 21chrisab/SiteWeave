@@ -70,7 +70,7 @@ function appReducer(state, action) {
       calendarEvents: state.calendarEvents.filter(event => event.id !== action.payload) 
     };
     case 'ADD_MESSAGE': return { ...state, messages: [...state.messages, action.payload] };
-    case 'ADD_CONTACT': return { ...state, contacts: [...state.contacts, { ...action.payload, project_contacts: [] }] };
+    case 'ADD_CONTACT': return { ...state, contacts: [...state.contacts, { ...action.payload, project_contacts: action.payload.project_contacts || [] }] };
     case 'UPDATE_CONTACT': return { 
       ...state, 
       contacts: state.contacts.map(contact => 
