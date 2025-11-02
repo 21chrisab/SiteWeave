@@ -193,7 +193,7 @@ const FieldIssues = ({ projectId }) => {
                 .select(`
                     *,
                     issue_steps:issue_steps!issue_steps_issue_id_fkey(*, contacts:contacts!fk_issue_steps_assigned_to_contact(name, role, avatar_url)),
-                    issue_files(*)
+                    issue_files!fk_issue_files_issue_id(*)
                 `)
                 .eq('project_id', projectId)
                 .eq('status', 'open')

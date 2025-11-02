@@ -70,7 +70,22 @@ function appReducer(state, action) {
       calendarEvents: state.calendarEvents.filter(event => event.id !== action.payload) 
     };
     case 'ADD_MESSAGE': return { ...state, messages: [...state.messages, action.payload] };
-    case 'ADD_CONTACT': return { ...state, contacts: [...state.contacts, { ...action.payload, project_contacts: action.payload.project_contacts || [] }] };
+    case 'ADD_CONTACT': {
+      // Ensure project_contacts is always an array and prevent duplicates
+      const newContact = { ...action.payload, project_contacts: Array.isArray(action.payload.project_contacts) ? action.payload.project_contacts : [] };
+      
+      // Check if contact already exists (to prevent duplicates from real-time subscription)
+      const exists = state.contacts.some(c => c.id === newContact.id);
+      if (exists) {
+        // Update existing contact instead of adding duplicate
+        return {
+          ...state,
+          contacts: state.contacts.map(c => c.id === newContact.id ? newContact : c)
+        };
+      }
+      
+      return { ...state, contacts: [...state.contacts, newContact] };
+    }
     case 'UPDATE_CONTACT': return { 
       ...state, 
       contacts: state.contacts.map(contact => 

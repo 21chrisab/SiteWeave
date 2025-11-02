@@ -92,13 +92,19 @@ class DropboxStorage {
     }
 
     try {
-      const filePath = `/SiteWeave${folderPath}/${fileName}`;
+      // Normalize path - ensure it starts with /SiteWeave and doesn't have double slashes
+      const normalizedFolderPath = folderPath.startsWith('/') ? folderPath : `/${folderPath}`;
+      const cleanFolderPath = normalizedFolderPath.replace(/\/+/g, '/');
+      const filePath = `/SiteWeave${cleanFolderPath}/${fileName}`.replace(/\/+/g, '/');
+      
+      // Convert file to ArrayBuffer for upload
+      const arrayBuffer = await file.arrayBuffer();
       
       // Upload file
       const response = await this.dbx.filesUpload({
         path: filePath,
-        contents: file,
-        mode: 'overwrite'
+        contents: arrayBuffer,
+        mode: { '.tag': 'overwrite' }
       });
 
       // Get shared link
@@ -123,6 +129,14 @@ class DropboxStorage {
         throw new Error('Dropbox connection expired. Please reconnect your account in Settings.');
       }
 
+      // Handle 400 errors - likely path format issue
+      if (error.status === 400) {
+        console.error('Dropbox upload error (400):', error);
+        // Try to extract more specific error message
+        const errorMessage = error.error?.error_summary || error.message || 'Invalid request';
+        throw new Error(`Failed to upload file to Dropbox: ${errorMessage}. Please check the file path and try again.`);
+      }
+
       // Retry on network errors
       if (retries > 0 && (error.status >= 500 || error.status === 0)) {
         console.log(`Retrying upload (${retries} attempts left)...`);
@@ -131,7 +145,7 @@ class DropboxStorage {
       }
 
       console.error('Dropbox upload error:', error);
-      throw new Error(`Failed to upload file to Dropbox: ${error.message || 'Unknown error'}`);
+      throw new Error(`Failed to upload file to Dropbox: ${error.message || error.error?.error_summary || 'Unknown error'}`);
     }
   }
 
@@ -294,8 +308,18 @@ class DropboxStorage {
     }
 
     try {
+      // Normalize path - ensure it doesn't end with / (unless it's root)
+      let normalizedPath = folderPath.trim();
+      if (normalizedPath !== '/' && normalizedPath.endsWith('/')) {
+        normalizedPath = normalizedPath.slice(0, -1);
+      }
+      // Ensure path starts with /
+      if (!normalizedPath.startsWith('/')) {
+        normalizedPath = `/${normalizedPath}`;
+      }
+      
       const response = await this.dbx.filesListFolder({
-        path: folderPath
+        path: normalizedPath
       });
 
       return response.result.entries.map(entry => ({
@@ -309,11 +333,33 @@ class DropboxStorage {
       }));
     } catch (error) {
       if (error.status === 409) {
-        // Folder doesn't exist yet
+        // Folder doesn't exist yet, try to create it or return empty
+        return [];
+      }
+      if (error.status === 400) {
+        // Bad request - likely path format issue, try with /SiteWeave as fallback
+        if (normalizedPath !== '/SiteWeave') {
+          console.warn(`Path ${normalizedPath} failed, trying /SiteWeave instead`);
+          try {
+            const fallbackResponse = await this.dbx.filesListFolder({ path: '/SiteWeave' });
+            return fallbackResponse.result.entries.map(entry => ({
+              id: entry.id,
+              name: entry.name,
+              path: entry.path_display,
+              size: entry.size,
+              isFolder: entry['.tag'] === 'folder',
+              modified: entry.server_modified || entry.client_modified,
+              sharedUrl: null
+            }));
+          } catch (fallbackError) {
+            // If even root fails, return empty
+            return [];
+          }
+        }
         return [];
       }
       console.error('Error listing files:', error);
-      throw new Error(`Failed to list files: ${error.message}`);
+      throw new Error(`Failed to list files: ${error.message || 'Unknown error'}`);
     }
   }
 }

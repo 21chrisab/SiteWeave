@@ -2,7 +2,7 @@ import React, { useState, memo } from 'react';
 import Icon from './Icon';
 import DateDropdown from './DateDropdown';
 
-const TaskItem = memo(function TaskItem({ task, onToggle, onEdit, onDelete, isSelected, onSelect, index, isDragging, draggedItem, dragOverIndex, onDragStart, onDragEnd, onDragOver, onDragLeave, onDrop }) {
+const TaskItem = memo(function TaskItem({ task, onToggle, onEdit, onDelete, isSelected, onSelect }) {
     const [isEditing, setIsEditing] = useState(false);
     const [editText, setEditText] = useState(task.text);
     const [editDueDate, setEditDueDate] = useState(task.due_date || '');
@@ -82,45 +82,15 @@ const TaskItem = memo(function TaskItem({ task, onToggle, onEdit, onDelete, isSe
         );
     }
 
-    const isDragOver = dragOverIndex === index;
-    const isBeingDragged = isDragging && draggedItem === index;
-
     return (
         <li 
             className={`flex items-center justify-between p-3 rounded-lg group transition-all animate-slide-in ${
                 isSelected ? 'bg-blue-50 border border-blue-200' : ''
-            } ${task.completed ? 'bg-green-50/30 hover:bg-green-50/50 border-l-4 border-l-green-400' : 'hover:bg-gray-50'} ${
-                isDragOver ? 'border-t-2 border-t-blue-400 bg-blue-50/30' : ''
-            } ${isBeingDragged ? 'opacity-70 scale-98' : ''}`}
-            draggable={!isEditing}
-            onDragStart={(e) => onDragStart && onDragStart(e, index)}
-            onDragEnd={(e) => onDragEnd && onDragEnd(e)}
-            onDragOver={(e) => onDragOver && onDragOver(e, index)}
-            onDragLeave={(e) => onDragLeave && onDragLeave(e)}
-            onDrop={(e) => onDrop && onDrop(e, index)}
+            } ${task.completed ? 'bg-green-50/30 hover:bg-green-50/50 border-l-4 border-l-green-400' : 'hover:bg-gray-50'}`}
             role="listitem"
             aria-label={`Task: ${task.text}, Priority: ${task.priority}, Due: ${formatDate(task.due_date)}`}
         >
             <div className="flex items-center gap-4">
-                {/* Drag handle - only show when not editing and not in bulk selection mode */}
-                {!isEditing && !onSelect && (
-                    <div 
-                        className="cursor-move opacity-0 group-hover:opacity-100 transition-opacity" 
-                        title="Drag to reorder"
-                        role="button"
-                        tabIndex={0}
-                        aria-label="Drag handle to reorder task"
-                        onKeyDown={(e) => {
-                            if (e.key === 'Enter' || e.key === ' ') {
-                                e.preventDefault();
-                                // Could add keyboard-based reordering here
-                            }
-                        }}
-                    >
-                        <Icon path="M4 6h16M4 12h16M4 18h16" className="w-4 h-4 text-gray-400" />
-                    </div>
-                )}
-                
                 {/* Show selection checkbox when bulk actions are active, otherwise show completion checkbox */}
                 {onSelect ? (
                     <input

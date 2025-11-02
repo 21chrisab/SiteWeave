@@ -1,6 +1,26 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 
 function DateDropdown({ value, onChange, label, className = '' }) {
+    // Internal state to track partial selections
+    const [internalState, setInternalState] = useState(() => {
+        if (!value) return { year: '', month: '', day: '' };
+        const [year, month, day] = value.split('-');
+        return { year: year || '', month: month || '', day: day || '' };
+    });
+
+    // Update internal state when value prop changes (but only if it's a complete date)
+    useEffect(() => {
+        if (value) {
+            const [year, month, day] = value.split('-');
+            if (year && month && day) {
+                setInternalState({ year, month, day });
+            }
+        } else if (!internalState.year && !internalState.month && !internalState.day) {
+            // Only reset if all are empty
+            setInternalState({ year: '', month: '', day: '' });
+        }
+    }, [value]);
+
     // Generate date options (50 years range)
     const currentYear = new Date().getFullYear();
     const years = Array.from({ length: 50 }, (_, i) => currentYear + i);
@@ -19,14 +39,7 @@ function DateDropdown({ value, onChange, label, className = '' }) {
         { value: '12', label: 'December' }
     ];
 
-    // Parse the current value (YYYY-MM-DD format)
-    const parseDate = (dateString) => {
-        if (!dateString) return { year: '', month: '', day: '' };
-        const [year, month, day] = dateString.split('-');
-        return { year, month, day };
-    };
-
-    const { year, month, day } = parseDate(value);
+    const { year, month, day } = internalState;
 
     // Calculate days in month
     const getDaysInMonth = (year, month) => {
@@ -38,22 +51,35 @@ function DateDropdown({ value, onChange, label, className = '' }) {
     const days = Array.from({ length: daysInMonth }, (_, i) => i + 1);
 
     const handleChange = (field, newValue) => {
-        let newYear = year;
-        let newMonth = month;
-        let newDay = day;
+        let newYear = year || '';
+        let newMonth = month || '';
+        let newDay = day || '';
 
         if (field === 'year') newYear = newValue;
-        if (field === 'month') newMonth = newValue;
+        if (field === 'month') {
+            newMonth = newValue;
+            // When month changes, validate day (in case it's now invalid for the new month)
+            if (newDay) {
+                const daysInNewMonth = new Date(newYear || 2000, parseInt(newMonth) || 1, 0).getDate();
+                if (parseInt(newDay) > daysInNewMonth) {
+                    newDay = ''; // Clear invalid day
+                }
+            }
+        }
         if (field === 'day') newDay = newValue;
 
-        // If all fields are filled, construct the date string
+        // Update internal state immediately so dropdowns reflect the change
+        setInternalState({ year: newYear, month: newMonth, day: newDay });
+
+        // Only call onChange when all fields are filled with a complete date
         if (newYear && newMonth && newDay) {
             const dateString = `${newYear}-${newMonth}-${newDay.toString().padStart(2, '0')}`;
             onChange(dateString);
-        } else {
-            // Otherwise keep partial state
+        } else if (!newYear && !newMonth && !newDay) {
+            // Only clear if all fields are empty
             onChange('');
         }
+        // Otherwise, keep the current value but update internal state
     };
 
     return (
