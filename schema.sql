@@ -259,6 +259,11 @@ BEGIN
                    WHERE table_name = 'contacts' AND column_name = 'phone') THEN
         ALTER TABLE contacts ADD COLUMN phone TEXT;
     END IF;
+    
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
+                   WHERE table_name = 'contacts' AND column_name = 'created_by_user_id') THEN
+        ALTER TABLE contacts ADD COLUMN created_by_user_id UUID REFERENCES auth.users(id);
+    END IF;
 END $$;
 
 -- ============================================================================
@@ -378,6 +383,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_profiles_contact') THEN
         ALTER TABLE profiles ADD CONSTRAINT fk_profiles_contact FOREIGN KEY (contact_id) REFERENCES contacts(id);
+    END IF;
+END $$;
+
+-- Contacts constraints
+DO $$ 
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_contacts_created_by') THEN
+        ALTER TABLE contacts ADD CONSTRAINT fk_contacts_created_by FOREIGN KEY (created_by_user_id) REFERENCES auth.users(id);
     END IF;
 END $$;
 
@@ -1521,6 +1534,7 @@ CREATE INDEX IF NOT EXISTS idx_tasks_assignee_id ON tasks(assignee_id);
 CREATE INDEX IF NOT EXISTS idx_user_preferences_user_id ON user_preferences(user_id);
 
 -- Audit field indexes
+CREATE INDEX IF NOT EXISTS idx_contacts_created_by ON contacts(created_by_user_id);
 CREATE INDEX IF NOT EXISTS idx_calendar_events_created_by ON calendar_events(created_by_user_id);
 CREATE INDEX IF NOT EXISTS idx_files_created_by ON files(created_by_user_id);
 CREATE INDEX IF NOT EXISTS idx_issue_steps_created_by ON issue_steps(created_by_user_id);
