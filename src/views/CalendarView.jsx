@@ -880,17 +880,19 @@ function CalendarView() {
                             slotMaxTime="22:00:00"
                             eventDisplay="block"
                             eventTextColor="white"
-                            dayHeaderFormat={(date, { view }) => {
-                                // For month view, use the viewed month (activeStart) for all headers
-                                if (view.type === 'dayGridMonth') {
-                                    const viewedMonth = view.activeStart.getMonth();
-                                    const viewedMonthName = new Date(view.activeStart.getFullYear(), viewedMonth, 1)
+                            dayHeaderFormat={(date, options) => {
+                                // Check if options and view exist before accessing
+                                if (options?.view?.type === 'dayGridMonth') {
+                                    // For month view, use the viewed month (activeStart) for all headers
+                                    const viewedMonth = options.view.activeStart.getMonth();
+                                    const viewedMonthName = new Date(options.view.activeStart.getFullYear(), viewedMonth, 1)
                                         .toLocaleDateString('en-US', { month: 'short' });
                                     const day = date.getDate();
                                     const weekday = date.toLocaleDateString('en-US', { weekday: 'short' });
                                     return `${weekday}, ${viewedMonthName} ${day}`;
                                 }
                                 // For day/week views, show weekday, month, and day (each day's own month)
+                                // Fallback to default format if options/view is missing
                                 return date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
                             }}
                             slotLabelFormat={{

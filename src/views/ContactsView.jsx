@@ -107,20 +107,14 @@ function ContactsView() {
             const { data, error } = await supabaseClient
                 .from('contacts')
                 .insert(contactDataWithAudit)
-                .select('*')
+                .select('*, project_contacts(project_id)')
                 .single();
             
             if (error) {
                 addToast('Error creating contact: ' + error.message, 'error');
             } else {
-                // Ensure the contact data has all required fields before dispatching
-                const contactWithDefaults = {
-                    ...data,
-                    project_contacts: data.project_contacts || [],
-                    status: data.status || 'Available'
-                };
                 addToast('Contact created successfully!', 'success');
-                dispatch({ type: 'ADD_CONTACT', payload: contactWithDefaults });
+                dispatch({ type: 'ADD_CONTACT', payload: data });
                 setShowAddModal(false);
             }
             setIsCreatingContact(false);

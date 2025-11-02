@@ -307,17 +307,17 @@ class DropboxStorage {
       throw new Error('Not connected to Dropbox');
     }
 
+    // Normalize path - ensure it doesn't end with / (unless it's root)
+    let normalizedPath = folderPath.trim();
+    if (normalizedPath !== '/' && normalizedPath.endsWith('/')) {
+      normalizedPath = normalizedPath.slice(0, -1);
+    }
+    // Ensure path starts with /
+    if (!normalizedPath.startsWith('/')) {
+      normalizedPath = `/${normalizedPath}`;
+    }
+
     try {
-      // Normalize path - ensure it doesn't end with / (unless it's root)
-      let normalizedPath = folderPath.trim();
-      if (normalizedPath !== '/' && normalizedPath.endsWith('/')) {
-        normalizedPath = normalizedPath.slice(0, -1);
-      }
-      // Ensure path starts with /
-      if (!normalizedPath.startsWith('/')) {
-        normalizedPath = `/${normalizedPath}`;
-      }
-      
       const response = await this.dbx.filesListFolder({
         path: normalizedPath
       });

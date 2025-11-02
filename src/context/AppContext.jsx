@@ -96,8 +96,20 @@ function appReducer(state, action) {
       ...state, 
       contacts: state.contacts.filter(contact => contact.id !== action.payload) 
     };
-    case 'ADD_PROJECT_CONTACT': return { ...state, contacts: state.contacts.map(c => c.id === action.payload.contact_id ? { ...c, project_contacts: [...c.project_contacts, { project_id: action.payload.project_id }] } : c) };
-    case 'REMOVE_PROJECT_CONTACT': return { ...state, contacts: state.contacts.map(c => c.id === action.payload.contact_id ? { ...c, project_contacts: c.project_contacts.filter(pc => pc.project_id !== action.payload.project_id) } : c) };
+    case 'ADD_PROJECT_CONTACT': return { 
+      ...state, 
+      contacts: state.contacts.map(c => c.id === action.payload.contact_id 
+        ? { ...c, project_contacts: [...(Array.isArray(c.project_contacts) ? c.project_contacts : []), { project_id: action.payload.project_id }] } 
+        : c
+      ) 
+    };
+    case 'REMOVE_PROJECT_CONTACT': return { 
+      ...state, 
+      contacts: state.contacts.map(c => c.id === action.payload.contact_id 
+        ? { ...c, project_contacts: (Array.isArray(c.project_contacts) ? c.project_contacts : []).filter(pc => pc.project_id !== action.payload.project_id) } 
+        : c
+      ) 
+    };
     case 'SET_USER_PREFERENCES': return { ...state, userPreferences: action.payload };
     case 'UPDATE_USER_PREFERENCES': return { ...state, userPreferences: { ...state.userPreferences, ...action.payload } };
     case 'SET_DROPBOX_TOKEN': return { ...state, dropboxAccessToken: action.payload, dropboxConnected: !!action.payload };
@@ -324,11 +336,33 @@ export const AppProvider = ({ children }) => {
       .subscribe();
 
     const contactsSubscription = supabaseClient.channel('public:contacts')
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'contacts' }, (payload) => {
-        dispatch({ type: 'ADD_CONTACT', payload: payload.new });
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'contacts' }, async (payload) => {
+        // Re-fetch the contact with relationships to match initial load structure
+        const { data: fullContact } = await supabaseClient
+          .from('contacts')
+          .select('*, project_contacts(project_id)')
+          .eq('id', payload.new.id)
+          .single();
+        if (fullContact) {
+          dispatch({ type: 'ADD_CONTACT', payload: fullContact });
+        } else {
+          // Fallback to payload.new if re-fetch fails
+          dispatch({ type: 'ADD_CONTACT', payload: payload.new });
+        }
       })
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'contacts' }, (payload) => {
-        dispatch({ type: 'UPDATE_CONTACT', payload: payload.new });
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'contacts' }, async (payload) => {
+        // Re-fetch the contact with relationships
+        const { data: fullContact } = await supabaseClient
+          .from('contacts')
+          .select('*, project_contacts(project_id)')
+          .eq('id', payload.new.id)
+          .single();
+        if (fullContact) {
+          dispatch({ type: 'UPDATE_CONTACT', payload: fullContact });
+        } else {
+          // Fallback to payload.new if re-fetch fails
+          dispatch({ type: 'UPDATE_CONTACT', payload: payload.new });
+        }
       })
       .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'contacts' }, (payload) => {
         dispatch({ type: 'DELETE_CONTACT', payload: payload.old.id });
