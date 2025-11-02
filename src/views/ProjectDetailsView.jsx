@@ -12,6 +12,7 @@ import { useTaskShortcuts } from '../hooks/useKeyboardShortcuts';
 import { useDragAndDrop } from '../hooks/useDragAndDrop';
 import { handleApiError, createOptimisticUpdate } from '../utils/errorHandling';
 import dropboxStorage from '../utils/dropboxStorage';
+import { parseRecurrence } from '../utils/recurrenceService';
 
 function ProjectDetailsView() {
     const { state, dispatch } = useAppContext();
@@ -127,6 +128,10 @@ function ProjectDetailsView() {
         const task = state.tasks.find(t => t.id === taskId);
         if (!task) return;
 
+        // If completing a task and it's recurring (not an instance), generate next instance
+        const isCompleting = !currentStatus;
+        const isRecurringParent = isCompleting && task.recurrence && !task.is_recurring_instance;
+        
         // Optimistic update
         const optimisticUpdate = createOptimisticUpdate(
             () => {
@@ -149,10 +154,87 @@ function ProjectDetailsView() {
             if (error) {
                 throw error;
             }
+
+            // Generate next instance if this is a recurring parent task being completed
+            if (isRecurringParent) {
+                try {
+                    const recurrence = parseRecurrence(task.recurrence);
+                    if (recurrence) {
+                        // Calculate next due date based on pattern
+                        const currentDueDate = task.due_date ? new Date(task.due_date) : new Date();
+                        const nextDueDate = calculateNextTaskDueDate(currentDueDate, recurrence);
+                        
+                        // Create next instance
+                        const nextInstance = {
+                            project_id: task.project_id,
+                            text: task.text,
+                            due_date: nextDueDate.toISOString().split('T')[0],
+                            priority: task.priority,
+                            assignee_id: task.assignee_id,
+                            recurrence: task.recurrence,
+                            parent_task_id: task.id,
+                            is_recurring_instance: true,
+                            completed: false
+                        };
+
+                        const { data: newInstance, error: instanceError } = await supabaseClient
+                            .from('tasks')
+                            .insert(nextInstance)
+                            .select()
+                            .single();
+
+                        if (!instanceError && newInstance) {
+                            dispatch({ type: 'ADD_TASK', payload: newInstance });
+                            addToast('Next task instance created!', 'success');
+                        }
+                    }
+                } catch (recurError) {
+                    console.error('Error generating next task instance:', recurError);
+                    // Don't fail the task completion if instance generation fails
+                }
+            }
         } catch (error) {
             optimisticUpdate.rollback();
             addToast(handleApiError(error, 'Error updating task'), 'error');
         }
+    };
+    
+    // Helper function to calculate next due date for recurring tasks
+    const calculateNextTaskDueDate = (currentDate, recurrence) => {
+        const nextDate = new Date(currentDate);
+        const interval = recurrence.interval || 1;
+
+        switch (recurrence.pattern) {
+            case 'daily':
+            case 'weekdays':
+                nextDate.setDate(nextDate.getDate() + interval);
+                break;
+            case 'weekly':
+                if (recurrence.daysOfWeek && recurrence.daysOfWeek.length > 0) {
+                    // Find next matching weekday
+                    let daysAdded = 1;
+                    while (daysAdded < 14) {
+                        if (recurrence.daysOfWeek.includes(nextDate.getDay())) {
+                            break;
+                        }
+                        nextDate.setDate(nextDate.getDate() + 1);
+                        daysAdded++;
+                    }
+                } else {
+                    nextDate.setDate(nextDate.getDate() + (7 * interval));
+                }
+                break;
+            case 'monthly':
+                nextDate.setMonth(nextDate.getMonth() + interval);
+                break;
+            case 'yearly':
+                nextDate.setFullYear(nextDate.getFullYear() + interval);
+                break;
+            default:
+                nextDate.setDate(nextDate.getDate() + interval);
+        }
+
+        return nextDate;
     };
 
     const handleEditTask = async (taskId, updatedData) => {
@@ -270,8 +352,7 @@ function ProjectDetailsView() {
                 </div>
                 <div className="flex items-center gap-4">
                     <span className={`px-3 py-1 text-sm font-semibold rounded-full ${project.status_color === 'green' ? 'bg-green-100 text-green-800' : 'bg-orange-100 text-orange-800'}`}>{project.status}</span>
-                    <button className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border rounded-lg shadow-sm">Share</button>
-                    <button className="px-4 py-2 text-sm font-semibold text-white bg-blue-600 rounded-lg shadow-sm">Settings</button>
+                    <button className="px-4 py-2 text-sm font-semibold text-white bg-blue-600 rounded-lg shadow-sm">+ Add Team Member</button>
                 </div>
             </header>
 

@@ -49,8 +49,9 @@ function DashboardView() {
             setIsUpdatingProject(false);
         } else {
             setIsCreatingProject(true);
+            const { selectedContacts, ...projectFields } = projectData;
             const projectDataWithAudit = {
-                ...projectData,
+                ...projectFields,
                 project_manager_id: state.user.id,
                 created_by_user_id: state.user.id,
                 updated_by_user_id: state.user.id,
@@ -66,6 +67,28 @@ function DashboardView() {
                 console.error('Project creation error:', error);
                 addToast('Error creating project: ' + error.message, 'error');
             } else {
+                // Add selected contacts to the project
+                if (selectedContacts && selectedContacts.length > 0) {
+                    const projectContactsData = selectedContacts.map(contactId => ({
+                        project_id: createdProject.id,
+                        contact_id: contactId
+                    }));
+                    const { error: contactsError } = await supabaseClient
+                        .from('project_contacts')
+                        .insert(projectContactsData);
+                    if (contactsError) {
+                        console.error('Error adding contacts to project:', contactsError);
+                        addToast('Project created, but some contacts could not be added', 'warning');
+                    } else {
+                        // Dispatch action to update local state with project contacts
+                        selectedContacts.forEach(contactId => {
+                            dispatch({ 
+                                type: 'ADD_PROJECT_CONTACT', 
+                                payload: { project_id: createdProject.id, contact_id: contactId } 
+                            });
+                        });
+                    }
+                }
                 dispatch({ type: 'ADD_PROJECT', payload: createdProject });
                 addToast('Project created successfully!', 'success');
                 setShowModal(false);

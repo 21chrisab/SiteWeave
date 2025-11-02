@@ -1,5 +1,6 @@
 import React, { useState, memo } from 'react';
 import Icon from './Icon';
+import DateDropdown from './DateDropdown';
 
 const TaskItem = memo(function TaskItem({ task, onToggle, onEdit, onDelete, isSelected, onSelect, index, isDragging, draggedItem, dragOverIndex, onDragStart, onDragEnd, onDragOver, onDragLeave, onDrop }) {
     const [isEditing, setIsEditing] = useState(false);
@@ -45,17 +46,17 @@ const TaskItem = memo(function TaskItem({ task, onToggle, onEdit, onDelete, isSe
                         className="w-full p-2 border rounded-lg"
                         placeholder="Task description"
                     />
-                    <div className="flex gap-3">
-                        <input
-                            type="date"
-                            value={editDueDate}
-                            onChange={(e) => setEditDueDate(e.target.value)}
-                            className="flex-1 p-2 border rounded-lg"
-                        />
+                    <div className="flex gap-3 items-end">
+                        <div className="flex-1">
+                            <DateDropdown 
+                                value={editDueDate} 
+                                onChange={setEditDueDate}
+                            />
+                        </div>
                         <select
                             value={editPriority}
                             onChange={(e) => setEditPriority(e.target.value)}
-                            className="p-2 border rounded-lg bg-white"
+                            className="p-2 border rounded-lg bg-white h-[42px]"
                         >
                             <option value="Low">Low</option>
                             <option value="Medium">Medium</option>

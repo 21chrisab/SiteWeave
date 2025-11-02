@@ -2,10 +2,59 @@
 // This file handles OAuth callbacks and API integrations for Google Calendar and Outlook
 import electronOAuth from './electronOAuth.js';
 
+// ============================================================================
+// TOKEN STORAGE FUNCTIONS (moved to top for use in callback functions)
+// ============================================================================
+
+const TOKEN_STORAGE_KEY = {
+    google: 'google_calendar_token',
+    outlook: 'outlook_calendar_token'
+};
+
+export const storeCalendarToken = (provider, token) => {
+    if (provider === 'google' || provider === 'outlook') {
+        try {
+            localStorage.setItem(TOKEN_STORAGE_KEY[provider], token);
+        } catch (error) {
+            console.error('Failed to store calendar token:', error);
+            // localStorage might be unavailable (privacy mode, quota exceeded, etc.)
+        }
+    }
+};
+
+export const getStoredCalendarToken = (provider) => {
+    if (provider === 'google' || provider === 'outlook') {
+        try {
+            return localStorage.getItem(TOKEN_STORAGE_KEY[provider]);
+        } catch (error) {
+            console.error('Failed to get calendar token:', error);
+            return null;
+        }
+    }
+    return null;
+};
+
+export const clearCalendarToken = (provider) => {
+    if (provider === 'google' || provider === 'outlook') {
+        try {
+            localStorage.removeItem(TOKEN_STORAGE_KEY[provider]);
+        } catch (error) {
+            console.error('Failed to clear calendar token:', error);
+        }
+    }
+};
+
+// ============================================================================
+// CALENDAR IMPORT FUNCTIONS
+// ============================================================================
+
 export const handleGoogleCalendarCallback = async (code) => {
     try {
         // Exchange authorization code for access token
         const { access_token } = await exchangeGoogleToken(code);
+        
+        // Store token for future sync operations
+        storeCalendarToken('google', access_token);
 
         // Fetch events from Google Calendar
         const data = await fetchGoogleCalendarEvents(access_token);
@@ -35,6 +84,9 @@ export const startGoogleCalendarOAuth = async () => {
             clientId: clientId,
             clientSecret: clientSecret
         });
+        
+        // Store token for future sync operations
+        storeCalendarToken('google', tokenData.access_token);
 
         // Fetch events from Google Calendar
         const data = await fetchGoogleCalendarEvents(tokenData.access_token);
@@ -50,6 +102,9 @@ export const handleOutlookCalendarCallback = async (code) => {
     try {
         // Exchange authorization code for access token
         const { access_token } = await exchangeOutlookToken(code);
+        
+        // Store token for future sync operations
+        storeCalendarToken('outlook', access_token);
 
         // Fetch events from Microsoft Graph
         const data = await fetchOutlookCalendarEvents(access_token);
@@ -76,6 +131,9 @@ export const startOutlookCalendarOAuth = async () => {
         const tokenData = await electronOAuth.exchangeCodeForToken('microsoft', result.code, {
             clientId: clientId
         });
+        
+        // Store token for future sync operations
+        storeCalendarToken('outlook', tokenData.access_token);
 
         // Fetch events from Microsoft Graph
         const data = await fetchOutlookCalendarEvents(tokenData.access_token);
@@ -280,4 +338,290 @@ export const prepareCalendarEventsForInsert = (events, userId = null) => {
         recurrence: e.recurrence || null,
         user_id: userId
     }));
+};
+
+// ============================================================================
+// BIDIRECTIONAL SYNC FUNCTIONS
+// ============================================================================
+
+// Create event in Google Calendar
+export const createGoogleCalendarEvent = async (event, accessToken) => {
+    if (!accessToken) {
+        throw new Error('Google Calendar access token is required');
+    }
+    try {
+        const eventData = {
+            summary: event.title,
+            description: event.description || '',
+            start: {
+                dateTime: event.is_all_day ? undefined : event.start_time,
+                date: event.is_all_day ? event.start_time.split('T')[0] : undefined,
+                timeZone: 'UTC'
+            },
+            end: {
+                dateTime: event.is_all_day ? undefined : event.end_time,
+                date: event.is_all_day ? event.end_time.split('T')[0] : undefined,
+                timeZone: 'UTC'
+            },
+            location: event.location || '',
+            attendees: event.attendees ? event.attendees.split(',').map(email => ({ email: email.trim() })) : []
+        };
+
+        const response = await fetch('https://www.googleapis.com/calendar/v3/calendars/primary/events', {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${accessToken}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(eventData)
+        });
+
+        if (!response.ok) {
+            const error = await response.json().catch(() => ({ error: { message: 'Unknown error' } }));
+            // Handle token expiration
+            if (response.status === 401 || response.status === 403) {
+                clearCalendarToken('google');
+                throw new Error('Google Calendar token expired. Please reconnect your calendar.');
+            }
+            throw new Error(error.error?.message || 'Failed to create event in Google Calendar');
+        }
+
+        const data = await response.json();
+        return {
+            success: true,
+            external_id: data.id,
+            external_source: 'google'
+        };
+    } catch (error) {
+        console.error('Error creating Google Calendar event:', error);
+        throw error;
+    }
+};
+
+// Create event in Outlook Calendar
+export const createOutlookCalendarEvent = async (event, accessToken) => {
+    if (!accessToken) {
+        throw new Error('Outlook Calendar access token is required');
+    }
+    try {
+        const eventData = {
+            subject: event.title,
+            body: {
+                contentType: 'text',
+                content: event.description || ''
+            },
+            start: {
+                dateTime: event.start_time,
+                timeZone: 'UTC'
+            },
+            end: {
+                dateTime: event.end_time,
+                timeZone: 'UTC'
+            },
+            location: event.location ? {
+                displayName: event.location
+            } : undefined,
+            attendees: event.attendees ? event.attendees.split(',').map(email => ({
+                emailAddress: { address: email.trim() },
+                type: 'required'
+            })) : [],
+            isAllDay: event.is_all_day || false
+        };
+
+        const response = await fetch('https://graph.microsoft.com/v1.0/me/events', {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${accessToken}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(eventData)
+        });
+
+        if (!response.ok) {
+            const errorText = await response.text().catch(() => 'Unknown error');
+            // Handle token expiration
+            if (response.status === 401 || response.status === 403) {
+                clearCalendarToken('outlook');
+                throw new Error('Outlook Calendar token expired. Please reconnect your calendar.');
+            }
+            throw new Error(`Failed to create event in Outlook Calendar: ${errorText}`);
+        }
+
+        const data = await response.json();
+        return {
+            success: true,
+            external_id: data.id,
+            external_source: 'outlook'
+        };
+    } catch (error) {
+        console.error('Error creating Outlook Calendar event:', error);
+        throw error;
+    }
+};
+
+// Update event in Google Calendar
+export const updateGoogleCalendarEvent = async (event, externalId, accessToken) => {
+    if (!accessToken) {
+        throw new Error('Google Calendar access token is required');
+    }
+    if (!externalId) {
+        throw new Error('External event ID is required');
+    }
+    try {
+        const eventData = {
+            summary: event.title,
+            description: event.description || '',
+            start: {
+                dateTime: event.is_all_day ? undefined : event.start_time,
+                date: event.is_all_day ? event.start_time.split('T')[0] : undefined,
+                timeZone: 'UTC'
+            },
+            end: {
+                dateTime: event.is_all_day ? undefined : event.end_time,
+                date: event.is_all_day ? event.end_time.split('T')[0] : undefined,
+                timeZone: 'UTC'
+            },
+            location: event.location || '',
+            attendees: event.attendees ? event.attendees.split(',').map(email => ({ email: email.trim() })) : []
+        };
+
+        const response = await fetch(`https://www.googleapis.com/calendar/v3/calendars/primary/events/${externalId}`, {
+            method: 'PUT',
+            headers: {
+                'Authorization': `Bearer ${accessToken}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(eventData)
+        });
+
+        if (!response.ok) {
+            const error = await response.json().catch(() => ({ error: { message: 'Unknown error' } }));
+            // Handle token expiration
+            if (response.status === 401 || response.status === 403) {
+                clearCalendarToken('google');
+                throw new Error('Google Calendar token expired. Please reconnect your calendar.');
+            }
+            throw new Error(error.error?.message || 'Failed to update event in Google Calendar');
+        }
+
+        return { success: true };
+    } catch (error) {
+        console.error('Error updating Google Calendar event:', error);
+        throw error;
+    }
+};
+
+// Update event in Outlook Calendar
+export const updateOutlookCalendarEvent = async (event, externalId, accessToken) => {
+    if (!accessToken) {
+        throw new Error('Outlook Calendar access token is required');
+    }
+    if (!externalId) {
+        throw new Error('External event ID is required');
+    }
+    try {
+        const eventData = {
+            subject: event.title,
+            body: {
+                contentType: 'text',
+                content: event.description || ''
+            },
+            start: {
+                dateTime: event.start_time,
+                timeZone: 'UTC'
+            },
+            end: {
+                dateTime: event.end_time,
+                timeZone: 'UTC'
+            },
+            location: event.location ? {
+                displayName: event.location
+            } : undefined,
+            attendees: event.attendees ? event.attendees.split(',').map(email => ({
+                emailAddress: { address: email.trim() },
+                type: 'required'
+            })) : [],
+            isAllDay: event.is_all_day || false
+        };
+
+        const response = await fetch(`https://graph.microsoft.com/v1.0/me/events/${externalId}`, {
+            method: 'PATCH',
+            headers: {
+                'Authorization': `Bearer ${accessToken}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(eventData)
+        });
+
+        if (!response.ok) {
+            const errorText = await response.text().catch(() => 'Unknown error');
+            // Handle token expiration
+            if (response.status === 401 || response.status === 403) {
+                clearCalendarToken('outlook');
+                throw new Error('Outlook Calendar token expired. Please reconnect your calendar.');
+            }
+            throw new Error(`Failed to update event in Outlook Calendar: ${errorText}`);
+        }
+
+        return { success: true };
+    } catch (error) {
+        console.error('Error updating Outlook Calendar event:', error);
+        throw error;
+    }
+};
+
+// Delete event from Google Calendar
+export const deleteGoogleCalendarEvent = async (externalId, accessToken) => {
+    if (!accessToken) {
+        throw new Error('Google Calendar access token is required');
+    }
+    if (!externalId) {
+        return { success: true }; // No-op if no external ID
+    }
+    try {
+        const response = await fetch(`https://www.googleapis.com/calendar/v3/calendars/primary/events/${externalId}`, {
+            method: 'DELETE',
+            headers: {
+                'Authorization': `Bearer ${accessToken}`
+            }
+        });
+
+        if (!response.ok && response.status !== 404) {
+            const error = await response.json();
+            throw new Error(error.error?.message || 'Failed to delete event from Google Calendar');
+        }
+
+        return { success: true };
+    } catch (error) {
+        console.error('Error deleting Google Calendar event:', error);
+        throw error;
+    }
+};
+
+// Delete event from Outlook Calendar
+export const deleteOutlookCalendarEvent = async (externalId, accessToken) => {
+    if (!accessToken) {
+        throw new Error('Outlook Calendar access token is required');
+    }
+    if (!externalId) {
+        return { success: true }; // No-op if no external ID
+    }
+    try {
+        const response = await fetch(`https://graph.microsoft.com/v1.0/me/events/${externalId}`, {
+            method: 'DELETE',
+            headers: {
+                'Authorization': `Bearer ${accessToken}`
+            }
+        });
+
+        if (!response.ok && response.status !== 404) {
+            const error = await response.text();
+            throw new Error(`Failed to delete event from Outlook Calendar: ${error}`);
+        }
+
+        return { success: true };
+    } catch (error) {
+        console.error('Error deleting Outlook Calendar event:', error);
+        throw error;
+    }
 };

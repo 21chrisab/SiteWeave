@@ -9,10 +9,8 @@ function AddContactModal({ onClose, onSave, contact = null, isLoading = false })
     const [type, setType] = useState(contact?.type || 'Team');
     const [company, setCompany] = useState(contact?.company || '');
     const [trade, setTrade] = useState(contact?.trade || '');
-    const [avatarUrl, setAvatarUrl] = useState(contact?.avatar_url || '');
     const [email, setEmail] = useState(contact?.email || '');
     const [phone, setPhone] = useState(contact?.phone || '');
-    const [status, setStatus] = useState(contact?.status || 'Available');
 
     useEffect(() => {
         if (contact) {
@@ -21,10 +19,8 @@ function AddContactModal({ onClose, onSave, contact = null, isLoading = false })
             setType(contact.type || 'Team');
             setCompany(contact.company || '');
             setTrade(contact.trade || '');
-            setAvatarUrl(contact.avatar_url || '');
             setEmail(contact.email || '');
             setPhone(contact.phone || '');
-            setStatus(contact.status || 'Available');
         }
     }, [contact]);
 
@@ -36,10 +32,10 @@ function AddContactModal({ onClose, onSave, contact = null, isLoading = false })
             type,
             company: type === 'Subcontractor' ? company : 'SiteWeave',
             trade: type === 'Subcontractor' ? trade : 'Internal',
-            avatar_url: avatarUrl || `https://i.pravatar.cc/150?u=${name.replace(/\s/g, '_').toLowerCase()}`,
+            avatar_url: `https://i.pravatar.cc/150?u=${name.replace(/\s/g, '_').toLowerCase()}`,
             email,
             phone,
-            status
+            status: 'Available'
         };
         
         if (isEditMode) {
@@ -82,32 +78,17 @@ function AddContactModal({ onClose, onSave, contact = null, isLoading = false })
                         </div>
                     </div>
 
-                    {/* Contact Type and Status */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div>
-                            <label className="block text-sm font-semibold mb-1">Contact Type</label>
-                            <select 
-                                value={type} 
-                                onChange={e => setType(e.target.value)} 
-                                className="w-full p-3 border rounded-lg bg-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                            >
-                                <option value="Team">Team Member</option>
-                                <option value="Subcontractor">Subcontractor</option>
-                            </select>
-                        </div>
-                        
-                        <div>
-                            <label className="block text-sm font-semibold mb-1">Status</label>
-                            <select 
-                                value={status} 
-                                onChange={e => setStatus(e.target.value)} 
-                                className="w-full p-3 border rounded-lg bg-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                            >
-                                <option value="Available">Available</option>
-                                <option value="Busy">Busy</option>
-                                <option value="Offline">Offline</option>
-                            </select>
-                        </div>
+                    {/* Contact Type */}
+                    <div>
+                        <label className="block text-sm font-semibold mb-1">Contact Type</label>
+                        <select 
+                            value={type} 
+                            onChange={e => setType(e.target.value)} 
+                            className="w-full p-3 border rounded-lg bg-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        >
+                            <option value="Team">Team Member</option>
+                            <option value="Subcontractor">Subcontractor</option>
+                        </select>
                     </div>
 
                     {/* Company and Trade (for Subcontractors) */}
@@ -152,36 +133,20 @@ function AddContactModal({ onClose, onSave, contact = null, isLoading = false })
                             <input 
                                 type="tel" 
                                 value={phone} 
-                                onChange={e => setPhone(e.target.value)} 
+                                onChange={e => {
+                                    const value = e.target.value.replace(/\D/g, '');
+                                    if (value.length <= 10) {
+                                        const formatted = value.replace(/(\d{3})(\d{3})(\d{4})/, '($1) $2-$3');
+                                        setPhone(value.length > 6 ? formatted : value.length > 3 ? value.replace(/(\d{3})(\d{0,3})/, '($1) $2') : value);
+                                    }
+                                }}
+                                placeholder="(555) 123-4567"
+                                maxLength="14"
                                 className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent" 
                             />
                         </div>
                     </div>
 
-                    {/* Avatar */}
-                    <div>
-                        <label className="block text-sm font-semibold mb-1">Avatar URL (Optional)</label>
-                        <input 
-                            type="url" 
-                            value={avatarUrl} 
-                            onChange={e => setAvatarUrl(e.target.value)} 
-                            className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent" 
-                            placeholder="https://example.com/avatar.jpg"
-                        />
-                        {avatarUrl && (
-                            <div className="mt-2 flex items-center gap-2">
-                                <img 
-                                    src={avatarUrl} 
-                                    alt="Avatar preview" 
-                                    className="w-8 h-8 rounded-full"
-                                    onError={(e) => {
-                                        e.target.style.display = 'none';
-                                    }}
-                                />
-                                <span className="text-xs text-gray-500">Preview</span>
-                            </div>
-                        )}
-                    </div>
 
                     {/* Action Buttons */}
                     <div className="flex justify-end gap-4 pt-4 border-t">

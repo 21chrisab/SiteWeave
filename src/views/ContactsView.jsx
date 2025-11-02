@@ -100,9 +100,13 @@ function ContactsView() {
             setIsUpdatingContact(false);
         } else {
             setIsCreatingContact(true);
+            const contactDataWithAudit = {
+                ...contactData,
+                created_by_user_id: state.user?.id
+            };
             const { data, error } = await supabaseClient
                 .from('contacts')
-                .insert(contactData)
+                .insert(contactDataWithAudit)
                 .select()
                 .single();
             
