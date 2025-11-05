@@ -89,8 +89,41 @@ function ProjectDetailsView() {
         setIsCreatingTask(true);
         
         try {
+            // Ensure assignee_id is valid before inserting
+            if (taskData.assignee_id) {
+                // Verify the contact exists
+                const { data: contact, error: contactError } = await supabaseClient
+                    .from('contacts')
+                    .select('id')
+                    .eq('id', taskData.assignee_id)
+                    .single();
+                
+                if (contactError || !contact) {
+                    console.warn('Assignee contact not found, setting to null');
+                    taskData.assignee_id = null;
+                }
+            }
+            
             const { data, error } = await supabaseClient.from('tasks').insert(taskData).select().single();
             if (error) {
+                // Provide more specific error message for foreign key violations
+                if (error.message?.includes('foreign key constraint')) {
+                    addToast('Cannot assign task: Selected assignee is not valid. Task created without assignee.', 'warning');
+                    // Retry without assignee
+                    const taskDataWithoutAssignee = { ...taskData, assignee_id: null };
+                    const { data: retryData, error: retryError } = await supabaseClient
+                        .from('tasks')
+                        .insert(taskDataWithoutAssignee)
+                        .select()
+                        .single();
+                    if (!retryError && retryData) {
+                        dispatch({ type: 'ADD_TASK', payload: retryData });
+                        addToast('Task added successfully (without assignee)', 'success');
+                        setShowTaskModal(false);
+                        logTaskCreated(retryData, state.user, project.id);
+                        return;
+                    }
+                }
                 throw error;
             }
             

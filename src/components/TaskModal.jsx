@@ -48,12 +48,28 @@ function TaskModal({ project, onClose, onSave, isLoading = false }) {
             recurrenceJson = JSON.stringify(recurrence);
         }
         
+        // Ensure assignee_id is either null or a valid UUID
+        let validAssigneeId = null;
+        if (assigneeId && assigneeId.trim() !== '') {
+            // Validate it's a valid UUID format
+            const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+            if (uuidRegex.test(assigneeId)) {
+                // Verify the contact exists in project contacts
+                const contactExists = projectContacts.some(c => c.id === assigneeId);
+                if (contactExists) {
+                    validAssigneeId = assigneeId;
+                } else {
+                    console.warn('Selected assignee not found in project contacts, setting to null');
+                }
+            }
+        }
+        
         onSave({
             project_id: project.id,
             text,
             due_date: dueDate || null,
             priority,
-            assignee_id: assigneeId || null,
+            assignee_id: validAssigneeId,
             recurrence: recurrenceJson,
             completed: false,
         });
@@ -86,10 +102,19 @@ function TaskModal({ project, onClose, onSave, isLoading = false }) {
                         <label className="block text-sm font-semibold mb-1 text-gray-600">Assignee</label>
                         <select value={assigneeId} onChange={e => setAssigneeId(e.target.value)} className="w-full p-2 border rounded-lg bg-white">
                             <option value="">Unassigned</option>
-                            {projectContacts.map(contact => (
-                                <option key={contact.id} value={contact.id}>{contact.name}</option>
-                            ))}
+                            {projectContacts.length > 0 ? (
+                                projectContacts.map(contact => (
+                                    <option key={contact.id} value={contact.id}>{contact.name}</option>
+                                ))
+                            ) : (
+                                <option value="" disabled>No team members assigned to this project</option>
+                            )}
                         </select>
+                        {projectContacts.length === 0 && (
+                            <p className="text-xs text-gray-500 mt-1">
+                                Add team members to this project first using the "+ Add Team Member" button
+                            </p>
+                        )}
                     </div>
                     
                     {/* Recurrence Section */}
