@@ -33,10 +33,11 @@ function AcceptInvitationView() {
                     project_issues:issue_id (title, description)
                 `)
                 .eq('invitation_token', token)
-                .single();
+                .maybeSingle();
 
             if (error || !data) {
-                setError('Invalid invitation link');
+                // Legacy invitation system - redirect to login with message
+                setError('This invitation link is no longer valid. Please sign in with your account. If you were recently invited, check your email for a new invitation link from SiteWeave.');
                 setIsLoading(false);
                 return;
             }

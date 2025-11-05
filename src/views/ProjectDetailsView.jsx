@@ -5,6 +5,7 @@ import TaskItem from '../components/TaskItem';
 import TaskModal from '../components/TaskModal';
 import FileItem from '../components/FileItem';
 import ProjectSidebar from '../components/ProjectSidebar';
+import ShareModal from '../components/ShareModal';
 import ConfirmDialog from '../components/ConfirmDialog';
 import TaskBulkActions from '../components/TaskBulkActions';
 import FieldIssues from '../components/FieldIssues';
@@ -27,6 +28,7 @@ function ProjectDetailsView() {
     const [taskSort, setTaskSort] = useState('due_date'); // due_date, priority
     const [activeTab, setActiveTab] = useState('tasks'); // tasks, fieldIssues, files
     const fileInputRef = useRef(null);
+    const [showShare, setShowShare] = useState(false);
 
     // Keyboard shortcuts
     useTaskShortcuts({
@@ -436,13 +438,17 @@ function ProjectDetailsView() {
                 <div className="flex items-center gap-4">
                     <span className={`px-3 py-1 text-sm font-semibold rounded-full ${project.status_color === 'green' ? 'bg-green-100 text-green-800' : 'bg-orange-100 text-orange-800'}`}>{project.status}</span>
                     <button 
-                        onClick={() => dispatch({ type: 'SET_VIEW', payload: 'Contacts' })}
+                        onClick={() => setShowShare(true)}
                         className="px-4 py-2 text-sm font-semibold text-white bg-blue-600 rounded-lg shadow-sm hover:bg-blue-700 transition-colors"
                     >
                         + Add Team Member
                     </button>
                 </div>
             </header>
+
+            {showShare && (
+                <ShareModal projectId={project.id} onClose={() => setShowShare(false)} />
+            )}
 
             <div className="grid grid-cols-1 lg:grid-cols-5 gap-8">
                 {/* Main Content Area with Tabs */}

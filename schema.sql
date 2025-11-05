@@ -595,9 +595,17 @@ $$ LANGUAGE sql SECURITY DEFINER;
 -- Auto-create profile when user signs up
 CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS TRIGGER AS $$
+DECLARE
+  contact_uuid UUID;
 BEGIN
+  -- Attempt to find an existing contact by email and link it
+  SELECT id INTO contact_uuid
+  FROM public.contacts
+  WHERE lower(email) = lower(NEW.email)
+  LIMIT 1;
+
   INSERT INTO public.profiles (id, role, contact_id)
-  VALUES (NEW.id, 'Team', NULL);
+  VALUES (NEW.id, 'Team', contact_uuid);
   RETURN NEW;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
@@ -605,6 +613,17 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 CREATE OR REPLACE TRIGGER on_auth_user_created
   AFTER INSERT ON auth.users
   FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
+
+-- ============================================================================
+-- ROLE AND STRUCTURE UPDATES FOR SHARING MODEL
+-- ============================================================================
+
+-- Ensure profiles.role allows 'Client'
+ALTER TABLE profiles DROP CONSTRAINT IF EXISTS profiles_role_check;
+ALTER TABLE profiles ADD CONSTRAINT profiles_role_check CHECK (role IN ('Admin', 'PM', 'Team', 'Client'));
+
+-- Add optional per-project role on project_contacts
+ALTER TABLE project_contacts ADD COLUMN IF NOT EXISTS role TEXT;
 
 -- ============================================================================
 -- ROW LEVEL SECURITY POLICIES

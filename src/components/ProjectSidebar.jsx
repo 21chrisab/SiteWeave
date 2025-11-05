@@ -72,7 +72,13 @@ function ProjectSidebar({ project }) {
                     <div className="flex items-center">
                         <div className="flex -space-x-2">
                             {teamMembers.slice(0, 5).map(member => (
-                                <img key={member.id} src={member.avatar_url} title={member.name} className="w-10 h-10 rounded-full border-2 border-white" />
+                                member.avatar_url ? (
+                                    <img key={member.id} src={member.avatar_url} title={member.name} className="w-10 h-10 rounded-full border-2 border-white" />
+                                ) : (
+                                    <div key={member.id} className="border-2 border-white">
+                                        <Avatar name={member.name} size="lg" />
+                                    </div>
+                                )
                             ))}
                         </div>
                         {teamMembers.length > 5 && (
