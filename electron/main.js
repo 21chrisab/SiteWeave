@@ -446,8 +446,25 @@ ipcMain.handle('install-update', () => {
   autoUpdater.quitAndInstall();
 });
 
-ipcMain.handle('check-for-updates', () => {
-  return autoUpdater.checkForUpdates();
+ipcMain.handle('check-for-updates', async () => {
+  try {
+    const result = await autoUpdater.checkForUpdates();
+    // Return only serializable data
+    return {
+      success: true,
+      updateInfo: result?.updateInfo ? {
+        version: result.updateInfo.version,
+        releaseDate: result.updateInfo.releaseDate,
+        path: result.updateInfo.path
+      } : null
+    };
+  } catch (error) {
+    // Return serializable error
+    return {
+      success: false,
+      error: error.message || String(error)
+    };
+  }
 });
 
 ipcMain.handle('start-oauth-server', () => {
