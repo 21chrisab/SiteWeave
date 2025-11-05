@@ -80,7 +80,7 @@ function MiniCalendar({ currentDate, setCurrentDate }) {
                             onClick={() => setCurrentDate(day)}
                             className={`py-1 rounded-full ${isCurrentMonth ? 'text-gray-700' : 'text-gray-300'} ${
                                 isSelected 
-                                    ? 'bg-blue-600 text-white font-bold' 
+                                    ? 'bg-blue-100 text-blue-800 font-bold' 
                                     : isToday 
                                         ? 'bg-blue-200 text-blue-800 font-semibold' 
                                         : 'hover:bg-gray-100'
@@ -880,71 +880,29 @@ function CalendarView() {
                             slotMaxTime="22:00:00"
                             eventDisplay="block"
                             eventTextColor="white"
-                            dayHeaderFormat={(date, options) => {
-                                try {
-                                    // Handle different date formats that FullCalendar might pass
-                                    let dateObj;
-                                    if (date instanceof Date) {
-                                        dateObj = date;
-                                    } else if (typeof date === 'string') {
-                                        dateObj = new Date(date);
-                                    } else if (date && typeof date === 'object' && 'date' in date) {
-                                        // FullCalendar might pass an object with a date property
-                                        dateObj = date.date instanceof Date ? date.date : new Date(date.date);
-                                    } else {
-                                        // Try to construct from options if available
-                                        if (options?.view?.activeStart) {
-                                            dateObj = new Date(options.view.activeStart);
-                                        } else {
-                                            dateObj = new Date();
-                                        }
-                                    }
-                                    
-                                    // Validate that we have a valid date
-                                    if (!dateObj || isNaN(dateObj.getTime())) {
-                                        // Fallback: try to get date from calendar API
-                                        if (calendarRef.current) {
-                                            const calendarApi = calendarRef.current.getApi();
-                                            const view = calendarApi.view;
-                                            if (view && view.activeStart) {
-                                                dateObj = new Date(view.activeStart);
-                                            }
-                                        }
-                                        // Final fallback to today
-                                        if (!dateObj || isNaN(dateObj.getTime())) {
-                                            dateObj = new Date();
-                                        }
-                                    }
-                                    
-                                    // Check if options and view exist before accessing
-                                    if (options?.view?.type === 'dayGridMonth') {
-                                        // For month view, use the viewed month (activeStart) for all headers
-                                        const viewedMonth = options.view.activeStart.getMonth();
-                                        const viewedMonthName = new Date(options.view.activeStart.getFullYear(), viewedMonth, 1)
-                                            .toLocaleDateString('en-US', { month: 'short' });
-                                        const day = dateObj.getDate();
-                                        const weekday = dateObj.toLocaleDateString('en-US', { weekday: 'short' });
-                                        return `${weekday}, ${viewedMonthName} ${day}`;
-                                    }
-                                    // For day/week views, show weekday, month, and day (each day's own month)
-                                    // Fallback to default format if options/view is missing
-                                    return dateObj.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
-                                } catch (error) {
-                                    console.error('Error formatting date:', error, date);
-                                    // Final fallback - try to get current view date
-                                    try {
-                                        if (calendarRef.current) {
-                                            const calendarApi = calendarRef.current.getApi();
-                                            const view = calendarApi.view;
-                                            if (view && view.activeStart) {
-                                                return new Date(view.activeStart).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
-                                            }
-                                        }
-                                    } catch (e) {
-                                        // Ignore errors in fallback
-                                    }
-                                    return new Date().toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+                            dayHeaderFormat={(arg) => {
+                                // Extract the date
+                                let date;
+                                if (arg.date && arg.date.marker) {
+                                    date = new Date(arg.date.marker);
+                                } else if (arg.date instanceof Date) {
+                                    date = arg.date;
+                                } else if (arg.date) {
+                                    date = new Date(arg.date);
+                                } else {
+                                    date = new Date();
                                 }
+                                
+                                // Month view: no header
+                                if (arg.view && arg.view.type === 'dayGridMonth') {
+                                    return ''; // No header for month view
+                                }
+                                
+                                // Week/Day views: full date
+                                const weekday = date.toLocaleDateString('en-US', { weekday: 'short' });
+                                const month = date.toLocaleDateString('en-US', { month: 'short' });
+                                const day = date.getDate();
+                                return `${weekday}, ${month} ${day}`;
                             }}
                             slotLabelFormat={{
                                 hour: 'numeric',

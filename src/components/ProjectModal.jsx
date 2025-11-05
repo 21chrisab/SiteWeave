@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useAppContext } from '../context/AppContext';
 import LoadingSpinner from './LoadingSpinner';
 import DateDropdown from './DateDropdown';
+import Avatar from './Avatar';
 
 function ProjectModal({ onClose, onSave, isLoading = false, project = null }) {
     const { state } = useAppContext();
@@ -112,11 +113,15 @@ function ProjectModal({ onClose, onSave, isLoading = false, project = null }) {
                                             className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                                         />
                                         <div className="flex items-center gap-2 flex-1">
-                                            <img 
-                                                src={contact.avatar_url} 
-                                                alt={contact.name}
-                                                className="w-8 h-8 rounded-full"
-                                            />
+                                            {contact.avatar_url ? (
+                                                <img 
+                                                    src={contact.avatar_url} 
+                                                    alt={contact.name}
+                                                    className="w-8 h-8 rounded-full"
+                                                />
+                                            ) : (
+                                                <Avatar name={contact.name} size="md" />
+                                            )}
                                             <div>
                                                 <div className="text-sm font-medium text-gray-900">{contact.name}</div>
                                                 <div className="text-xs text-gray-500">{contact.role}</div>

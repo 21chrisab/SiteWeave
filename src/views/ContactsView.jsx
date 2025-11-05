@@ -9,7 +9,6 @@ function ContactsView() {
     const { state, dispatch } = useAppContext();
     const { addToast } = useToast();
     const [activeTab, setActiveTab] = useState('Team');
-    const [selectedProjectId, setSelectedProjectId] = useState(state.projects[0]?.id || null);
     const [showAddModal, setShowAddModal] = useState(false);
     const [editingContact, setEditingContact] = useState(null);
     const [isCreatingContact, setIsCreatingContact] = useState(false);
@@ -38,20 +37,6 @@ function ContactsView() {
     const teamMembers = state.contacts.filter(c => c.type === 'Team');
     const subcontractors = state.contacts.filter(c => c.type === 'Subcontractor');
 
-    // Helper to check if contact is assigned to selected project
-    const isAssignedToProject = (contact) => {
-        if (!contact.project_contacts) return false;
-        if (!Array.isArray(contact.project_contacts)) return false;
-        // Handle both formats: {project_id: uuid} or just the project_id string
-        return contact.project_contacts.some(pc => {
-            const projectId = typeof pc === 'object' ? pc.project_id : pc;
-            return projectId === selectedProjectId;
-        });
-    };
-
-    const assignedTeam = teamMembers.filter(c => isAssignedToProject(c));
-    const availablePersonnel = teamMembers.filter(c => !isAssignedToProject(c));
-
     // Filter contacts based on search and status
     const filteredContacts = useMemo(() => {
         let contacts = activeTab === 'Team' ? teamMembers : subcontractors;
@@ -72,91 +57,6 @@ function ContactsView() {
         return contacts;
     }, [activeTab, teamMembers, subcontractors, searchTerm, statusFilter]);
 
-    const handleAddMember = async (contactId) => {
-        if (!selectedProjectId) {
-            addToast('Please select a project first', 'error');
-            return;
-        }
-
-        const { error } = await supabaseClient
-            .from('project_contacts')
-            .insert({ project_id: selectedProjectId, contact_id: contactId });
-        
-        if (error) {
-            console.error('Error adding project contact:', error);
-            addToast('Error adding member: ' + error.message, 'error');
-            return;
-        }
-        
-        // Success - refetch the specific contact with its relationships to ensure data is accurate
-        const { data: updatedContact, error: fetchError } = await supabaseClient
-            .from('contacts')
-            .select('*, project_contacts!fk_project_contacts_contact_id(project_id)')
-            .eq('id', contactId)
-            .single();
-        
-        if (fetchError) {
-            console.error('Error fetching updated contact:', fetchError);
-            // Fallback: use reducer to manually update
-            dispatch({ type: 'ADD_PROJECT_CONTACT', payload: { project_id: selectedProjectId, contact_id: contactId } });
-            addToast('Member added to project successfully!', 'success');
-        } else if (updatedContact) {
-            // Ensure project_contacts is an array
-            if (!updatedContact.project_contacts) {
-                updatedContact.project_contacts = [];
-            }
-            // Update the contact in state with fresh data from database
-            dispatch({ type: 'UPDATE_CONTACT', payload: updatedContact });
-            console.log('Contact updated with project_contacts:', updatedContact.project_contacts);
-            addToast('Member added to project successfully!', 'success');
-        } else {
-            addToast('Member added but could not refresh contact data', 'warning');
-        }
-    };
-
-    const handleRemoveMember = async (contactId) => {
-        if (!selectedProjectId) {
-            addToast('Please select a project first', 'error');
-            return;
-        }
-
-        const { error } = await supabaseClient
-            .from('project_contacts')
-            .delete()
-            .match({ project_id: selectedProjectId, contact_id: contactId });
-        
-        if (error) {
-            console.error('Error removing project contact:', error);
-            addToast('Error removing member: ' + error.message, 'error');
-            return;
-        }
-        
-        // Success - refetch the specific contact with its relationships to ensure data is accurate
-        const { data: updatedContact, error: fetchError } = await supabaseClient
-            .from('contacts')
-            .select('*, project_contacts!fk_project_contacts_contact_id(project_id)')
-            .eq('id', contactId)
-            .single();
-        
-        if (fetchError) {
-            console.error('Error fetching updated contact:', fetchError);
-            // Fallback: use reducer to manually update
-            dispatch({ type: 'REMOVE_PROJECT_CONTACT', payload: { project_id: selectedProjectId, contact_id: contactId } });
-            addToast('Member removed from project successfully!', 'success');
-        } else if (updatedContact) {
-            // Ensure project_contacts is an array
-            if (!updatedContact.project_contacts) {
-                updatedContact.project_contacts = [];
-            }
-            // Update the contact in state with fresh data from database
-            dispatch({ type: 'UPDATE_CONTACT', payload: updatedContact });
-            console.log('Contact updated with project_contacts:', updatedContact.project_contacts);
-            addToast('Member removed from project successfully!', 'success');
-        } else {
-            addToast('Member removed but could not refresh contact data', 'warning');
-        }
-    };
-    
     const handleSaveContact = async (contactData) => {
         if (editingContact) {
             setIsUpdatingContact(true);
@@ -361,54 +261,30 @@ function ContactsView() {
             </div>
             
             {activeTab === 'Team' ? (
-                <>
-                    <div className="mb-6">
-                        <label className="text-sm font-medium text-gray-700">Select a Project to Manage Team:</label>
-                        <select 
-                            value={selectedProjectId || ''} 
-                            onChange={e => setSelectedProjectId(e.target.value)} 
-                            className="mt-1 block w-full max-w-sm pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md shadow-sm"
-                        >
-                            {state.projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-                        </select>
-                    </div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8" data-onboarding="contacts-list">
-                        <div className="p-6 bg-white rounded-xl shadow-sm border border-gray-200">
-                            <h2 className="text-xl font-bold mb-4">Available Personnel ({availablePersonnel.length})</h2>
-                            <ul className="space-y-3">
-                                {availablePersonnel.map(c => (
-                                    <ContactCard 
-                                        key={c.id} 
-                                        contact={c} 
-                                        onAction={handleAddMember} 
-                                        actionType="add"
-                                        onEdit={handleEditContact}
-                                        onDelete={handleDeleteContact}
-                                        showActions={true}
-                                    />
-                                ))}
-                            </ul>
+                <div className="p-6 bg-white rounded-xl shadow-sm border border-gray-200" data-onboarding="contacts-list">
+                    <h2 className="text-xl font-bold mb-4">
+                        Team Members ({filteredContacts.length})
+                    </h2>
+                    <ul className="space-y-3">
+                        {filteredContacts.map(c => (
+                            <ContactCard 
+                                key={c.id} 
+                                contact={c}
+                                onEdit={handleEditContact}
+                                onDelete={handleDeleteContact}
+                                showActions={true}
+                            />
+                        ))}
+                    </ul>
+                    {filteredContacts.length === 0 && (
+                        <div className="text-center py-8 text-gray-500">
+                            {searchTerm || statusFilter !== 'All' 
+                                ? 'No contacts match your search criteria' 
+                                : 'No team members found'
+                            }
                         </div>
-                        <div className="p-6 bg-white rounded-xl shadow-sm border border-gray-200">
-                            <h2 className="text-xl font-bold mb-4">
-                                {state.projects.find(p => p.id === selectedProjectId)?.name} Team ({assignedTeam.length})
-                            </h2>
-                            <ul className="space-y-3">
-                                {assignedTeam.map(c => (
-                                    <ContactCard 
-                                        key={c.id} 
-                                        contact={c} 
-                                        onAction={handleRemoveMember} 
-                                        actionType="remove"
-                                        onEdit={handleEditContact}
-                                        onDelete={handleDeleteContact}
-                                        showActions={true}
-                                    />
-                                ))}
-                            </ul>
-                        </div>
-                    </div>
-                </>
+                    )}
+                </div>
             ) : (
                 <div className="p-6 bg-white rounded-xl shadow-sm border border-gray-200" data-onboarding="contacts-list">
                     <h2 className="text-xl font-bold mb-4">
