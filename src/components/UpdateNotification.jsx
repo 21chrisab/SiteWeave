@@ -37,7 +37,14 @@ const UpdateNotification = () => {
 
   const checkForUpdates = async () => {
     try {
-      await window.electronAPI.checkForUpdates();
+      const result = await window.electronAPI.checkForUpdates();
+      // Handle the new serializable response format
+      if (result && !result.success) {
+        // Only log error if it's not a "no update available" error
+        if (result.error && !result.error.includes('latest.yml') && !result.error.includes('404')) {
+          console.error('Failed to check for updates:', result.error);
+        }
+      }
     } catch (error) {
       // Only log error if it's not a "no update available" error
       if (!error.message?.includes('latest.yml') && !error.message?.includes('404')) {
