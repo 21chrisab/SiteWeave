@@ -27,8 +27,10 @@ function DashboardView() {
     const handleSaveProject = async (projectData) => {
         if (editingProject) {
             setIsUpdatingProject(true);
+            // Remove selectedContacts from projectData as it's not a column in the projects table
+            const { selectedContacts, ...projectFields } = projectData;
             const projectDataWithAudit = {
-                ...projectData,
+                ...projectFields,
                 updated_by_user_id: state.user.id,
                 updated_at: new Date().toISOString()
             };
@@ -41,6 +43,34 @@ function DashboardView() {
             if (error) {
                 addToast('Error updating project: ' + error.message, 'error');
             } else {
+                // Update project contacts if selectedContacts is provided
+                if (selectedContacts !== undefined) {
+                    // First, remove all existing project contacts
+                    const { error: deleteError } = await supabaseClient
+                        .from('project_contacts')
+                        .delete()
+                        .eq('project_id', editingProject.id);
+                    
+                    if (deleteError) {
+                        console.error('Error removing existing contacts:', deleteError);
+                        addToast('Project updated, but contacts could not be updated', 'warning');
+                    } else {
+                        // Then add the new selected contacts
+                        if (selectedContacts && selectedContacts.length > 0) {
+                            const projectContactsData = selectedContacts.map(contactId => ({
+                                project_id: editingProject.id,
+                                contact_id: contactId
+                            }));
+                            const { error: contactsError } = await supabaseClient
+                                .from('project_contacts')
+                                .insert(projectContactsData);
+                            if (contactsError) {
+                                console.error('Error adding contacts to project:', contactsError);
+                                addToast('Project updated, but some contacts could not be added', 'warning');
+                            }
+                        }
+                    }
+                }
                 dispatch({ type: 'UPDATE_PROJECT', payload: updatedProject });
                 addToast('Project updated successfully!', 'success');
                 setShowModal(false);
@@ -217,7 +247,7 @@ function DashboardView() {
                 onClose={() => setShowDeleteConfirm(false)}
                 onConfirm={confirmDeleteProject}
                 title="Delete Project"
-                message={`Are you sure you want to delete "${projectToDelete?.name}"? This will also delete all associated tasks, files, and messages. This action cannot be undone.`}
+                message={`Are you sure you want to delete "${projectToDelete?.name}"? This will also delete all associated tasks, files, message boards, and messages. This action cannot be undone.`}
                 confirmText="Delete"
                 cancelText="Cancel"
             />

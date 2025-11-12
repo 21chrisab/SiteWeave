@@ -1,7 +1,7 @@
 {
   "name": "siteweave",
   "private": true,
-  "version": "1.0.25",
+  "version": "1.0.26",
   "description": "SiteWeave - Project Management and Collaboration Tool",
   "author": "21chrisab",
   "homepage": "https://github.com/21chrisab/SiteWeave",
@@ -9,6 +9,10 @@
     "type": "git",
     "url": "https://github.com/21chrisab/SiteWeave.git"
   },
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
   "main": "dist-electron/main.cjs",
   "scripts": {
     "dev": "vite",
@@ -21,18 +25,25 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@expo/config-plugins": "^54.0.0",
+    "@expo/vector-icons": "^15.0.3",
+    "@fullcalendar/core": "^6.1.19",
     "@fullcalendar/daygrid": "^6.1.19",
     "@fullcalendar/interaction": "^6.1.19",
     "@fullcalendar/react": "^6.1.19",
     "@fullcalendar/timegrid": "^6.1.19",
     "@supabase/supabase-js": "^2.74.0",
     "dropbox": "^10.34.0",
+    "expo": "~54.0.23",
+    "expo-router": "~6.0.14",
     "react": "^19.1.1",
-    "react-dom": "^19.1.1",
+    "react-dom": "^19.2.0",
+    "react-native-web": "^0.21.2",
     "react-router-dom": "^7.9.4"
   },
   "devDependencies": {
     "@eslint/js": "^9.36.0",
+    "@expo/webpack-config": "^19.0.1",
     "@types/react": "^19.1.16",
     "@types/react-dom": "^19.1.9",
     "@vitejs/plugin-react": "^5.0.4",
@@ -48,7 +59,8 @@
     "vite": "^7.1.7",
     "vite-plugin-electron": "^0.29.0",
     "vite-plugin-electron-renderer": "^0.14.6",
-    "wait-on": "^9.0.1"
+    "wait-on": "^9.0.1",
+    "webpack": "^5.102.1"
   },
   "build": {
     "appId": "com.siteweave.app",

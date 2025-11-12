@@ -99,7 +99,7 @@ function ProjectProgressCard({ project }) {
     return (
         <div className="p-4 bg-white rounded-xl shadow-sm border border-gray-200">
             <div className="flex justify-between items-center mb-3">
-                <h3 className="font-semibold text-sm text-gray-700">BuildPath Progress</h3>
+                <h3 className="font-semibold text-sm text-gray-700">Progress Status</h3>
                 <span className="text-sm font-bold text-gray-900">{overallProgress}%</span>
             </div>
             

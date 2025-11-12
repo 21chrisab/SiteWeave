@@ -3,6 +3,7 @@ import { useAppContext, supabaseClient } from '../context/AppContext';
 import { useToast } from '../context/ToastContext';
 import MessageItem from '../components/MessageItem';
 import Icon from '../components/Icon';
+import Avatar from '../components/Avatar';
 import dropboxStorage from '../utils/dropboxStorage';
 
 function MessagesView() {
@@ -22,6 +23,12 @@ function MessagesView() {
 
     const getProjectForChannel = (channelId) => state.projects.find(p => p.id === state.messageChannels.find(c => c.id === channelId)?.project_id);
     const getTeamCount = (projectId) => state.contacts.filter(c => c.project_contacts.some(pc => pc.project_id === projectId)).length;
+    
+    // Get team members for the active channel's project
+    const project = getProjectForChannel(activeChannel?.id);
+    const teamMembers = state.contacts.filter(contact => 
+        contact.project_contacts && contact.project_contacts.some(pc => pc.project_id === project?.id) && contact.type === 'Team'
+    );
 
     // Filter contacts for mentions
     const filteredContacts = state.contacts.filter(contact => 
@@ -160,11 +167,30 @@ function MessagesView() {
                                 <h3 className="font-bold text-lg"># {getProjectForChannel(activeChannel.id)?.name}</h3>
                                 <p className="text-sm text-gray-500">{getTeamCount(activeChannel.project_id)} members</p>
                             </div>
-                            <div className="flex items-center gap-4 text-gray-500">
-                                <button className="hover:text-gray-800"><Icon path="M2.25 6.75c0-.414.336-.75.75-.75h3.75a.75.75 0 010 1.5H3.75A.75.75 0 013 8.25v8.25a.75.75 0 00.75.75h3.75a.75.75 0 010 1.5H3a2.25 2.25 0 01-2.25-2.25V9A2.25 2.25 0 013 6.75z" className="w-6 h-6"/></button>
-                                <button className="hover:text-gray-800"><Icon path="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z" className="w-6 h-6"/></button>
-                                <button className="hover:text-gray-800"><Icon path="M10.5 1.5H8.25A2.25 2.25 0 006 3.75v16.5a2.25 2.25 0 002.25 2.25h7.5A2.25 2.25 0 0018 20.25V3.75a2.25 2.25 0 00-2.25-2.25H13.5m-3 0V3h3V1.5m-3 0h3m-3 18.75h3" className="w-6 h-6"/></button>
-                            </div>
+                            {teamMembers.length > 0 && (
+                                <div className="flex items-center gap-2">
+                                    <div className="flex -space-x-2">
+                                        {teamMembers.slice(0, 5).map(member => (
+                                            member.avatar_url ? (
+                                                <img 
+                                                    key={member.id} 
+                                                    src={member.avatar_url} 
+                                                    title={member.name} 
+                                                    alt={member.name}
+                                                    className="w-8 h-8 rounded-full border-2 border-white" 
+                                                />
+                                            ) : (
+                                                <Avatar key={member.id} name={member.name} size="md" className="border-2 border-white" />
+                                            )
+                                        ))}
+                                    </div>
+                                    {teamMembers.length > 5 && (
+                                        <div className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center text-xs font-semibold text-gray-600 -ml-2 border-2 border-white">
+                                            +{teamMembers.length - 5}
+                                        </div>
+                                    )}
+                                </div>
+                            )}
                         </header>
                         <div 
                             data-onboarding="chat-area"

@@ -1,15 +1,17 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAppContext, supabaseClient } from '../context/AppContext';
 import { useToast } from '../context/ToastContext';
 import LoadingSpinner from '../components/LoadingSpinner';
 import Avatar from '../components/Avatar';
 import DropboxSettings from '../components/DropboxSettings';
+import packageJson from '../../package.json';
 
 function SettingsView() {
   const { state, dispatch } = useAppContext();
   const { addToast } = useToast();
   const [isUpdating, setIsUpdating] = useState(false);
   const [isChangingPassword, setIsChangingPassword] = useState(false);
+  const [appVersion, setAppVersion] = useState(packageJson.version);
   
   // Form states
   const [fullName, setFullName] = useState(state.user?.user_metadata?.full_name || '');
@@ -17,6 +19,28 @@ function SettingsView() {
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+
+  // Get app version dynamically
+  useEffect(() => {
+    const fetchVersion = async () => {
+      // Try to get version from Electron API if available
+      if (window.electronAPI?.getAppVersion) {
+        try {
+          const version = await window.electronAPI.getAppVersion();
+          if (version) {
+            setAppVersion(version);
+            return;
+          }
+        } catch (error) {
+          console.log('Could not get version from Electron API, using package.json version');
+        }
+      }
+      // Fallback to package.json version
+      setAppVersion(packageJson.version);
+    };
+
+    fetchVersion();
+  }, []);
 
   const handleUpdateProfile = async (e) => {
     e.preventDefault();
@@ -263,7 +287,7 @@ function SettingsView() {
         <h2 className="text-xl font-semibold text-gray-900 mb-4">About SiteWeave</h2>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm text-gray-600">
           <div>
-            <span className="font-medium">Version:</span> 1.0.0
+            <span className="font-medium">Version:</span> {appVersion}
           </div>
           <div>
             <span className="font-medium">User ID:</span> {state.user?.id?.slice(0, 8)}...

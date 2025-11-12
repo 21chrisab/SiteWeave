@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { useAppContext, supabaseClient } from '../context/AppContext';
 import { useToast } from '../context/ToastContext';
 import TaskItem from '../components/TaskItem';
@@ -9,6 +9,8 @@ import ShareModal from '../components/ShareModal';
 import ConfirmDialog from '../components/ConfirmDialog';
 import TaskBulkActions from '../components/TaskBulkActions';
 import FieldIssues from '../components/FieldIssues';
+import Workflow from '../components/Workflow';
+import Avatar from '../components/Avatar';
 import { useTaskShortcuts } from '../hooks/useKeyboardShortcuts';
 import { handleApiError, createOptimisticUpdate } from '../utils/errorHandling';
 import dropboxStorage from '../utils/dropboxStorage';
@@ -29,6 +31,7 @@ function ProjectDetailsView() {
     const [activeTab, setActiveTab] = useState('tasks'); // tasks, fieldIssues, files
     const fileInputRef = useRef(null);
     const [showShare, setShowShare] = useState(false);
+    const [fieldIssuesCount, setFieldIssuesCount] = useState(0);
 
     // Keyboard shortcuts
     useTaskShortcuts({
@@ -42,9 +45,43 @@ function ProjectDetailsView() {
         filterTasks: (filter) => setTaskFilter(filter)
     });
 
+    // Fetch field issues count
+    useEffect(() => {
+        const fetchFieldIssuesCount = async () => {
+            if (!state.selectedProjectId) {
+                setFieldIssuesCount(0);
+                return;
+            }
+            
+            try {
+                const { count, error } = await supabaseClient
+                    .from('project_issues')
+                    .select('*', { count: 'exact', head: true })
+                    .eq('project_id', state.selectedProjectId);
+
+                if (error) {
+                    console.error('Error fetching field issues count:', error);
+                    setFieldIssuesCount(0);
+                } else {
+                    setFieldIssuesCount(count || 0);
+                }
+            } catch (error) {
+                console.error('Error fetching field issues count:', error);
+                setFieldIssuesCount(0);
+            }
+        };
+
+        fetchFieldIssuesCount();
+    }, [state.selectedProjectId, activeTab]);
+
     const project = state.projects.find(p => p.id === state.selectedProjectId);
     const allTasks = state.tasks.filter(t => t.project_id === state.selectedProjectId);
     const files = state.files.filter(f => f.project_id === state.selectedProjectId);
+    
+    // Get team members for this project
+    const teamMembers = state.contacts.filter(contact => 
+        contact.project_contacts && contact.project_contacts.some(pc => pc.project_id === project?.id) && contact.type === 'Team'
+    );
     
     // Filter and sort tasks
     const filteredTasks = allTasks.filter(task => {
@@ -101,6 +138,16 @@ function ProjectDetailsView() {
                 if (contactError || !contact) {
                     console.warn('Assignee contact not found, setting to null');
                     taskData.assignee_id = null;
+                }
+            }
+            
+            // Parse workflow_steps if it's a string (for JSONB storage)
+            if (taskData.workflow_steps && typeof taskData.workflow_steps === 'string') {
+                try {
+                    taskData.workflow_steps = JSON.parse(taskData.workflow_steps);
+                } catch (e) {
+                    console.error('Error parsing workflow_steps:', e);
+                    taskData.workflow_steps = null;
                 }
             }
             
@@ -470,6 +517,24 @@ function ProjectDetailsView() {
                 </div>
                 <div className="flex items-center gap-4">
                     <span className={`px-3 py-1 text-sm font-semibold rounded-full ${project.status_color === 'green' ? 'bg-green-100 text-green-800' : 'bg-orange-100 text-orange-800'}`}>{project.status}</span>
+                    {teamMembers.length > 0 && (
+                        <div className="flex items-center gap-2">
+                            <div className="flex -space-x-2">
+                                {teamMembers.slice(0, 5).map(member => (
+                                    member.avatar_url ? (
+                                        <img key={member.id} src={member.avatar_url} title={member.name} className="w-8 h-8 rounded-full" />
+                                    ) : (
+                                        <Avatar key={member.id} name={member.name} size="sm" />
+                                    )
+                                ))}
+                            </div>
+                            {teamMembers.length > 5 && (
+                                <div className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center text-xs font-semibold text-gray-600 -ml-2">
+                                    +{teamMembers.length - 5}
+                                </div>
+                            )}
+                        </div>
+                    )}
                     <button 
                         onClick={() => setShowShare(true)}
                         className="px-4 py-2 text-sm font-semibold text-white bg-blue-600 rounded-lg shadow-sm hover:bg-blue-700 transition-colors"
@@ -507,7 +572,7 @@ function ProjectDetailsView() {
                                         : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
                                 }`}
                             >
-                                Field Issues
+                                Field Issues ({fieldIssuesCount})
                             </button>
                             <button
                                 onClick={() => setActiveTab('files')}
@@ -562,7 +627,7 @@ function ProjectDetailsView() {
                                     onClearSelection={() => setSelectedTasks([])}
                                 />
                                 {tasks.length > 0 ? (
-                                    <ul className="space-y-3">
+                                    <ul className="space-y-2">
                                         {tasks.map((task) => (
                                             <TaskItem 
                                                 key={task.id} 
@@ -597,6 +662,13 @@ function ProjectDetailsView() {
 
                         {activeTab === 'fieldIssues' && (
                             <FieldIssues projectId={project.id} />
+                        )}
+
+                        {/* Workflow Section - Always visible under Tasks */}
+                        {activeTab === 'tasks' && (
+                            <div className="mt-6">
+                                <Workflow projectId={project.id} />
+                            </div>
                         )}
 
                         {activeTab === 'files' && (

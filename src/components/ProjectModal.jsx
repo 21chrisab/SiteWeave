@@ -27,8 +27,21 @@ function ProjectModal({ onClose, onSave, isLoading = false, project = null }) {
             setStatus(project.status || 'Planning');
             setDueDate(project.due_date || '');
             setNextMilestone(project.next_milestone || '');
+            
+            // Load existing project contacts
+            const existingContacts = state.contacts
+                .filter(contact => 
+                    contact.type === 'Team' && 
+                    contact.project_contacts && 
+                    contact.project_contacts.some(pc => pc.project_id === project.id)
+                )
+                .map(contact => contact.id);
+            setSelectedContacts(existingContacts);
+        } else {
+            // Reset when creating new project
+            setSelectedContacts([]);
         }
-    }, [project]);
+    }, [project, state.contacts]);
 
     const handleSubmit = (e) => {
         e.preventDefault();
@@ -39,7 +52,7 @@ function ProjectModal({ onClose, onSave, isLoading = false, project = null }) {
             status,
             due_date: due_date || null,
             next_milestone: next_milestone || null,
-            selectedContacts: isEditMode ? [] : selectedContacts
+            selectedContacts: selectedContacts
         };
         
         if (isEditMode) {
@@ -100,9 +113,11 @@ function ProjectModal({ onClose, onSave, isLoading = false, project = null }) {
                         <input type="text" value={next_milestone} onChange={e => setNextMilestone(e.target.value)} className="w-full p-2 border rounded-lg" placeholder="e.g., Foundation Complete" />
                     </div>
                     
-                    {!isEditMode && teamMembers.length > 0 && (
+                    {teamMembers.length > 0 && (
                         <div className="mb-6">
-                            <label className="block text-sm font-semibold mb-2 text-gray-600">Add Team Members (Optional)</label>
+                            <label className="block text-sm font-semibold mb-2 text-gray-600">
+                                {isEditMode ? 'Team Members' : 'Add Team Members'} (Optional)
+                            </label>
                             <div className="border border-gray-300 rounded-lg p-4 max-h-48 overflow-y-auto">
                                 {teamMembers.map(contact => (
                                     <label key={contact.id} className="flex items-center gap-3 p-2 hover:bg-gray-50 rounded cursor-pointer">

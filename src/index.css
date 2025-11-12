@@ -62,16 +62,80 @@
   background-color: #fef3c7 !important;
 }
 
+/* Completely remove all blue dots in week/day views */
+.fc-timegrid-day.fc-day-today .fc-timegrid-col-events::after,
+.fc-timegrid-day.fc-day-today .fc-timegrid-col-events::before,
+.fc-timegrid-day.fc-day-today .fc-timegrid-col-frame::after,
+.fc-timegrid-day.fc-day-today .fc-timegrid-col-frame::before,
+.fc-timegrid-day.fc-day-today::after,
+.fc-timegrid-day.fc-day-today::before {
+  display: none !important;
+  content: none !important;
+  visibility: hidden !important;
+}
+
+/* Hide any small circular indicators in all-day area (but not events) */
+.fc-timegrid-day.fc-day-today .fc-timegrid-col-events > div[class*="rounded-full"]:not(.fc-event),
+.fc-timegrid-day.fc-day-today .fc-timegrid-col-events > span[class*="rounded-full"]:not(.fc-event),
+.fc-timegrid-day.fc-day-today .fc-timegrid-col-events > div[style*="border-radius: 50%"]:not(.fc-event),
+.fc-timegrid-day.fc-day-today .fc-timegrid-col-events > span[style*="border-radius: 50%"]:not(.fc-event) {
+  display: none !important;
+}
+
+/* Hide any dots in the all-day slot specifically */
+.fc-timegrid-day.fc-day-today .fc-timegrid-col-events {
+  position: relative;
+}
+
+.fc-timegrid-day.fc-day-today .fc-timegrid-col-events::after {
+  content: none !important;
+  display: none !important;
+}
+
 .fc-day-today .fc-daygrid-day-number {
-  background-color: #f59e0b !important;
-  color: white !important;
-  border-radius: 50% !important;
-  width: 28px !important;
-  height: 28px !important;
-  display: flex !important;
-  align-items: center !important;
-  justify-content: center !important;
-  margin: 4px !important;
+  background-color: transparent !important;
+  color: #374151 !important;
+  font-weight: 700 !important;
+  border: none !important;
+  border-radius: 0 !important;
+  width: auto !important;
+  height: auto !important;
+  display: inline !important;
+  margin: 0 !important;
+}
+
+/* Completely hide blue dot in week/day views */
+.fc-timegrid-day.fc-day-today .fc-timegrid-col-events::after,
+.fc-timegrid-day.fc-day-today .fc-timegrid-col-events::before,
+.fc-timegrid-day.fc-day-today .fc-timegrid-col-frame::after,
+.fc-timegrid-day.fc-day-today .fc-timegrid-col-frame::before,
+.fc-timegrid-day.fc-day-today::after,
+.fc-timegrid-day.fc-day-today::before,
+.fc-timegrid-day.fc-day-today .fc-timegrid-col-events > *[class*="rounded-full"],
+.fc-timegrid-day.fc-day-today .fc-timegrid-col-events > *[style*="border-radius: 50%"],
+.fc-timegrid-day.fc-day-today .fc-timegrid-col-events > *[style*="border-radius:50%"] {
+  display: none !important;
+  content: none !important;
+  visibility: hidden !important;
+}
+
+/* Hide any unwanted orange dots/indicators - general rule for small orange circles */
+div[class*="rounded-full"][class*="orange"]:not(.fc-day-today .fc-daygrid-day-number),
+span[class*="rounded-full"][class*="orange"]:not(.fc-day-today .fc-daygrid-day-number) {
+  display: none !important;
+}
+
+/* More specific: hide small orange dots (1.5 or 2 size) */
+.w-1\.5.h-1\.5.bg-orange-500,
+.w-1\.5.h-1\.5.bg-orange-600,
+.w-2.h-2.bg-orange-500,
+.w-2.h-2.bg-orange-600 {
+  display: none !important;
+}
+
+/* Ensure weather icon positioning doesn't conflict */
+.fc-daygrid-day-frame {
+  position: relative !important;
 }
 
 /* Events */

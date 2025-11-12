@@ -204,4 +204,145 @@ export async function sendTaskUpdateEmail(contactEmail, updateDetails, projectDe
     }
 }
 
+/**
+ * Send calendar event invitation email to attendee
+ * @param {string} attendeeEmail - Email address of the attendee
+ * @param {object} eventDetails - Details of the calendar event
+ * @param {string} organizerName - Name of the event organizer
+ * @returns {Promise<{success: boolean, error?: string}>}
+ */
+export async function sendCalendarInvitationEmail(attendeeEmail, eventDetails, organizerName) {
+    try {
+        // Validate email
+        if (!attendeeEmail || !attendeeEmail.includes('@')) {
+            return { success: false, error: 'Invalid email address' };
+        }
+
+        // Format date and time
+        const formatDateTime = (dateTimeString, isAllDay) => {
+            if (!dateTimeString) return 'TBD';
+            const date = new Date(dateTimeString);
+            if (isAllDay) {
+                return date.toLocaleDateString('en-US', { 
+                    weekday: 'long', 
+                    year: 'numeric', 
+                    month: 'long', 
+                    day: 'numeric' 
+                });
+            }
+            return date.toLocaleString('en-US', { 
+                weekday: 'long', 
+                year: 'numeric', 
+                month: 'long', 
+                day: 'numeric',
+                hour: 'numeric',
+                minute: '2-digit',
+                hour12: true
+            });
+        };
+
+        const startDateTime = formatDateTime(eventDetails.start_time, eventDetails.is_all_day);
+        const endDateTime = formatDateTime(eventDetails.end_time, eventDetails.is_all_day);
+
+        // Construct email content
+        const subject = `Calendar Invitation: ${eventDetails.title || 'Event'}`;
+        const htmlBody = `
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; line-height: 1.6; color: #333; }
+        .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+        .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 30px; border-radius: 8px 8px 0 0; text-align: center; }
+        .header h1 { margin: 0; font-size: 24px; }
+        .content { background: #ffffff; padding: 30px; border: 1px solid #e5e7eb; border-top: none; }
+        .event-box { background: #f9fafb; border-left: 4px solid #3b82f6; padding: 20px; margin: 20px 0; border-radius: 4px; }
+        .info-row { margin: 12px 0; }
+        .label { font-weight: 600; color: #6b7280; display: inline-block; min-width: 80px; }
+        .value { color: #111827; }
+        .footer { background: #f9fafb; padding: 20px; text-align: center; font-size: 14px; color: #6b7280; border-radius: 0 0 8px 8px; }
+        .description { background: #eff6ff; border: 1px solid #dbeafe; padding: 15px; border-radius: 6px; margin-top: 20px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>📅 Calendar Invitation</h1>
+        </div>
+        <div class="content">
+            <p>Hello,</p>
+            <p><strong>${organizerName}</strong> has invited you to an event.</p>
+            
+            <div class="event-box">
+                <h3 style="margin-top: 0; color: #111827; font-size: 20px;">${eventDetails.title || 'Event'}</h3>
+                <div class="info-row">
+                    <span class="label">Date & Time:</span> 
+                    <span class="value">${startDateTime}${eventDetails.is_all_day ? '' : ` - ${endDateTime}`}</span>
+                </div>
+                ${eventDetails.location ? `
+                <div class="info-row">
+                    <span class="label">Location:</span> 
+                    <span class="value">${eventDetails.location}</span>
+                </div>` : ''}
+                ${eventDetails.description ? `
+                <div class="description">
+                    <strong>Description:</strong>
+                    <p style="margin: 10px 0 0 0; white-space: pre-wrap;">${eventDetails.description}</p>
+                </div>` : ''}
+            </div>
+
+            <p style="margin-top: 25px;">You have been invited to this event. Please add it to your calendar.</p>
+        </div>
+        <div class="footer">
+            <p>This invitation was sent from SiteWeave Calendar</p>
+            <p style="margin: 5px 0 0 0; font-size: 12px;">If you have questions, please contact ${organizerName}.</p>
+        </div>
+    </div>
+</body>
+</html>
+        `.trim();
+
+        const textBody = `
+Calendar Invitation
+
+Hello,
+
+${organizerName} has invited you to an event.
+
+EVENT DETAILS:
+Title: ${eventDetails.title || 'Event'}
+Date & Time: ${startDateTime}${eventDetails.is_all_day ? '' : ` - ${endDateTime}`}
+${eventDetails.location ? `Location: ${eventDetails.location}\n` : ''}${eventDetails.description ? `Description: ${eventDetails.description}\n` : ''}
+
+You have been invited to this event. Please add it to your calendar.
+
+---
+This invitation was sent from SiteWeave Calendar
+If you have questions, please contact ${organizerName}.
+        `.trim();
+
+        // Use Supabase edge function to send email
+        const { data, error } = await supabaseClient.functions.invoke('send-email', {
+            body: {
+                to: attendeeEmail,
+                subject: subject,
+                html: htmlBody,
+                text: textBody
+            }
+        });
+
+        if (error) {
+            console.error('Email sending error:', error);
+            return { success: false, error: error.message || 'Failed to send email' };
+        }
+
+        return { success: true };
+    } catch (error) {
+        console.error('Error in sendCalendarInvitationEmail:', error);
+        return { success: false, error: error.message || 'Unknown error' };
+    }
+}
+
 

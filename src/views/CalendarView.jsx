@@ -21,35 +21,48 @@ import {
     getStoredCalendarToken
 } from '../utils/calendarIntegration';
 import { generateRecurringInstances } from '../utils/recurrenceService';
+import { sendCalendarInvitationEmail } from '../utils/emailNotifications';
 import EventModal from '../components/EventModal';
 import ConfirmDialog from '../components/ConfirmDialog';
 import LoadingSpinner from '../components/LoadingSpinner';
 import CalendarImportModal from '../components/CalendarImportModal';
 import CategoryColorManager from '../components/CategoryColorManager';
+import WeatherWidget from '../components/WeatherWidget';
+import { getExtendedWeatherForecast, getWeatherIconUrl } from '../utils/weatherService';
 
 // --- Mini Calendar Component (Sidebar) ---
 function MiniCalendar({ currentDate, setCurrentDate }) {
+    // Normalize today to midnight local time to avoid timezone issues
     const today = new Date();
+    today.setHours(0, 0, 0, 0);
 
     const getDaysInMonth = (date) => {
         const year = date.getFullYear();
         const month = date.getMonth();
         const firstDayOfMonth = new Date(year, month, 1);
+        firstDayOfMonth.setHours(0, 0, 0, 0);
         const lastDayOfMonth = new Date(year, month + 1, 0);
+        lastDayOfMonth.setHours(0, 0, 0, 0);
         
         let days = [];
         // Add days from previous month to fill the first week
         for (let i = firstDayOfMonth.getDay(); i > 0; i--) {
-            days.push(new Date(year, month, 1 - i));
+            const day = new Date(year, month, 1 - i);
+            day.setHours(0, 0, 0, 0);
+            days.push(day);
         }
         // Add days of the current month
         for (let i = 1; i <= lastDayOfMonth.getDate(); i++) {
-            days.push(new Date(year, month, i));
+            const day = new Date(year, month, i);
+            day.setHours(0, 0, 0, 0);
+            days.push(day);
         }
         // Add days from next month to fill the grid
         while (days.length < 42) { // Ensure 6 rows
             const lastDay = days[days.length - 1];
-            days.push(new Date(lastDay.getFullYear(), lastDay.getMonth(), lastDay.getDate() + 1));
+            const nextDay = new Date(lastDay.getFullYear(), lastDay.getMonth(), lastDay.getDate() + 1);
+            nextDay.setHours(0, 0, 0, 0);
+            days.push(nextDay);
         }
         return days;
     };
@@ -71,9 +84,15 @@ function MiniCalendar({ currentDate, setCurrentDate }) {
             </div>
             <div className="grid grid-cols-7 text-center text-sm">
                 {days.map((day, index) => {
+                    // Normalize day to midnight for accurate comparison
+                    const normalizedDay = new Date(day);
+                    normalizedDay.setHours(0, 0, 0, 0);
+                    const normalizedCurrentDate = new Date(currentDate);
+                    normalizedCurrentDate.setHours(0, 0, 0, 0);
+                    
                     const isCurrentMonth = day.getMonth() === currentDate.getMonth();
-                    const isSelected = day.toDateString() === currentDate.toDateString();
-                    const isToday = day.toDateString() === today.toDateString();
+                    const isSelected = normalizedDay.getTime() === normalizedCurrentDate.getTime();
+                    const isToday = normalizedDay.getTime() === today.getTime();
                     return (
                         <button 
                             key={index} 
@@ -116,10 +135,49 @@ function CalendarView() {
     const [isImporting, setIsImporting] = useState(false);
     const [showCategoryManager, setShowCategoryManager] = useState(false);
     const [categories, setCategories] = useState([]);
+    const [weatherForecast, setWeatherForecast] = useState({});
+    const [weatherCity, setWeatherCity] = useState(null);
 
     useEffect(() => {
         loadCategories();
+        loadWeatherForCalendar();
     }, []);
+
+    // Load weather when view changes or date changes
+    useEffect(() => {
+        if (weatherCity) {
+            loadWeatherForCalendar();
+        }
+    }, [currentView, currentDate]);
+
+    // Listen for weather city changes from WeatherWidget
+    useEffect(() => {
+        const handleStorageChange = () => {
+            const savedCity = localStorage.getItem('weather_location_preference');
+            if (savedCity && savedCity !== weatherCity) {
+                loadWeatherForCalendar();
+            }
+        };
+        
+        // Check for changes periodically (when user changes city in widget)
+        const interval = setInterval(handleStorageChange, 1000);
+        return () => clearInterval(interval);
+    }, [weatherCity]);
+
+    const loadWeatherForCalendar = async () => {
+        try {
+            // Get saved city preference or use default
+            const savedCity = localStorage.getItem('weather_location_preference') || 'New York';
+            setWeatherCity(savedCity);
+            
+            // Fetch extended forecast (14 days)
+            const forecast = await getExtendedWeatherForecast(savedCity, 14);
+            setWeatherForecast(forecast);
+        } catch (error) {
+            console.error('Error loading weather for calendar:', error);
+            // Silently fail - weather is optional
+        }
+    };
 
     const loadCategories = async () => {
         try {
@@ -461,6 +519,31 @@ function CalendarView() {
         const syncToGoogle = eventData.sync_to_google && getStoredCalendarToken('google');
         const syncToOutlook = eventData.sync_to_outlook && getStoredCalendarToken('outlook');
         
+        // Get organizer name from user's contact
+        const getUserName = async () => {
+            if (!state.user) return 'A team member';
+            
+            // Try to find user's contact via profile
+            try {
+                const { data: profile } = await supabaseClient
+                    .from('profiles')
+                    .select('contact_id')
+                    .eq('id', state.user.id)
+                    .maybeSingle();
+                
+                if (profile?.contact_id) {
+                    const userContact = state.contacts.find(c => c.id === profile.contact_id);
+                    if (userContact?.name) return userContact.name;
+                }
+            } catch (error) {
+                console.warn('Error fetching user profile:', error);
+            }
+            
+            // Fallback to email or default
+            return state.user.email?.split('@')[0] || 'A team member';
+        };
+        const organizerName = await getUserName();
+        
         if (editingEvent) {
             setIsUpdatingEvent(true);
             
@@ -596,6 +679,33 @@ function CalendarView() {
                 addToast('Event updated, but sync to external calendar failed: ' + syncError.message, 'warning');
             }
             
+            // Send invitation emails to attendees (only newly added ones for updates)
+            if (eventData.attendees) {
+                const newAttendeeEmails = eventData.attendees.split(',').map(e => e.trim()).filter(Boolean);
+                const oldAttendeeEmails = editingEvent.attendees 
+                    ? editingEvent.attendees.split(',').map(e => e.trim()).filter(Boolean)
+                    : [];
+                const newlyAddedAttendees = newAttendeeEmails.filter(email => !oldAttendeeEmails.includes(email));
+                
+                // Send emails to newly added attendees
+                if (newlyAddedAttendees.length > 0) {
+                    const emailPromises = newlyAddedAttendees.map(email => 
+                        sendCalendarInvitationEmail(email, updatedEvent, organizerName)
+                    );
+                    try {
+                        await Promise.allSettled(emailPromises);
+                        // Don't show error toast for email failures - just log them
+                        emailPromises.forEach((promise, index) => {
+                            promise.catch(error => {
+                                console.warn(`Failed to send invitation to ${newlyAddedAttendees[index]}:`, error);
+                            });
+                        });
+                    } catch (error) {
+                        console.error('Error sending invitation emails:', error);
+                    }
+                }
+            }
+            
             addToast('Event updated successfully!', 'success');
             dispatch({ type: 'UPDATE_EVENT', payload: updatedEvent });
             setShowModal(false);
@@ -683,6 +793,27 @@ function CalendarView() {
                 console.error('Error syncing to external calendar:', syncError);
                 dispatch({ type: 'ADD_EVENT', payload: newEvent });
                 addToast('Event saved, but sync to external calendar failed: ' + syncError.message, 'warning');
+            }
+            
+            // Send invitation emails to all attendees for new events
+            if (eventData.attendees) {
+                const attendeeEmails = eventData.attendees.split(',').map(e => e.trim()).filter(Boolean);
+                if (attendeeEmails.length > 0) {
+                    const emailPromises = attendeeEmails.map(email => 
+                        sendCalendarInvitationEmail(email, newEvent, organizerName)
+                    );
+                    try {
+                        await Promise.allSettled(emailPromises);
+                        // Don't show error toast for email failures - just log them
+                        emailPromises.forEach((promise, index) => {
+                            promise.catch(error => {
+                                console.warn(`Failed to send invitation to ${attendeeEmails[index]}:`, error);
+                            });
+                        });
+                    } catch (error) {
+                        console.error('Error sending invitation emails:', error);
+                    }
+                }
             }
             
             setShowModal(false);
@@ -823,7 +954,11 @@ function CalendarView() {
                                     </button>
                                 </div>
                             </div>
-                            <div className="flex items-center space-x-2">
+                            <div className="flex items-center space-x-4">
+                                {/* Weather Widget */}
+                                <div className="flex-shrink-0 relative">
+                                    <WeatherWidget compact={true} />
+                                </div>
                                 <div className="flex items-center bg-gray-100 rounded-lg p-1">
                                     <button 
                                         onClick={() => handleViewChange('timeGridDay')}
@@ -876,6 +1011,7 @@ function CalendarView() {
                             selectable={true}
                             height="calc(100vh - 200px)"
                             allDaySlot={true}
+                            timeZone="local"
                             slotMinTime="06:00:00"
                             slotMaxTime="22:00:00"
                             eventDisplay="block"
@@ -904,6 +1040,39 @@ function CalendarView() {
                                 const day = date.getDate();
                                 return `${weekday}, ${month} ${day}`;
                             }}
+                            dayHeaderContent={(arg) => {
+                                // Add weather to day headers in week/day views
+                                const date = arg.date instanceof Date ? arg.date : new Date(arg.date);
+                                const dateKey = date.toDateString();
+                                const weather = weatherForecast[dateKey];
+                                
+                                // Month view: return default
+                                if (arg.view && arg.view.type === 'dayGridMonth') {
+                                    return arg.text;
+                                }
+                                
+                                // Week/Day views: add weather
+                                return (
+                                    <div className="flex flex-col items-center gap-1">
+                                        <div>{arg.text}</div>
+                                        {weather && (
+                                            <div className="flex items-center gap-1 text-xs">
+                                                {weather.icon && (
+                                                    <img
+                                                        src={getWeatherIconUrl(weather.icon)}
+                                                        alt={weather.description}
+                                                        className="w-4 h-4"
+                                                        title={`${weather.description}, High: ${weather.high}°F, Low: ${weather.low}°F`}
+                                                    />
+                                                )}
+                                                <span className="text-gray-600 font-medium" title={`${weather.description}, High: ${weather.high}°F, Low: ${weather.low}°F`}>
+                                                    {weather.temperature}°
+                                                </span>
+                                            </div>
+                                        )}
+                                    </div>
+                                );
+                            }}
                             slotLabelFormat={{
                                 hour: 'numeric',
                                 minute: '2-digit',
@@ -916,6 +1085,40 @@ function CalendarView() {
                             }}
                             nowIndicator={true}
                             scrollTime="08:00:00"
+                            dayCellContent={(arg) => {
+                                // Get weather for this day (month view only)
+                                if (arg.view && arg.view.type === 'dayGridMonth') {
+                                    const dateKey = arg.date.toDateString();
+                                    const weather = weatherForecast[dateKey];
+                                    
+                                    return (
+                                        <div className="fc-daygrid-day-frame" style={{ position: 'relative' }}>
+                                            {/* Weather icon in top LEFT */}
+                                            {weather && weather.icon && (
+                                                <div style={{ 
+                                                    position: 'absolute', 
+                                                    top: '4px', 
+                                                    left: '4px', 
+                                                    zIndex: 10 
+                                                }}>
+                                                    <img
+                                                        src={getWeatherIconUrl(weather.icon)}
+                                                        alt={weather.description}
+                                                        className="w-8 h-8"
+                                                        title={`${weather.description}, ${weather.temperature}°F (High: ${weather.high}°F, Low: ${weather.low}°F)`}
+                                                        style={{ filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.1))' }}
+                                                    />
+                                                </div>
+                                            )}
+                                            <div className="fc-daygrid-day-top" style={{ paddingLeft: weather && weather.icon ? '36px' : '8px' }}>
+                                                <a className="fc-daygrid-day-number">{arg.dayNumberText}</a>
+                                            </div>
+                                        </div>
+                                    );
+                                }
+                                // For other views, return default
+                                return arg.dayNumberText;
+                            }}
                             businessHours={{
                                 daysOfWeek: [1, 2, 3, 4, 5],
                                 startTime: '09:00',

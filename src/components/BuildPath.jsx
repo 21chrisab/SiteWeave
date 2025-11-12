@@ -16,7 +16,7 @@ function debounce(func, wait) {
 }
 
 function BuildPath({ project }) {
-    const { dispatch } = useAppContext();
+    const { dispatch, state } = useAppContext();
     const { addToast } = useToast();
     const [phases, setPhases] = useState([]);
     const [isEditing, setIsEditing] = useState(false);
@@ -24,6 +24,9 @@ function BuildPath({ project }) {
     const [showPhaseModal, setShowPhaseModal] = useState(false);
     const [isLoading, setIsLoading] = useState(false);
     const [editingValues, setEditingValues] = useState({});
+    const [userRole, setUserRole] = useState(null);
+    const [draggedPhase, setDraggedPhase] = useState(null);
+    const [editingProgressPhaseId, setEditingProgressPhaseId] = useState(null);
 
     // Default phases for construction projects
     const defaultPhases = [
@@ -38,7 +41,29 @@ function BuildPath({ project }) {
     useEffect(() => {
         if (!project?.id) return;
         loadPhases();
-    }, [project?.id]);
+        loadUserRole();
+    }, [project?.id, state.user?.id]);
+
+    const loadUserRole = async () => {
+        if (!state.user?.id) return;
+        try {
+            const { data, error } = await supabaseClient
+                .from('profiles')
+                .select('role')
+                .eq('id', state.user.id)
+                .maybeSingle();
+            
+            if (!error && data) {
+                setUserRole(data.role);
+            }
+        } catch (error) {
+            console.error('Error loading user role:', error);
+        }
+    };
+
+    const isAuthorized = () => {
+        return userRole === 'Admin' || userRole === 'PM';
+    };
 
     const loadPhases = async () => {
         try {
@@ -189,6 +214,87 @@ function BuildPath({ project }) {
         setIsLoading(false);
     };
 
+    const handleDragStart = (e, phaseId) => {
+        setDraggedPhase(phaseId);
+        e.dataTransfer.effectAllowed = 'move';
+        e.dataTransfer.setData('text/html', e.target);
+    };
+
+    const handleDragEnd = () => {
+        setDraggedPhase(null);
+    };
+
+    const handleDragOver = (e) => {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+    };
+
+    const handleDrop = async (e, targetPhaseId) => {
+        e.preventDefault();
+        if (!draggedPhase || draggedPhase === targetPhaseId) {
+            setDraggedPhase(null);
+            return;
+        }
+
+        const draggedIndex = phases.findIndex(p => p.id === draggedPhase);
+        const targetIndex = phases.findIndex(p => p.id === targetPhaseId);
+
+        if (draggedIndex === -1 || targetIndex === -1) {
+            setDraggedPhase(null);
+            return;
+        }
+
+        // Create new array with reordered phases
+        const newPhases = [...phases];
+        const [draggedPhaseData] = newPhases.splice(draggedIndex, 1);
+        newPhases.splice(targetIndex, 0, draggedPhaseData);
+
+        // Update order values for all phases
+        const updatedPhases = newPhases.map((phase, index) => ({
+            ...phase,
+            order: index + 1
+        }));
+
+        setPhases(updatedPhases);
+
+        // Update all phases in the database
+        setIsLoading(true);
+        try {
+            const updates = updatedPhases.map(phase => ({
+                id: phase.id,
+                order: phase.order
+            }));
+
+            const updatePromises = updates.map(update =>
+                supabaseClient
+                    .from('project_phases')
+                    .update({ order: update.order })
+                    .eq('id', update.id)
+            );
+
+            const results = await Promise.all(updatePromises);
+            const hasError = results.some(result => result.error);
+
+            if (hasError) {
+                const errorMessages = results
+                    .filter(r => r.error)
+                    .map(r => r.error.message)
+                    .join(', ');
+                addToast('Error reordering phases: ' + errorMessages, 'error');
+                // Reload phases on error
+                loadPhases();
+            } else {
+                addToast('Phases reordered successfully!', 'success');
+            }
+        } catch (error) {
+            addToast('Error reordering phases: ' + error.message, 'error');
+            loadPhases();
+        } finally {
+            setIsLoading(false);
+            setDraggedPhase(null);
+        }
+    };
+
     const calculateOverallProgress = () => {
         if (phases.length === 0) return 0;
         
@@ -225,7 +331,7 @@ function BuildPath({ project }) {
     return (
         <div className="h-full flex flex-col">
             <div className="flex justify-between items-center mb-4">
-                <h3 className="font-bold text-lg">BuildPath</h3>
+                <h3 className="font-bold text-lg">Progress Status</h3>
                 <div className="flex gap-2">
                     <button
                         onClick={() => setShowPhaseModal(true)}
@@ -254,17 +360,30 @@ function BuildPath({ project }) {
                         style={{ width: `${calculateOverallProgress()}%` }}
                     ></div>
                 </div>
-                <div className="text-xs text-gray-600">
-                    {formatCurrency(calculateSpentAmount())} of {formatCurrency(calculateTotalBudget())} spent
-                </div>
+                {isAuthorized() && (
+                    <div className="text-xs text-gray-600">
+                        {formatCurrency(calculateSpentAmount())} of {formatCurrency(calculateTotalBudget())} spent
+                    </div>
+                )}
             </div>
 
             {/* Phases List - Fixed height with scroll */}
-            <div className="flex-1 overflow-y-auto space-y-3 pr-2">
+            <div className="flex-1 overflow-y-auto space-y-2 pr-2">
                 {phases.map((phase, index) => (
-                    <div key={phase.id} className="border border-gray-200 rounded-lg p-4">
-                        <div className="flex justify-between items-start mb-3">
-                            <div className="flex-1">
+                    <div 
+                        key={phase.id} 
+                        className={`border border-gray-200 rounded-lg p-3 ${draggedPhase === phase.id ? 'opacity-50' : ''} ${draggedPhase ? 'cursor-move' : ''}`}
+                        draggable={!isLoading}
+                        onDragStart={(e) => handleDragStart(e, phase.id)}
+                        onDragEnd={handleDragEnd}
+                        onDragOver={handleDragOver}
+                        onDrop={(e) => handleDrop(e, phase.id)}
+                    >
+                        <div className="flex justify-between items-start mb-2">
+                            <div className="flex-1 flex items-center gap-2">
+                                <svg className="w-4 h-4 text-gray-400 cursor-move" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8h16M4 16h16" />
+                                </svg>
                                 <h4 className="font-semibold text-sm">{phase.name}</h4>
                             </div>
                             {isEditing && (
@@ -288,13 +407,58 @@ function BuildPath({ project }) {
                             )}
                         </div>
 
-                        {/* Progress Bar */}
-                        <div className="mb-3">
+                        {/* Progress */}
+                        <div className="mb-2">
                             <div className="flex justify-between items-center mb-1">
                                 <span className="text-xs text-gray-600">Progress</span>
-                                <span className="text-xs font-semibold">
-                                    {editingValues[`${phase.id}_progress`] !== undefined ? editingValues[`${phase.id}_progress`] : phase.progress}%
-                                </span>
+                                {editingProgressPhaseId === phase.id ? (
+                                    <div className="flex items-center gap-1">
+                                        <input
+                                            type="number"
+                                            min="0"
+                                            max="100"
+                                            value={editingValues[`${phase.id}_progress`] !== undefined ? editingValues[`${phase.id}_progress`] : phase.progress}
+                                            onChange={(e) => {
+                                                const value = Math.min(100, Math.max(0, parseInt(e.target.value) || 0));
+                                                handleInputChange(phase.id, 'progress', value);
+                                            }}
+                                            onBlur={() => {
+                                                const value = editingValues[`${phase.id}_progress`] !== undefined 
+                                                    ? editingValues[`${phase.id}_progress`] 
+                                                    : phase.progress;
+                                                debouncedUpdate(phase.id, 'progress', value);
+                                                setEditingProgressPhaseId(null);
+                                            }}
+                                            onKeyDown={(e) => {
+                                                if (e.key === 'Enter') {
+                                                    e.target.blur();
+                                                } else if (e.key === 'Escape') {
+                                                    setEditingValues(prev => {
+                                                        const newValues = { ...prev };
+                                                        delete newValues[`${phase.id}_progress`];
+                                                        return newValues;
+                                                    });
+                                                    setEditingProgressPhaseId(null);
+                                                }
+                                            }}
+                                            className="w-16 px-2 py-1 text-xs font-semibold border border-gray-300 rounded text-right focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                            autoFocus
+                                            disabled={isLoading}
+                                        />
+                                        <span className="text-xs font-semibold">%</span>
+                                    </div>
+                                ) : (
+                                    <span 
+                                        className="text-xs font-semibold cursor-pointer hover:text-blue-600 transition-colors flex items-center gap-1"
+                                        onClick={() => setEditingProgressPhaseId(phase.id)}
+                                        title="Click to edit"
+                                    >
+                                        {editingValues[`${phase.id}_progress`] !== undefined ? editingValues[`${phase.id}_progress`] : phase.progress}%
+                                        <svg className="w-3 h-3 opacity-60" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                                        </svg>
+                                    </span>
+                                )}
                             </div>
                             <div className="w-full bg-gray-200 rounded-full h-2">
                                 <div 
@@ -304,28 +468,8 @@ function BuildPath({ project }) {
                             </div>
                         </div>
 
-                        {/* Progress Controls */}
-                        <div className="flex items-center gap-2">
-                            <input
-                                type="range"
-                                min="0"
-                                max="100"
-                                value={editingValues[`${phase.id}_progress`] !== undefined ? editingValues[`${phase.id}_progress`] : phase.progress}
-                                onChange={(e) => {
-                                    const value = parseInt(e.target.value);
-                                    handleInputChange(phase.id, 'progress', value);
-                                    debouncedUpdate(phase.id, 'progress', value);
-                                }}
-                                className="flex-1"
-                                disabled={isLoading}
-                            />
-                            <span className="text-xs text-gray-500 w-12 text-right">
-                                {editingValues[`${phase.id}_progress`] !== undefined ? editingValues[`${phase.id}_progress`] : phase.progress}%
-                            </span>
-                        </div>
-
-                        {/* Budget Input - Only show when editing */}
-                        {isEditing && (
+                        {/* Budget Input - Only show when editing and user is authorized */}
+                        {isEditing && isAuthorized() && (
                             <div className="mt-3">
                                 <label className="text-xs text-gray-600 block mb-1">Budget</label>
                                 <div className="flex items-center gap-2">
@@ -381,7 +525,7 @@ function PhaseModal({ phase, onClose, onSave, isLoading }) {
 
     return (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-            <div className="bg-white rounded-lg p-6 w-96 max-w-full mx-4">
+            <div className="bg-white rounded-lg p-6 w-96 max-w-full mx-4 max-h-[90vh] overflow-y-auto">
                 <h3 className="text-lg font-bold mb-4">
                     {phase ? 'Edit Phase' : 'Add New Phase'}
                 </h3>

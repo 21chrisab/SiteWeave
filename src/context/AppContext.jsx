@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useEffect, useReducer, useState } from 'react';
-import { createClient } from '@supabase/supabase-js';
+import { createSupabaseClient } from '@siteweave/core-logic';
 import dropboxStorage from '../utils/dropboxStorage';
 import supabaseElectronAuth from '../utils/supabaseElectronAuth';
 
@@ -11,19 +11,8 @@ console.log('Environment variables loaded:');
 console.log('SUPABASE_URL:', SUPABASE_URL ? 'Present' : 'Missing');
 console.log('SUPABASE_ANON_KEY:', SUPABASE_ANON_KEY ? 'Present' : 'Missing');
 
-if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
-  // In production, provide fallback values to prevent app crash
-  console.warn('Missing Supabase environment variables. Using fallback values for demo mode.');
-  const fallbackUrl = 'https://demo.supabase.co';
-  const fallbackKey = 'demo-key';
-  
-  var supabaseClient = createClient(
-    SUPABASE_URL || fallbackUrl, 
-    SUPABASE_ANON_KEY || fallbackKey
-  );
-} else {
-  var supabaseClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-}
+// Use shared Supabase client creation
+const supabaseClient = createSupabaseClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 export { supabaseClient };
 
@@ -128,11 +117,27 @@ export const AppProvider = ({ children }) => {
     const getInitialSession = async () => {
       try {
         const { data: { session }, error } = await supabaseClient.auth.getSession();
-        if (session?.user) {
+        if (error) {
+          // Handle invalid refresh token error
+          if (error.message?.includes('Invalid Refresh Token') || error.message?.includes('Refresh Token Not Found')) {
+            console.warn('Invalid refresh token detected, clearing session');
+            await supabaseClient.auth.signOut();
+            dispatch({ type: 'SET_USER', payload: null });
+          } else {
+            console.error('Error getting session:', error);
+          }
+        } else if (session?.user) {
           dispatch({ type: 'SET_USER', payload: session.user });
         }
       } catch (error) {
-        console.error('Error getting session:', error);
+        // Handle invalid refresh token error in catch block
+        if (error.message?.includes('Invalid Refresh Token') || error.message?.includes('Refresh Token Not Found')) {
+          console.warn('Invalid refresh token detected, clearing session');
+          await supabaseClient.auth.signOut();
+          dispatch({ type: 'SET_USER', payload: null });
+        } else {
+          console.error('Error getting session:', error);
+        }
       } finally {
         dispatch({ type: 'SET_AUTH_LOADING', payload: false });
       }
@@ -153,13 +158,25 @@ export const AppProvider = ({ children }) => {
     const { data: { subscription } } = supabaseClient.auth.onAuthStateChange(
       async (event, session) => {
         try {
-          if (session?.user) {
+          // Handle token refresh errors
+          if (event === 'TOKEN_REFRESHED' && !session) {
+            console.warn('Token refresh failed, signing out');
+            await supabaseClient.auth.signOut();
+            dispatch({ type: 'SET_USER', payload: null });
+          } else if (session?.user) {
             dispatch({ type: 'SET_USER', payload: session.user });
           } else {
             dispatch({ type: 'SET_USER', payload: null });
           }
         } catch (error) {
-          console.error('Error handling auth state change:', error);
+          // Handle invalid refresh token errors
+          if (error.message?.includes('Invalid Refresh Token') || error.message?.includes('Refresh Token Not Found')) {
+            console.warn('Invalid refresh token detected, clearing session');
+            await supabaseClient.auth.signOut();
+            dispatch({ type: 'SET_USER', payload: null });
+          } else {
+            console.error('Error handling auth state change:', error);
+          }
         } finally {
           dispatch({ type: 'SET_AUTH_LOADING', payload: false });
         }
@@ -223,10 +240,37 @@ export const AppProvider = ({ children }) => {
     window.addEventListener('supabase-oauth-callback', handleElectronOAuthCallback);
     window.addEventListener('message', handlePostMessage);
 
+    // Global error handler for unhandled Supabase auth errors
+    const handleUnhandledError = (event) => {
+      const error = event.reason || event.error;
+      if (!error) return;
+      
+      // Check if it's a Supabase auth error about invalid refresh token
+      const errorMessage = error.message || error.toString() || '';
+      const isInvalidTokenError = 
+        errorMessage.includes('Invalid Refresh Token') || 
+        errorMessage.includes('Refresh Token Not Found') ||
+        (error.name === 'AuthApiError' && errorMessage.includes('refresh'));
+      
+      if (isInvalidTokenError) {
+        console.warn('Caught invalid refresh token error, clearing session');
+        // Prevent the error from showing in console as an unhandled error
+        event.preventDefault();
+        // Clear the invalid session silently
+        supabaseClient.auth.signOut().catch(() => {
+          // Ignore errors during sign out
+        });
+        dispatch({ type: 'SET_USER', payload: null });
+      }
+    };
+
+    window.addEventListener('unhandledrejection', handleUnhandledError);
+
     return () => {
       subscription.unsubscribe();
       window.removeEventListener('supabase-oauth-callback', handleElectronOAuthCallback);
       window.removeEventListener('message', handlePostMessage);
+      window.removeEventListener('unhandledrejection', handleUnhandledError);
     };
   }, []);
 

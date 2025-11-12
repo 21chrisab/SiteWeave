@@ -129,7 +129,7 @@ CREATE TABLE IF NOT EXISTS issue_steps (
 -- Message Channels Table
 CREATE TABLE IF NOT EXISTS message_channels (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    project_id UUID,
+    project_id UUID NOT NULL,
     name TEXT NOT NULL
 );
 
@@ -150,6 +150,16 @@ CREATE TABLE IF NOT EXISTS messages (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT now(),
     updated_at TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT now(),
     inserted_at TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT now()
+);
+
+-- Message Reactions Table
+CREATE TABLE IF NOT EXISTS message_reactions (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    message_id UUID NOT NULL,
+    user_id UUID NOT NULL,
+    emoji TEXT NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT now(),
+    UNIQUE(message_id, user_id, emoji)
 );
 
 -- Project Contacts Junction Table
@@ -266,6 +276,54 @@ BEGIN
     END IF;
 END $$;
 
+-- Add missing columns to messages table (if they don't exist)
+DO $$ 
+BEGIN
+    -- Add topic column if it doesn't exist
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
+                   WHERE table_schema = 'public'
+                     AND table_name = 'messages' 
+                     AND column_name = 'topic') THEN
+        -- Add as nullable first to handle existing rows
+        ALTER TABLE messages ADD COLUMN topic TEXT;
+        -- Update existing rows with default value
+        UPDATE messages SET topic = 'General' WHERE topic IS NULL;
+        -- Now make it NOT NULL with default
+        ALTER TABLE messages ALTER COLUMN topic SET NOT NULL;
+        ALTER TABLE messages ALTER COLUMN topic SET DEFAULT '';
+    END IF;
+    
+    -- Add extension column if it doesn't exist
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
+                   WHERE table_schema = 'public'
+                     AND table_name = 'messages' 
+                     AND column_name = 'extension') THEN
+        -- Add as nullable first to handle existing rows
+        ALTER TABLE messages ADD COLUMN extension TEXT;
+        -- Update existing rows with default value
+        UPDATE messages SET extension = 'txt' WHERE extension IS NULL;
+        -- Now make it NOT NULL with default
+        ALTER TABLE messages ALTER COLUMN extension SET NOT NULL;
+        ALTER TABLE messages ALTER COLUMN extension SET DEFAULT 'txt';
+    END IF;
+    
+    -- Add updated_at column if it doesn't exist
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
+                   WHERE table_schema = 'public'
+                     AND table_name = 'messages' 
+                     AND column_name = 'updated_at') THEN
+        ALTER TABLE messages ADD COLUMN updated_at TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT now();
+    END IF;
+    
+    -- Add inserted_at column if it doesn't exist
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
+                   WHERE table_schema = 'public'
+                     AND table_name = 'messages' 
+                     AND column_name = 'inserted_at') THEN
+        ALTER TABLE messages ADD COLUMN inserted_at TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT now();
+    END IF;
+END $$;
+
 -- ============================================================================
 -- ADD AUDIT FIELDS TO EXISTING TABLES
 -- ============================================================================
@@ -298,6 +356,10 @@ ALTER TABLE issue_steps ADD COLUMN IF NOT EXISTS updated_by_user_id UUID;
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS recurrence TEXT;
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS parent_task_id UUID REFERENCES tasks(id);
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS is_recurring_instance BOOLEAN DEFAULT false;
+
+-- Add workflow steps to tasks table (stored as JSONB)
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS workflow_steps JSONB;
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS current_workflow_step INTEGER DEFAULT 1;
 
 -- ============================================================================
 -- DATA CLEANUP BEFORE FOREIGN KEY CONSTRAINTS
@@ -485,10 +547,47 @@ END $$;
 DO $$ 
 BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_messages_channel_id') THEN
-ALTER TABLE messages ADD CONSTRAINT fk_messages_channel_id FOREIGN KEY (channel_id) REFERENCES message_channels(id) ON DELETE CASCADE;
+        ALTER TABLE messages ADD CONSTRAINT fk_messages_channel_id FOREIGN KEY (channel_id) REFERENCES message_channels(id) ON DELETE CASCADE;
     END IF;
-    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_messages_user_id') THEN
-ALTER TABLE messages ADD CONSTRAINT fk_messages_user_id FOREIGN KEY (user_id) REFERENCES auth.users(id);
+    -- Drop and recreate the user_id constraint to ensure it references auth.users, not contacts
+    IF EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_messages_user_id') THEN
+        ALTER TABLE messages DROP CONSTRAINT fk_messages_user_id;
+    END IF;
+    -- Also drop if it exists with the default PostgreSQL naming
+    ALTER TABLE messages DROP CONSTRAINT IF EXISTS messages_user_id_fkey;
+    -- Recreate the constraint to reference auth.users(id)
+    ALTER TABLE messages ADD CONSTRAINT fk_messages_user_id FOREIGN KEY (user_id) REFERENCES auth.users(id);
+END $$;
+
+-- Message reactions constraints
+DO $$ 
+DECLARE
+    message_id_type TEXT;
+    message_reactions_exists BOOLEAN;
+BEGIN
+    -- Check if message_reactions table exists
+    SELECT EXISTS (
+        SELECT FROM information_schema.tables 
+        WHERE table_schema = 'public' 
+        AND table_name = 'message_reactions'
+    ) INTO message_reactions_exists;
+    
+    -- Only proceed if table exists
+    IF message_reactions_exists THEN
+        -- Get the actual data type of messages.id column
+        SELECT data_type INTO message_id_type
+        FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'messages'
+          AND column_name = 'id';
+        
+        -- Add constraints only if they don't exist
+        IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_message_reactions_message_id') THEN
+            ALTER TABLE message_reactions ADD CONSTRAINT fk_message_reactions_message_id FOREIGN KEY (message_id) REFERENCES messages(id) ON DELETE CASCADE;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_message_reactions_user_id') THEN
+            ALTER TABLE message_reactions ADD CONSTRAINT fk_message_reactions_user_id FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE;
+        END IF;
     END IF;
 END $$;
 
@@ -531,9 +630,14 @@ BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_tasks_project_id') THEN
         ALTER TABLE tasks ADD CONSTRAINT fk_tasks_project_id FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE;
     END IF;
-    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_tasks_assignee_id') THEN
-        ALTER TABLE tasks ADD CONSTRAINT fk_tasks_assignee_id FOREIGN KEY (assignee_id) REFERENCES contacts(id);
+    -- Drop and recreate the assignee_id constraint to ensure it references contacts, not users
+    IF EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_tasks_assignee_id') THEN
+        ALTER TABLE tasks DROP CONSTRAINT fk_tasks_assignee_id;
     END IF;
+    -- Also drop if it exists with the default PostgreSQL naming
+    ALTER TABLE tasks DROP CONSTRAINT IF EXISTS tasks_assignee_id_fkey;
+    -- Recreate the constraint to reference contacts(id)
+    ALTER TABLE tasks ADD CONSTRAINT fk_tasks_assignee_id FOREIGN KEY (assignee_id) REFERENCES contacts(id);
 END $$;
 
 -- User preferences constraints
@@ -550,9 +654,11 @@ BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_activity_log_user_id') THEN
         ALTER TABLE activity_log ADD CONSTRAINT fk_activity_log_user_id FOREIGN KEY (user_id) REFERENCES auth.users(id);
     END IF;
-    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_activity_log_project_id') THEN
-        ALTER TABLE activity_log ADD CONSTRAINT fk_activity_log_project_id FOREIGN KEY (project_id) REFERENCES projects(id);
+    -- Drop and recreate the project_id constraint with CASCADE to allow project deletion
+    IF EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_activity_log_project_id') THEN
+        ALTER TABLE activity_log DROP CONSTRAINT fk_activity_log_project_id;
     END IF;
+    ALTER TABLE activity_log ADD CONSTRAINT fk_activity_log_project_id FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE;
 END $$;
 
 -- Invitations constraints
@@ -698,6 +804,10 @@ DROP POLICY IF EXISTS "Users can create messages for accessible projects" ON pub
 DROP POLICY IF EXISTS "Users can update their own messages or admins/PMs can update any" ON public.messages;
 DROP POLICY IF EXISTS "Users can delete their own messages or admins/PMs can delete any" ON public.messages;
 
+DROP POLICY IF EXISTS "Users can see reactions for accessible messages" ON public.message_reactions;
+DROP POLICY IF EXISTS "Users can create reactions for accessible messages" ON public.message_reactions;
+DROP POLICY IF EXISTS "Users can delete their own reactions" ON public.message_reactions;
+
 DROP POLICY IF EXISTS "Users can see project contacts for accessible projects" ON public.project_contacts;
 DROP POLICY IF EXISTS "Admins and PMs can assign contacts to projects" ON public.project_contacts;
 DROP POLICY IF EXISTS "Admins and PMs can update project contacts" ON public.project_contacts;
@@ -748,6 +858,7 @@ ALTER TABLE issue_files ENABLE ROW LEVEL SECURITY;
 ALTER TABLE issue_steps ENABLE ROW LEVEL SECURITY;
 ALTER TABLE message_channels ENABLE ROW LEVEL SECURITY;
 ALTER TABLE messages ENABLE ROW LEVEL SECURITY;
+ALTER TABLE message_reactions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE project_contacts ENABLE ROW LEVEL SECURITY;
 ALTER TABLE project_issues ENABLE ROW LEVEL SECURITY;
 ALTER TABLE project_phases ENABLE ROW LEVEL SECURITY;
@@ -1246,6 +1357,44 @@ USING (
     )
   ))
 );
+
+-- ============================================================================
+-- MESSAGE REACTIONS TABLE POLICIES
+-- ============================================================================
+
+-- Message reactions SELECT policy
+CREATE POLICY "Users can see reactions for accessible messages"
+ON public.message_reactions
+FOR SELECT
+USING (
+  message_id IN (
+    SELECT m.id 
+    FROM public.messages m
+    JOIN public.message_channels mc ON m.channel_id = mc.id
+    WHERE mc.project_id IN (SELECT id FROM public.projects)
+  )
+);
+
+-- Message reactions INSERT policy
+CREATE POLICY "Users can create reactions for accessible messages"
+ON public.message_reactions
+FOR INSERT
+WITH CHECK (
+  auth.uid() IS NOT NULL
+  AND
+  message_id IN (
+    SELECT m.id 
+    FROM public.messages m
+    JOIN public.message_channels mc ON m.channel_id = mc.id
+    WHERE mc.project_id IN (SELECT id FROM public.projects)
+  )
+);
+
+-- Message reactions DELETE policy
+CREATE POLICY "Users can delete their own reactions"
+ON public.message_reactions
+FOR DELETE
+USING (user_id = auth.uid());
 
 -- ============================================================================
 -- PROJECT CONTACTS TABLE POLICIES

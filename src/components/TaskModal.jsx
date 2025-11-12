@@ -19,10 +19,12 @@ function TaskModal({ project, onClose, onSave, isLoading = false }) {
     const [recurrenceEndType, setRecurrenceEndType] = useState('never');
     const [recurrenceEndDate, setRecurrenceEndDate] = useState('');
     const [recurrenceOccurrences, setRecurrenceOccurrences] = useState(10);
+    
 
     const projectContacts = state.contacts.filter(contact =>
         contact.project_contacts && contact.project_contacts.some(pc => pc.project_id === project.id)
     );
+    
 
     const handleSubmit = (e) => {
         e.preventDefault();
@@ -74,6 +76,7 @@ function TaskModal({ project, onClose, onSave, isLoading = false }) {
             completed: false,
         });
     };
+
 
     return (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">

@@ -8,6 +8,7 @@ const TaskItem = memo(function TaskItem({ task, onToggle, onEdit, onDelete, isSe
     const [editDueDate, setEditDueDate] = useState(task.due_date || '');
     const [editPriority, setEditPriority] = useState(task.priority);
     
+    
     const priorityClasses = {
         High: 'bg-red-100 text-red-700', 
         Medium: 'bg-yellow-100 text-yellow-700', 

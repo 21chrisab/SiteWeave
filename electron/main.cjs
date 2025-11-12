@@ -84,11 +84,12 @@ function startOAuthServer() {
       }
 
       // Send success response to browser
-      res.writeHead(200, { 'Content-Type': 'text/html' });
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
       res.end(`
         <!DOCTYPE html>
         <html>
         <head>
+          <meta charset="UTF-8">
           <title>OAuth Success</title>
           <style>
             body { font-family: Arial, sans-serif; text-align: center; padding: 50px; }
@@ -97,7 +98,7 @@ function startOAuthServer() {
           </style>
         </head>
         <body>
-          <h2 class="success">✓ Authentication Successful!</h2>
+          <h2 class="success">&#10003; Authentication Successful!</h2>
           <p>You can close this window and return to SiteWeave.</p>
           <script>
             // Extract hash parameters and send to main window
@@ -193,7 +194,10 @@ function createWindow() {
       nodeIntegration: false,
       contextIsolation: true,
       enableRemoteModule: false,
-      webSecurity: false, // Disable web security for file:// protocol
+      // Enable webSecurity when loading from HTTP (dev server)
+      // In production with file:// protocol, webSecurity may need to be disabled
+      // but Content Security Policy in index.html provides protection
+      webSecurity: !!VITE_DEV_SERVER_URL,
       preload: path.join(__dirname, 'preload.js')
     },
     icon: app.isPackaged 

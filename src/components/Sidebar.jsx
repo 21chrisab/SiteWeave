@@ -56,25 +56,30 @@ function Sidebar() {
             <nav className="flex-1 px-4 space-y-1" data-onboarding="sidebar-nav" role="navigation" aria-label="Main navigation">
                 {navItems.map(item => (
                     <div key={item}>
-                        <a href="#" onClick={() => dispatch({type: 'SET_VIEW', payload: item})}
-                           data-onboarding={item.toLowerCase()}
-                           className={`flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${state.activeView === item ? 'bg-blue-50 text-blue-700' : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'}`}
-                           title={isCollapsed ? item : ''}
-                           aria-label={`Navigate to ${item}`}
-                           aria-current={state.activeView === item ? 'page' : undefined}>
+                        <button 
+                            onClick={() => dispatch({type: 'SET_VIEW', payload: item})}
+                            data-onboarding={item.toLowerCase()}
+                            className={`flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors w-full text-left ${state.activeView === item ? 'bg-blue-50 text-blue-700' : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'}`}
+                            title={isCollapsed ? item : ''}
+                            aria-label={`Navigate to ${item}`}
+                            aria-current={state.activeView === item ? 'page' : undefined}>
                             {React.cloneElement(ICONS[item], { className: "w-5 h-5" })}
                             {!isCollapsed && <span>{item}</span>}
-                        </a>
+                        </button>
                         {item === 'Projects' && state.activeView === 'Projects' && !isCollapsed && (
                             <div className="pl-8 mt-1 space-y-1 border-l-2 border-gray-200 ml-2.5" role="group" aria-label="Project list">
                                 {state.projects.map(p => (
-                                    <a href="#" key={p.id} onClick={(e) => {
-                                        e.preventDefault();
-                                        dispatch({type: 'SET_PROJECT', payload: p.id});
-                                    }}
-                                       className={`block text-sm py-1 truncate ${state.selectedProjectId === p.id ? 'text-blue-600 font-semibold' : 'text-gray-500 hover:text-gray-800'}`}
-                                       aria-label={`Select project: ${p.name}`}
-                                       aria-current={state.selectedProjectId === p.id ? 'page' : undefined}>{p.name}</a>
+                                    <button 
+                                        key={p.id} 
+                                        onClick={(e) => {
+                                            e.preventDefault();
+                                            dispatch({type: 'SET_PROJECT', payload: p.id});
+                                        }}
+                                        className={`block text-sm py-1 truncate w-full text-left ${state.selectedProjectId === p.id ? 'text-blue-600 font-semibold' : 'text-gray-500 hover:text-gray-800'}`}
+                                        aria-label={`Select project: ${p.name}`}
+                                        aria-current={state.selectedProjectId === p.id ? 'page' : undefined}>
+                                        {p.name}
+                                    </button>
                                 ))}
                             </div>
                         )}

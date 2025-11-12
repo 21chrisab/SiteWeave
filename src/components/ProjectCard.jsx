@@ -89,7 +89,7 @@ const ProjectCard = memo(function ProjectCard({ project, onEdit, onDelete }) {
                 <p className="text-sm font-medium">{typeof project.next_milestone === 'string' ? project.next_milestone : (project.next_milestone?.name || project.next_milestone?.title || 'No milestone')}</p>
             </div>
             
-            {/* BuildPath Progress */}
+            {/* Progress Status */}
             <ProjectProgressCard project={project} />
             
             <div className="flex items-center justify-between pt-2 border-t border-gray-100">
@@ -99,7 +99,7 @@ const ProjectCard = memo(function ProjectCard({ project, onEdit, onDelete }) {
                 </div>
                 <div className="flex -space-x-2">
                     {teamMembers.slice(0, 3).map(member => (
-                        <Avatar key={member.id} name={member.name} size="sm" className="border-2 border-white" />
+                        <Avatar key={member.id} name={member.name} size="sm" />
                     ))}
                     {teamMembers.length === 0 && (
                         <div className="text-xs text-gray-400 italic">No team assigned</div>

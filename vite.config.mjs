@@ -49,6 +49,18 @@ export default defineConfig(({ mode }) => {
     },
     server: {
       port: 5173,
+    },
+    optimizeDeps: {
+      include: [
+        '@fullcalendar/core',
+        '@fullcalendar/react',
+        '@fullcalendar/daygrid',
+        '@fullcalendar/timegrid',
+        '@fullcalendar/interaction'
+      ],
+      esbuildOptions: {
+        resolveExtensions: ['.js', '.jsx', '.ts', '.tsx', '.json']
+      }
     }
   }
 })

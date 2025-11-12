@@ -29,12 +29,29 @@ export const ToastProvider = ({ children }) => {
 };
 
 const ToastContainer = ({ toasts, removeToast }) => {
+  // Separate error toasts from other toasts for more prominent positioning
+  const errorToasts = toasts.filter(t => t.type === 'error');
+  const otherToasts = toasts.filter(t => t.type !== 'error');
+  
   return (
-    <div className="fixed top-4 right-4 z-50 space-y-3 max-w-sm w-full">
-      {toasts.map(toast => (
-        <Toast key={toast.id} toast={toast} onRemove={removeToast} />
-      ))}
-    </div>
+    <>
+      {/* Error toasts at top center for maximum visibility */}
+      {errorToasts.length > 0 && (
+        <div className="fixed top-4 left-1/2 transform -translate-x-1/2 z-[60] space-y-3 max-w-md w-full">
+          {errorToasts.map(toast => (
+            <Toast key={toast.id} toast={toast} onRemove={removeToast} />
+          ))}
+        </div>
+      )}
+      {/* Other toasts at top right */}
+      {otherToasts.length > 0 && (
+        <div className="fixed top-4 right-4 z-50 space-y-3 max-w-sm w-full">
+          {otherToasts.map(toast => (
+            <Toast key={toast.id} toast={toast} onRemove={removeToast} />
+          ))}
+        </div>
+      )}
+    </>
   );
 };
 
@@ -55,7 +72,7 @@ const Toast = ({ toast, onRemove }) => {
   };
   
   const typeStyles = {
-    error: 'bg-red-50 border-red-200 text-red-800',
+    error: 'bg-red-100 border-red-400 border-2 text-red-900 shadow-xl ring-2 ring-red-300',
     success: 'bg-green-50 border-green-200 text-green-800',
     warning: 'bg-yellow-50 border-yellow-200 text-yellow-800',
     info: 'bg-blue-50 border-blue-200 text-blue-800'
@@ -70,17 +87,20 @@ const Toast = ({ toast, onRemove }) => {
 
   return (
     <div 
-      className={`${typeStyles[type]} border rounded-lg shadow-lg p-4 flex items-start gap-3 transition-all duration-300 ${
+      className={`${typeStyles[type]} rounded-lg ${type === 'error' ? 'p-6' : 'p-4'} flex items-center justify-center gap-3 transition-all duration-300 ${
         isLeaving ? 'toast-exit-active' : isVisible ? 'toast-enter-active' : 'toast-enter'
       }`}
+      style={type === 'error' ? { 
+        boxShadow: '0 20px 25px -5px rgba(239, 68, 68, 0.3), 0 10px 10px -5px rgba(239, 68, 68, 0.2)'
+      } : {}}
     >
-      <div className="flex-shrink-0 mt-0.5">
-        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={iconPaths[type]} />
+      <div className="flex-shrink-0">
+        <svg className={type === 'error' ? 'w-6 h-6' : 'w-5 h-5'} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={type === 'error' ? 2.5 : 2} d={iconPaths[type]} />
         </svg>
       </div>
-      <div className="flex-1 min-w-0">
-        <p className="text-sm font-medium leading-relaxed">{message}</p>
+      <div className="flex-1 text-center">
+        <p className={`${type === 'error' ? 'text-base font-bold' : 'text-sm font-medium'} leading-relaxed`}>{message}</p>
       </div>
       <button 
         onClick={handleRemove}
