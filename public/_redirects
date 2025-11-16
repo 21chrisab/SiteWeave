@@ -1,5 +1,2 @@
-# Netlify redirects - this file is copied to dist during build
-# The catch-all redirect will only apply if the file doesn't exist
-# This allows JS, CSS, and other assets to be served normally
 /*    /index.html    200
 
