@@ -13,6 +13,8 @@ function ProjectModal({ onClose, onSave, isLoading = false, project = null }) {
     const [due_date, setDueDate] = useState('');
     const [next_milestone, setNextMilestone] = useState('');
     const [selectedContacts, setSelectedContacts] = useState([]);
+    const [emailInput, setEmailInput] = useState('');
+    const [emailAddresses, setEmailAddresses] = useState([]);
 
     const isEditMode = !!project;
     
@@ -40,6 +42,7 @@ function ProjectModal({ onClose, onSave, isLoading = false, project = null }) {
         } else {
             // Reset when creating new project
             setSelectedContacts([]);
+            setEmailAddresses([]);
         }
     }, [project, state.contacts]);
 
@@ -52,7 +55,8 @@ function ProjectModal({ onClose, onSave, isLoading = false, project = null }) {
             status,
             due_date: due_date || null,
             next_milestone: next_milestone || null,
-            selectedContacts: selectedContacts
+            selectedContacts: selectedContacts,
+            emailAddresses: emailAddresses
         };
         
         if (isEditMode) {
@@ -60,6 +64,37 @@ function ProjectModal({ onClose, onSave, isLoading = false, project = null }) {
         }
         
         onSave(projectData);
+    };
+
+    const handleAddEmails = () => {
+        if (!emailInput.trim()) return;
+        
+        const emails = emailInput
+            .split(/[\s,;]+/)
+            .map(e => e.trim().toLowerCase())
+            .filter(e => e.includes('@') && e.length > 0);
+        
+        const deduped = Array.from(new Set(emails));
+        const newEmails = deduped.filter(
+            email => !emailAddresses.includes(email) && 
+            !teamMembers.some(contact => contact.email?.toLowerCase() === email)
+        );
+        
+        if (newEmails.length > 0) {
+            setEmailAddresses(prev => [...prev, ...newEmails]);
+            setEmailInput('');
+        }
+    };
+
+    const handleRemoveEmail = (emailToRemove) => {
+        setEmailAddresses(prev => prev.filter(email => email !== emailToRemove));
+    };
+
+    const handleKeyPress = (e) => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            handleAddEmails();
+        }
     };
 
     const toggleContact = (contactId) => {
@@ -71,7 +106,7 @@ function ProjectModal({ onClose, onSave, isLoading = false, project = null }) {
     };
 
     return (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div className="fixed inset-0 backdrop-blur-[2px] bg-white/20 flex items-center justify-center z-50">
             <div className="bg-white rounded-lg shadow-2xl p-8 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
                 <h2 className="text-2xl font-bold mb-6">{isEditMode ? 'Edit Project' : 'Create New Project'}</h2>
                 <form onSubmit={handleSubmit}>
@@ -113,11 +148,58 @@ function ProjectModal({ onClose, onSave, isLoading = false, project = null }) {
                         <input type="text" value={next_milestone} onChange={e => setNextMilestone(e.target.value)} className="w-full p-2 border rounded-lg" placeholder="e.g., Foundation Complete" />
                     </div>
                     
-                    {teamMembers.length > 0 && (
-                        <div className="mb-6">
-                            <label className="block text-sm font-semibold mb-2 text-gray-600">
-                                {isEditMode ? 'Team Members' : 'Add Team Members'} (Optional)
-                            </label>
+                    <div className="mb-6">
+                        <label className="block text-sm font-semibold mb-2 text-gray-600">
+                            {isEditMode ? 'Team Members' : 'Add Team Members'} (Optional)
+                        </label>
+                        
+                        {/* Add email addresses input */}
+                        <div className="mb-4">
+                            <div className="flex gap-2">
+                                <input
+                                    type="text"
+                                    value={emailInput}
+                                    onChange={(e) => setEmailInput(e.target.value)}
+                                    onKeyPress={handleKeyPress}
+                                    placeholder="Enter email addresses (comma or space separated)"
+                                    className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                />
+                                <button
+                                    type="button"
+                                    onClick={handleAddEmails}
+                                    className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 text-sm font-medium"
+                                >
+                                    Add
+                                </button>
+                            </div>
+                            <p className="text-xs text-gray-500 mt-1">
+                                Add email addresses for people who don't have accounts yet. They'll be invited to join.
+                            </p>
+                        </div>
+
+                        {/* Display added email addresses */}
+                        {emailAddresses.length > 0 && (
+                            <div className="mb-4 flex flex-wrap gap-2">
+                                {emailAddresses.map((email, index) => (
+                                    <span
+                                        key={index}
+                                        className="inline-flex items-center gap-2 px-3 py-1 bg-blue-50 text-blue-700 rounded-full text-sm"
+                                    >
+                                        {email}
+                                        <button
+                                            type="button"
+                                            onClick={() => handleRemoveEmail(email)}
+                                            className="text-blue-700 hover:text-blue-900"
+                                        >
+                                            ×
+                                        </button>
+                                    </span>
+                                ))}
+                            </div>
+                        )}
+
+                        {/* Existing team members list */}
+                        {teamMembers.length > 0 && (
                             <div className="border border-gray-300 rounded-lg p-4 max-h-48 overflow-y-auto">
                                 {teamMembers.map(contact => (
                                     <label key={contact.id} className="flex items-center gap-3 p-2 hover:bg-gray-50 rounded cursor-pointer">
@@ -145,13 +227,15 @@ function ProjectModal({ onClose, onSave, isLoading = false, project = null }) {
                                     </label>
                                 ))}
                             </div>
-                            {selectedContacts.length > 0 && (
-                                <p className="text-xs text-gray-500 mt-2">
-                                    {selectedContacts.length} team member{selectedContacts.length > 1 ? 's' : ''} selected
-                                </p>
-                            )}
-                        </div>
-                    )}
+                        )}
+                        
+                        {(selectedContacts.length > 0 || emailAddresses.length > 0) && (
+                            <p className="text-xs text-gray-500 mt-2">
+                                {selectedContacts.length} existing contact{selectedContacts.length !== 1 ? 's' : ''} selected
+                                {emailAddresses.length > 0 && `, ${emailAddresses.length} email${emailAddresses.length !== 1 ? 's' : ''} to invite`}
+                            </p>
+                        )}
+                    </div>
                     <div className="flex justify-end gap-4">
                         <button type="button" onClick={onClose} disabled={isLoading} className="px-6 py-2 bg-gray-200 text-gray-800 rounded-lg disabled:opacity-50">Cancel</button>
                         <button type="submit" disabled={isLoading} className="px-6 py-2 text-white bg-blue-600 rounded-lg disabled:opacity-50 flex items-center gap-2">

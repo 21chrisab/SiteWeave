@@ -29,15 +29,24 @@ Configure these redirect URIs in your OAuth provider settings:
 
 ### Microsoft Outlook
 
+**IMPORTANT**: For Electron desktop apps, Microsoft OAuth requires the app to be registered as a **"Public client" (Native app)** type, NOT a "Web" app. This is required for PKCE (Proof Key for Code Exchange) to work properly.
+
 1. Go to [Azure Portal](https://portal.azure.com/)
 2. Navigate to "App registrations"
 3. Create a new registration or select existing
-4. Go to "Authentication"
-5. Add a new platform → "Mobile and desktop applications"
-6. Add the redirect URI: `http://127.0.0.1:5000/microsoft-callback`
-7. Add API permissions: `Calendars.Read`
-8. Generate a client secret
-9. Use the `Application (client) ID` and `client secret` in your `.env.production` file
+4. **Critical Step**: Go to "Authentication"
+   - Click "Add a platform"
+   - Select **"Mobile and desktop applications"** (this registers it as a Public client/Native app)
+   - Add the redirect URI: `http://127.0.0.1:5000/microsoft-callback`
+   - **DO NOT** add it as a "Web" platform - this will cause the "Cross-origin token redemption" error
+5. Go to "API permissions"
+   - Add Microsoft Graph permissions:
+     - `Calendars.Read`
+     - `Calendars.ReadWrite` (if you need write access)
+   - Click "Grant admin consent" if you have admin rights
+6. **Note**: Public client (Native) apps do NOT use client secrets. Only the Client ID is needed.
+7. Copy the **Application (client) ID** from the "Overview" page
+8. Use only the `Application (client) ID` in your `.env.production` file (no client secret needed for desktop apps)
 
 ### Dropbox
 
@@ -58,8 +67,8 @@ VITE_GOOGLE_CLIENT_ID=your_google_client_id_here
 VITE_GOOGLE_CLIENT_SECRET=your_google_client_secret_here
 
 # Microsoft Outlook Integration  
+# Note: For desktop apps, only Client ID is needed (no secret needed)
 VITE_MICROSOFT_CLIENT_ID=your_microsoft_client_id_here
-VITE_MICROSOFT_CLIENT_SECRET=your_microsoft_client_secret_here
 
 # Dropbox Storage Integration
 VITE_DROPBOX_APP_KEY=your_dropbox_app_key_here
@@ -94,10 +103,23 @@ If port 5000 is already in use, the app will show an error. Try:
 - Checking for other OAuth flows in progress
 
 ### OAuth Provider Errors
+
+**Microsoft Outlook "Cross-origin token redemption" Error:**
+If you see the error: `AADSTS90023: Cross-origin token redemption is permitted only for the 'Single-Page Application' client-type or 'Native' client-type...`
+
+This means your Azure AD app is registered as a "Web" app instead of a "Public client" (Native) app. To fix:
+1. Go to Azure Portal → Your App Registration → Authentication
+2. Remove any "Web" platform entries
+3. Add "Mobile and desktop applications" platform instead
+4. Add redirect URI: `http://127.0.0.1:5000/microsoft-callback`
+5. Save and try again
+
+**General OAuth Errors:**
 - Verify redirect URIs match exactly (including protocol and port)
-- Check that client IDs and secrets are correct
-- Ensure API permissions are properly configured
+- Check that client IDs are correct (no client secret needed for Microsoft desktop apps)
+- Ensure API permissions are properly configured and granted
 - Verify the application type is set to "Desktop application" for Google
+- For Microsoft: Ensure app is registered as "Mobile and desktop applications" (Public client), not "Web"
 
 ### Network Issues
 - Ensure no firewall is blocking localhost connections

@@ -74,10 +74,7 @@ function ProjectProgressCard({ project }) {
 
 
     const getProgressColor = (progress) => {
-        if (progress >= 80) return 'bg-green-500';
-        if (progress >= 60) return 'bg-yellow-500';
-        if (progress >= 40) return 'bg-orange-500';
-        return 'bg-red-500';
+        return 'bg-blue-500';
     };
 
     if (isLoading) {
@@ -104,10 +101,13 @@ function ProjectProgressCard({ project }) {
             </div>
             
             {/* Progress Bar */}
-            <div className="w-full bg-gray-200 rounded-full h-2 mb-3">
+            <div className="w-full bg-gray-200 rounded-full h-2 mb-3 overflow-hidden">
                 <div 
                     className={`h-2 rounded-full transition-all duration-300 ${getProgressColor(overallProgress)}`}
-                    style={{ width: `${overallProgress}%` }}
+                    style={{ 
+                        width: `${Math.max(0, Math.min(100, overallProgress))}%`,
+                        minWidth: overallProgress > 0 ? '2px' : '0px'
+                    }}
                 ></div>
             </div>
 

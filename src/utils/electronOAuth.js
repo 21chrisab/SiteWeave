@@ -106,14 +106,12 @@ class ElectronOAuth {
   buildAuthUrl(provider, config, redirectUri) {
     const baseUrls = {
       google: 'https://accounts.google.com/o/oauth2/v2/auth',
-      microsoft: 'https://login.microsoftonline.com/common/oauth2/v2.0/authorize',
-      dropbox: 'https://www.dropbox.com/oauth2/authorize'
+      microsoft: 'https://login.microsoftonline.com/common/oauth2/v2.0/authorize'
     };
 
     const scopes = {
       google: 'https://www.googleapis.com/auth/calendar.readonly',
-      microsoft: 'https://graph.microsoft.com/Calendars.Read',
-      dropbox: ''
+      microsoft: 'https://graph.microsoft.com/Calendars.Read'
     };
 
     const url = new URL(baseUrls[provider]);
@@ -122,14 +120,6 @@ class ElectronOAuth {
     url.searchParams.set('response_type', 'code');
     url.searchParams.set('redirect_uri', redirectUri);
     url.searchParams.set('scope', scopes[provider]);
-    
-    if (provider === 'dropbox') {
-      url.searchParams.set('token_access_type', 'offline');
-      if (config.codeChallenge) {
-        url.searchParams.set('code_challenge', config.codeChallenge);
-        url.searchParams.set('code_challenge_method', 'S256');
-      }
-    }
 
     // Microsoft: include PKCE in Electron/public client flow
     if (provider === 'microsoft' && config.codeChallenge) {
@@ -218,8 +208,7 @@ class ElectronOAuth {
   async exchangeCodeForToken(provider, code, config) {
     const tokenUrls = {
       google: 'https://oauth2.googleapis.com/token',
-      microsoft: 'https://login.microsoftonline.com/common/oauth2/v2.0/token',
-      dropbox: 'https://api.dropboxapi.com/oauth2/token'
+      microsoft: 'https://login.microsoftonline.com/common/oauth2/v2.0/token'
     };
 
     const redirectUri = this.isElectron 
@@ -241,10 +230,6 @@ class ElectronOAuth {
     // Microsoft public client requires PKCE code_verifier
     if (provider === 'microsoft' && this.isElectron && this.msCodeVerifier) {
       body.set('code_verifier', this.msCodeVerifier);
-    }
-
-    if (provider === 'dropbox' && config.codeVerifier) {
-      body.set('code_verifier', config.codeVerifier);
     }
 
     const response = await fetch(tokenUrls[provider], {

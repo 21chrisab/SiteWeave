@@ -1,6 +1,5 @@
 import React, { createContext, useContext, useEffect, useReducer, useState } from 'react';
 import { createSupabaseClient } from '@siteweave/core-logic';
-import dropboxStorage from '../utils/dropboxStorage';
 import supabaseElectronAuth from '../utils/supabaseElectronAuth';
 
 // --- SUPABASE CLIENT ---
@@ -27,8 +26,6 @@ const initialState = {
   projects: [], contacts: [], tasks: [], files: [], calendarEvents: [], messageChannels: [], messages: [], activityLog: [],
   user: null, // Changed from hardcoded user to null for proper auth
   userPreferences: null, // Add user preferences for onboarding
-  dropboxAccessToken: null, // Dropbox OAuth token
-  dropboxConnected: false, // Dropbox connection status
 };
 
 function appReducer(state, action) {
@@ -103,8 +100,6 @@ function appReducer(state, action) {
     };
     case 'SET_USER_PREFERENCES': return { ...state, userPreferences: action.payload };
     case 'UPDATE_USER_PREFERENCES': return { ...state, userPreferences: { ...state.userPreferences, ...action.payload } };
-    case 'SET_DROPBOX_TOKEN': return { ...state, dropboxAccessToken: action.payload, dropboxConnected: !!action.payload };
-    case 'DISCONNECT_DROPBOX': return { ...state, dropboxAccessToken: null, dropboxConnected: false };
     default: return state;
   }
 }
@@ -143,16 +138,7 @@ export const AppProvider = ({ children }) => {
       }
     };
 
-    // Load Dropbox token from localStorage
-    const loadDropboxToken = () => {
-      const hasStoredToken = dropboxStorage.loadStoredToken();
-      if (hasStoredToken) {
-        dispatch({ type: 'SET_DROPBOX_TOKEN', payload: dropboxStorage.accessToken });
-      }
-    };
-
     getInitialSession();
-    loadDropboxToken();
 
     // Listen for auth changes
     const { data: { subscription } } = supabaseClient.auth.onAuthStateChange(

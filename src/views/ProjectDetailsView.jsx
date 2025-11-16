@@ -3,7 +3,6 @@ import { useAppContext, supabaseClient } from '../context/AppContext';
 import { useToast } from '../context/ToastContext';
 import TaskItem from '../components/TaskItem';
 import TaskModal from '../components/TaskModal';
-import FileItem from '../components/FileItem';
 import ProjectSidebar from '../components/ProjectSidebar';
 import ShareModal from '../components/ShareModal';
 import ConfirmDialog from '../components/ConfirmDialog';
@@ -13,7 +12,6 @@ import Workflow from '../components/Workflow';
 import Avatar from '../components/Avatar';
 import { useTaskShortcuts } from '../hooks/useKeyboardShortcuts';
 import { handleApiError, createOptimisticUpdate } from '../utils/errorHandling';
-import dropboxStorage from '../utils/dropboxStorage';
 import { parseRecurrence } from '../utils/recurrenceService';
 import { logTaskCreated, logTaskCompleted, logTaskUncompleted, logTaskUpdated, logTaskDeleted } from '../utils/activityLogger';
 
@@ -21,15 +19,13 @@ function ProjectDetailsView() {
     const { state, dispatch } = useAppContext();
     const { addToast } = useToast();
     const [showTaskModal, setShowTaskModal] = useState(false);
-    const [isUploading, setIsUploading] = useState(false);
     const [isCreatingTask, setIsCreatingTask] = useState(false);
     const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
     const [taskToDelete, setTaskToDelete] = useState(null);
     const [selectedTasks, setSelectedTasks] = useState([]);
     const [taskFilter, setTaskFilter] = useState('all'); // all, completed, pending
     const [taskSort, setTaskSort] = useState('due_date'); // due_date, priority
-    const [activeTab, setActiveTab] = useState('tasks'); // tasks, fieldIssues, files
-    const fileInputRef = useRef(null);
+    const [activeTab, setActiveTab] = useState('tasks'); // tasks, fieldIssues
     const [showShare, setShowShare] = useState(false);
     const [fieldIssuesCount, setFieldIssuesCount] = useState(0);
 
@@ -76,7 +72,6 @@ function ProjectDetailsView() {
 
     const project = state.projects.find(p => p.id === state.selectedProjectId);
     const allTasks = state.tasks.filter(t => t.project_id === state.selectedProjectId);
-    const files = state.files.filter(f => f.project_id === state.selectedProjectId);
     
     // Get team members for this project
     const teamMembers = state.contacts.filter(contact => 
@@ -470,43 +465,6 @@ function ProjectDetailsView() {
         }
     };
 
-    const handleFileUpload = async (event) => {
-        const file = event.target.files[0];
-        if (!file) return;
-
-        // Check if Dropbox is connected
-        if (!state.dropboxConnected) {
-            addToast('Please connect to Dropbox in Settings to upload files', 'error');
-            return;
-        }
-
-        setIsUploading(true);
-        
-        try {
-            // Upload to Dropbox
-            const uploadResult = await dropboxStorage.uploadFile(file, `/${project.id}`, file.name);
-            
-            // Insert record into 'files' table with Dropbox URL
-            const { error: insertError } = await supabaseClient.from('files').insert({
-                project_id: project.id,
-                name: file.name,
-                file_url: uploadResult.sharedUrl,
-                size_kb: Math.round(file.size / 1024),
-                type: file.type.startsWith('image') ? 'image' : (file.type === 'application/pdf' ? 'pdf' : 'file')
-            });
-
-            if (insertError) {
-                addToast('Error saving file record: ' + insertError.message, 'error');
-            } else {
-                addToast('File uploaded successfully to Dropbox!', 'success');
-            }
-        } catch (error) {
-            console.error('File upload error:', error);
-            addToast('Error uploading file: ' + error.message, 'error');
-        } finally {
-            setIsUploading(false);
-        }
-    };
 
     return (
         <div>
@@ -516,7 +474,52 @@ function ProjectDetailsView() {
                     <p className="text-gray-500">{project.address}</p>
                 </div>
                 <div className="flex items-center gap-4">
-                    <span className={`px-3 py-1 text-sm font-semibold rounded-full ${project.status_color === 'green' ? 'bg-green-100 text-green-800' : 'bg-orange-100 text-orange-800'}`}>{project.status}</span>
+                    <select
+                        value={project.status || ''}
+                        onChange={async (e) => {
+                            const newStatus = e.target.value;
+                            try {
+                                const { error } = await supabaseClient
+                                    .from('projects')
+                                    .update({ 
+                                        status: newStatus,
+                                        updated_at: new Date().toISOString()
+                                    })
+                                    .eq('id', project.id);
+
+                                if (error) {
+                                    addToast('Error updating project status: ' + error.message, 'error');
+                                } else {
+                                    dispatch({
+                                        type: 'UPDATE_PROJECT',
+                                        payload: { ...project, status: newStatus }
+                                    });
+                                    addToast('Project status updated successfully!', 'success');
+                                }
+                            } catch (error) {
+                                addToast('Error updating project status: ' + error.message, 'error');
+                            }
+                        }}
+                        className={`px-3 py-1 text-sm font-semibold rounded-full border-0 cursor-pointer focus:ring-2 focus:ring-blue-500 focus:outline-none appearance-none pr-8 ${
+                            project.status?.toLowerCase() === 'planning' ? 'bg-blue-100 text-blue-800' :
+                            project.status?.toLowerCase() === 'in progress' ? 'bg-green-100 text-green-800' :
+                            project.status?.toLowerCase() === 'on hold' ? 'bg-yellow-100 text-yellow-900' :
+                            project.status?.toLowerCase() === 'completed' ? 'bg-gray-100 text-gray-800' :
+                            'bg-gray-100 text-gray-800'
+                        }`}
+                        style={{
+                            backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='currentColor'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M19 9l-7 7-7-7'/%3E%3C/svg%3E")`,
+                            backgroundRepeat: 'no-repeat',
+                            backgroundPosition: 'right 0.5rem center',
+                            backgroundSize: '1em 1em',
+                            paddingRight: '2rem'
+                        }}
+                    >
+                        <option value="Planning">Planning</option>
+                        <option value="In Progress">In Progress</option>
+                        <option value="On Hold">On Hold</option>
+                        <option value="Completed">Completed</option>
+                    </select>
                     {teamMembers.length > 0 && (
                         <div className="flex items-center gap-2">
                             <div className="flex -space-x-2">
@@ -574,16 +577,6 @@ function ProjectDetailsView() {
                             >
                                 Field Issues ({fieldIssuesCount})
                             </button>
-                            <button
-                                onClick={() => setActiveTab('files')}
-                                className={`py-2 px-1 text-sm font-medium border-b-2 transition-colors ${
-                                    activeTab === 'files'
-                                        ? 'border-blue-500 text-blue-600'
-                                        : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                                }`}
-                            >
-                                Files ({files.length})
-                            </button>
                         </nav>
                     </div>
 
@@ -627,7 +620,7 @@ function ProjectDetailsView() {
                                     onClearSelection={() => setSelectedTasks([])}
                                 />
                                 {tasks.length > 0 ? (
-                                    <ul className="space-y-2">
+                                    <ul className={`space-y-2 ${tasks.length > 7 ? 'max-h-[500px] overflow-y-auto pr-2' : ''}`}>
                                         {tasks.map((task) => (
                                             <TaskItem 
                                                 key={task.id} 
@@ -668,40 +661,6 @@ function ProjectDetailsView() {
                         {activeTab === 'tasks' && (
                             <div className="mt-6">
                                 <Workflow projectId={project.id} />
-                            </div>
-                        )}
-
-                        {activeTab === 'files' && (
-                            <div className="p-6 bg-white rounded-xl shadow-sm border border-gray-200">
-                                <div className="flex justify-between items-center mb-4">
-                                    <h2 className="text-xl font-bold">Files</h2>
-                                    <div className="flex gap-2">
-                                        <input type="file" ref={fileInputRef} onChange={handleFileUpload} className="hidden" />
-                                        <button onClick={() => fileInputRef.current.click()} disabled={isUploading} className="px-4 py-2 text-sm font-semibold text-white bg-blue-600 rounded-lg shadow-sm hover:bg-blue-700 disabled:bg-gray-400">
-                                            {isUploading ? 'Uploading...' : 'Upload Files'}
-                                        </button>
-                                    </div>
-                                </div>
-                                {files.length > 0 ? (
-                                    <ul className="space-y-3">{files.map(file => <FileItem key={file.id} file={file} />)}</ul>
-                                ) : (
-                                    <div className="text-center py-12">
-                                        <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                                            <svg className="w-8 h-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
-                                            </svg>
-                                        </div>
-                                        <h3 className="text-lg font-semibold text-gray-900 mb-2">No files uploaded</h3>
-                                        <p className="text-gray-500 mb-4">Upload project documents, photos, and other files to keep everything organized.</p>
-                                        <button 
-                                            onClick={() => fileInputRef.current.click()}
-                                            disabled={isUploading}
-                                            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400 transition-colors text-sm font-medium"
-                                        >
-                                            {isUploading ? 'Uploading...' : 'Upload Files'}
-                                        </button>
-                                    </div>
-                                )}
                             </div>
                         )}
                     </div>

@@ -79,7 +79,7 @@ function TaskModal({ project, onClose, onSave, isLoading = false }) {
 
 
     return (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div className="fixed inset-0 backdrop-blur-[2px] bg-white/20 flex items-center justify-center z-50">
             <div className="bg-white rounded-lg shadow-2xl p-8 w-full max-w-md">
                 <h2 className="text-2xl font-bold mb-6">Create New Task for {project.name}</h2>
                 <form onSubmit={handleSubmit}>

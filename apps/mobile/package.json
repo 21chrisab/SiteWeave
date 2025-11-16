@@ -1,0 +1,35 @@
+{
+  "name": "@siteweave/mobile",
+  "version": "1.0.0",
+  "main": "expo-router/entry",
+  "scripts": {
+    "start": "expo start",
+    "start:tunnel": "expo start --tunnel",
+    "android": "expo start --android",
+    "ios": "expo start --ios",
+    "web": "expo start --web"
+  },
+  "dependencies": {
+    "@expo/config-plugins": "^54.0.2",
+    "@expo/vector-icons": "^15.0.3",
+    "@siteweave/core-logic": "*",
+    "@supabase/supabase-js": "^2.74.0",
+    "cross-env": "^7.0.3",
+    "expo": "~54.0.23",
+    "expo-auth-session": "~7.0.8",
+    "expo-camera": "~17.0.9",
+    "expo-constants": "~18.0.10",
+    "expo-image-picker": "~17.0.8",
+    "expo-linking": "~8.0.8",
+    "expo-router": "~6.0.14",
+    "expo-secure-store": "~15.0.7",
+    "expo-splash-screen": "~31.0.10",
+    "expo-status-bar": "~3.0.8",
+    "react": "19.1.0",
+    "react-dom": "19.1.0",
+    "react-native": "0.81.5",
+    "react-native-safe-area-context": "~5.6.0",
+    "react-native-web": "^0.21.0"
+  },
+  "private": true
+}

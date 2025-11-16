@@ -9,4 +9,5 @@ export * from './services/calendarService.js';
 export * from './services/issuesService.js';
 export * from './services/activityService.js';
 export * from './services/fileService.js';
+export * from './services/typingService.js';
 

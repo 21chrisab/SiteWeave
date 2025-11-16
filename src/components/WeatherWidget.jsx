@@ -24,6 +24,18 @@ function WeatherWidget({ compact = false }) {
     loadWeather();
   }, []);
 
+  // Auto-submit when user stops typing (debounced)
+  useEffect(() => {
+    // Only auto-submit if cityInput has a value, we're showing the input, and not currently loading
+    if (showCityInput && cityInput.trim() && !loading) {
+      const timeoutId = setTimeout(() => {
+        loadWeatherByCity(cityInput.trim());
+      }, 800); // Wait 800ms after user stops typing
+
+      return () => clearTimeout(timeoutId);
+    }
+  }, [cityInput, showCityInput, loading]);
+
   const loadWeather = async () => {
     try {
       setLoading(true);
@@ -130,38 +142,37 @@ function WeatherWidget({ compact = false }) {
   if (showCityInput && !weather) {
     return (
       <div className="bg-white p-4 rounded-lg border border-gray-200">
-        <h3 className="text-sm font-semibold text-gray-500 mb-2">Weather</h3>
         {error && !error.includes('API key') && (
           <div className="text-xs text-gray-500 mb-2">
             {error.includes('location') ? 'Unable to get your location. Please enter a city name.' : error}
           </div>
         )}
-        <form onSubmit={handleCitySubmit} className="space-y-2">
+        <form onSubmit={handleCitySubmit} className="relative">
           <input
             type="text"
             value={cityInput}
             onChange={(e) => setCityInput(e.target.value)}
-            placeholder="Enter city name (e.g., New York, Austin)"
-            className="w-full px-3 py-1.5 text-xs border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+            onBlur={() => {
+              if (cityInput.trim() && !loading) {
+                loadWeatherByCity(cityInput.trim());
+              }
+            }}
+            placeholder="Enter city name (e.g., New York)"
+            className="w-full px-3 pr-10 py-1.5 text-xs border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
             autoFocus
           />
-          <div className="flex gap-2">
-            <button
-              type="submit"
-              disabled={loading}
-              className="flex-1 text-xs px-3 py-1.5 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors disabled:opacity-50"
-            >
-              {loading ? 'Loading...' : 'Get Weather'}
-            </button>
-            <button
-              type="button"
-              onClick={handleUseLocation}
-              disabled={loading}
-              className="text-xs px-3 py-1.5 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 transition-colors disabled:opacity-50"
-            >
-              Use Location
-            </button>
-          </div>
+          <button
+            type="button"
+            onClick={handleUseLocation}
+            disabled={loading}
+            className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 p-1 disabled:opacity-50"
+            title="Use Location"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+            </svg>
+          </button>
         </form>
       </div>
     );
@@ -171,7 +182,6 @@ function WeatherWidget({ compact = false }) {
   if (error && !weather && !showCityInput) {
     return (
       <div className="bg-white p-4 rounded-lg border border-gray-200">
-        <h3 className="text-sm font-semibold text-gray-500 mb-2">Weather</h3>
         <div className="text-xs text-gray-500 mb-3">
           {error.includes('API key') ? (
             <span>Weather API key not configured</span>
@@ -201,7 +211,7 @@ function WeatherWidget({ compact = false }) {
           <img
             src={getWeatherIconUrl(weather.icon)}
             alt={weather.description}
-            className="w-6 h-6"
+            className="w-4 h-4"
           />
         )}
         <div className="flex flex-col">
@@ -243,36 +253,31 @@ function WeatherWidget({ compact = false }) {
         </div>
         {showCityInput && (
           <div className="absolute top-full right-0 mt-2 z-50 bg-white p-3 rounded-lg border border-gray-200 shadow-lg min-w-[250px]">
-            <form onSubmit={(e) => { e.preventDefault(); loadWeatherByCity(cityInput); }} className="space-y-2">
+            <form onSubmit={(e) => { e.preventDefault(); loadWeatherByCity(cityInput); }} className="relative">
               <input
                 type="text"
                 value={cityInput}
                 onChange={(e) => setCityInput(e.target.value)}
-                placeholder="Enter city name"
-                className="w-full px-2 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                onBlur={() => {
+                  if (cityInput.trim() && !loading) {
+                    loadWeatherByCity(cityInput.trim());
+                  }
+                }}
+                placeholder="Enter city name (e.g., New York)"
+                className="w-full px-2 pr-8 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
                 autoFocus
               />
-              <div className="flex gap-2">
-                <button
-                  type="submit"
-                  className="flex-1 text-xs px-2 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
-                >
-                  Update
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowCityInput(false);
-                    if (!useGeolocation) {
-                      const savedCity = localStorage.getItem(STORAGE_KEY) || weather?.city || '';
-                      setCityInput(savedCity);
-                    }
-                  }}
-                  className="text-xs px-2 py-1 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 transition-colors"
-                >
-                  Cancel
-                </button>
-              </div>
+              <button
+                type="button"
+                onClick={handleUseLocation}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 p-1"
+                title="Use Location"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                </svg>
+              </button>
             </form>
           </div>
         )}
@@ -283,7 +288,6 @@ function WeatherWidget({ compact = false }) {
   return (
     <div className="bg-white p-4 rounded-lg border border-gray-200">
       <div className="flex items-center justify-between mb-3">
-        <h3 className="text-sm font-semibold text-gray-500">Weather</h3>
         <div className="flex items-center gap-2">
           <button
             onClick={() => {
@@ -317,36 +321,30 @@ function WeatherWidget({ compact = false }) {
 
       {showCityInput && (
         <div className="mb-3 p-2 bg-gray-50 rounded border border-gray-200">
-          <form onSubmit={(e) => { e.preventDefault(); loadWeatherByCity(cityInput); }} className="space-y-2">
+          <form onSubmit={(e) => { e.preventDefault(); loadWeatherByCity(cityInput); }} className="relative">
             <input
               type="text"
               value={cityInput}
               onChange={(e) => setCityInput(e.target.value)}
-              placeholder="Enter city name"
-              className="w-full px-2 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+              onBlur={() => {
+                if (cityInput.trim() && !loading) {
+                  loadWeatherByCity(cityInput.trim());
+                }
+              }}
+              placeholder="Enter city name (e.g., New York)"
+              className="w-full px-2 pr-8 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
             />
-            <div className="flex gap-2">
-              <button
-                type="submit"
-                className="flex-1 text-xs px-2 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
-              >
-                Update
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setShowCityInput(false);
-                  // Restore the current city if using city-based location
-                  if (!useGeolocation) {
-                    const savedCity = localStorage.getItem(STORAGE_KEY) || weather?.city || '';
-                    setCityInput(savedCity);
-                  }
-                }}
-                className="text-xs px-2 py-1 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 transition-colors"
-              >
-                Cancel
-              </button>
-            </div>
+            <button
+              type="button"
+              onClick={handleUseLocation}
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 p-1"
+              title="Use Location"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+              </svg>
+            </button>
           </form>
         </div>
       )}

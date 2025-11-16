@@ -99,50 +99,7 @@ const FieldIssues = ({ projectId }) => {
         const file = event.target.files[0];
         if (!file) return;
 
-        // Check if Dropbox is connected
-        if (!state.dropboxConnected) {
-            addToast('Please connect to Dropbox in Settings to upload files', 'error');
-            return;
-        }
-
-        setIsUploading(true);
-        try {
-            // Upload to Dropbox
-            const uploadResult = await dropboxStorage.uploadFile(file, `/field-issues/${issueId}`, file.name);
-
-            // Insert record into issue_files table with Dropbox URL
-            const { error: insertError } = await supabaseClient
-                .from('issue_files')
-                .insert({
-                    issue_id: issueId,
-                    file_name: file.name,
-                    file_url: uploadResult.sharedUrl,
-                    file_type: file.type.startsWith('image') ? 'image' : (file.type === 'application/pdf' ? 'pdf' : 'file'),
-                    file_size_kb: Math.round(file.size / 1024),
-                    uploaded_by_user_id: state.user?.id
-                });
-
-            if (insertError) {
-                throw insertError;
-            }
-
-            addToast('File uploaded successfully to Dropbox!', 'success');
-            
-            // Refresh the field issues
-            const { data, error } = await supabaseClient
-                .from('project_issues')
-                .select('*')
-                .eq('project_id', projectId)
-                .order('created_at', { ascending: false });
-
-            if (!error) {
-                setFieldIssues(data || []);
-            }
-        } catch (error) {
-            addToast('Error uploading file: ' + error.message, 'error');
-        } finally {
-            setIsUploading(false);
-        }
+        addToast('File upload feature has been disabled. Storage integration is no longer available.', 'info');
     };
 
     const handleCreateIssue = async () => {
@@ -444,7 +401,7 @@ const FieldIssues = ({ projectId }) => {
 
             {/* Create Issue Modal */}
             {showCreateModal && (
-                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                <div className="fixed inset-0 backdrop-blur-[2px] bg-white/20 flex items-center justify-center z-50">
                     <div className="bg-white rounded-xl shadow-xl max-w-4xl w-full mx-4 max-h-[90vh] overflow-y-auto">
                         <div className="p-6 border-b border-gray-200">
                             <div className="flex justify-between items-center">
@@ -549,7 +506,7 @@ const FieldIssues = ({ projectId }) => {
 
             {/* Delete Confirmation Modal */}
             {issueToDelete && (
-                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                <div className="fixed inset-0 backdrop-blur-[2px] bg-white/20 flex items-center justify-center z-50">
                     <div className="bg-white rounded-xl shadow-xl max-w-md w-full mx-4 p-6">
                         <h3 className="text-lg font-bold text-gray-900 mb-4">Delete Issue</h3>
                         <p className="text-gray-600 mb-6">

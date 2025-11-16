@@ -100,15 +100,34 @@ export const startGoogleCalendarOAuth = async () => {
 
 export const handleOutlookCalendarCallback = async (code) => {
     try {
-        // Exchange authorization code for access token
-        const { access_token } = await exchangeOutlookToken(code);
-        
-        // Store token for future sync operations
-        storeCalendarToken('outlook', access_token);
+        // If running in Electron, use electronOAuth which supports PKCE
+        if (window.electronAPI?.isElectron) {
+            const clientId = import.meta.env.VITE_MICROSOFT_CLIENT_ID;
+            if (!clientId) {
+                throw new Error('Microsoft OAuth client ID not configured');
+            }
+            
+            const tokenData = await electronOAuth.exchangeCodeForToken('microsoft', code, {
+                clientId: clientId
+            });
+            
+            // Store token for future sync operations
+            storeCalendarToken('outlook', tokenData.access_token);
 
-        // Fetch events from Microsoft Graph
-        const data = await fetchOutlookCalendarEvents(access_token);
-        return transformOutlookEvents(data.value || []);
+            // Fetch events from Microsoft Graph
+            const data = await fetchOutlookCalendarEvents(tokenData.access_token);
+            return transformOutlookEvents(data.value || []);
+        } else {
+            // Web browser flow - use standard token exchange
+            const { access_token } = await exchangeOutlookToken(code);
+            
+            // Store token for future sync operations
+            storeCalendarToken('outlook', access_token);
+
+            // Fetch events from Microsoft Graph
+            const data = await fetchOutlookCalendarEvents(access_token);
+            return transformOutlookEvents(data.value || []);
+        }
 
     } catch (error) {
         console.error('Outlook Calendar integration error:', error);

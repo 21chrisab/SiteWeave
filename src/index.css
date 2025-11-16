@@ -1,6 +1,11 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
+
+/* Message overflow handling */
+.overflow-wrap-anywhere {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  word-wrap: break-word;
+}
 
 /* Outlook-style Calendar Styling */
 .fc {
@@ -37,11 +42,11 @@
 /* Time Slots */
 .fc-timegrid-slot {
   border-color: #f3f4f6 !important;
-  height: 40px !important;
+  height: 30px !important;
 }
 
 .fc-timegrid-slot-label {
-  font-size: 0.75rem !important;
+  font-size: 0.7rem !important;
   color: #6b7280 !important;
   font-weight: 500 !important;
   padding: 0 8px !important;

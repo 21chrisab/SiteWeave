@@ -5,7 +5,7 @@ function OnboardingWelcome({ user, onStartTour, onSkip }) {
   const userName = user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'there';
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+    <div className="fixed inset-0 backdrop-blur-[2px] bg-white/20 flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-xl shadow-2xl max-w-md w-full p-8">
         <div className="text-center">
           {/* Welcome Icon */}

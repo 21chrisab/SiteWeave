@@ -1012,8 +1012,8 @@ function CalendarView() {
                             height="calc(100vh - 200px)"
                             allDaySlot={true}
                             timeZone="local"
-                            slotMinTime="06:00:00"
-                            slotMaxTime="22:00:00"
+                            slotMinTime="05:00:00"
+                            slotMaxTime="23:00:00"
                             eventDisplay="block"
                             eventTextColor="white"
                             dayHeaderFormat={(arg) => {

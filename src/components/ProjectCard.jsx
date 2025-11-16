@@ -3,6 +3,7 @@ import { useAppContext } from '../context/AppContext';
 import Icon from './Icon';
 import Avatar from './Avatar';
 import ProjectProgressCard from './ProjectProgressCard';
+import { normalizeStatusDisplay } from '../utils/projectHelpers';
 
 const ProjectCard = memo(function ProjectCard({ project, onEdit, onDelete }) {
     const { dispatch, state } = useAppContext();
@@ -13,15 +14,19 @@ const ProjectCard = memo(function ProjectCard({ project, onEdit, onDelete }) {
         contact.project_contacts && contact.project_contacts.some(pc => pc.project_id === project.id) && contact.type === 'Team'
     );
     
-    // Auto-determine status color based on status
+    // Auto-determine status color based on status (using helper from projectHelpers)
     const getStatusColor = (status) => {
-        switch (status?.toLowerCase()) {
+        if (!status) return 'bg-gray-100 text-gray-800';
+        const normalized = status.trim().toLowerCase();
+        switch (normalized) {
             case 'planning':
                 return 'bg-blue-100 text-blue-800';
             case 'in progress':
+            case 'in-progress':
                 return 'bg-green-100 text-green-800';
             case 'on hold':
-                return 'bg-orange-100 text-orange-800';
+            case 'on-hold':
+                return 'bg-yellow-100 text-yellow-900';
             case 'completed':
                 return 'bg-gray-100 text-gray-800';
             default:
@@ -76,7 +81,9 @@ const ProjectCard = memo(function ProjectCard({ project, onEdit, onDelete }) {
                     <p className="text-xs text-gray-500">{project.project_type}</p>
                 </div>
                 <div className="flex items-center gap-2 flex-shrink-0">
-                    <span className={`px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(project.status)}`}>{project.status}</span>
+                    <span className={`px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(project.status)}`}>
+                        {normalizeStatusDisplay(project.status) || 'No Status'}
+                    </span>
                     {project.notification_count > 0 && (
                         <div className="flex items-center justify-center w-5 h-5 bg-red-500 text-white text-xs font-bold rounded-full">
                             {project.notification_count}

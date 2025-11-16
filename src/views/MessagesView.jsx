@@ -1,10 +1,22 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useAppContext, supabaseClient } from '../context/AppContext';
 import { useToast } from '../context/ToastContext';
 import MessageItem from '../components/MessageItem';
 import Icon from '../components/Icon';
 import Avatar from '../components/Avatar';
-import dropboxStorage from '../utils/dropboxStorage';
+import { 
+    fetchChannelMessages, 
+    sendMessage, 
+    sendThreadReply,
+    markMessageAsRead,
+    fetchUnreadCounts,
+    uploadFile
+} from '@siteweave/core-logic';
+import { 
+    setTypingStatus, 
+    getTypingUsers, 
+    createDebouncedTypingStatus 
+} from '@siteweave/core-logic';
 
 function MessagesView() {
     const { state, dispatch } = useAppContext();
@@ -16,10 +28,73 @@ function MessagesView() {
     const messagesEndRef = useRef(null);
     const fileInputRef = useRef(null);
     const messageInputRef = useRef(null);
+    const hasAutoSelectedChannelRef = useRef(false);
     const [isUploading, setIsUploading] = useState(false);
+    const [typingUsers, setTypingUsers] = useState([]);
+    const [unreadCounts, setUnreadCounts] = useState({});
+    const [replyingTo, setReplyingTo] = useState(null);
+    const [uploadProgress, setUploadProgress] = useState(0);
+    const [isDragging, setIsDragging] = useState(false);
+    const debouncedTypingRef = useRef(null);
 
     const activeChannel = state.messageChannels.find(ch => ch.id === state.selectedChannelId);
-    const channelMessages = state.messages.filter(msg => msg.channel_id === state.selectedChannelId);
+    const channelMessages = state.messages.filter(msg => msg.channel_id === state.selectedChannelId && !msg.parent_message_id);
+
+    // Message grouping logic - group consecutive messages from same user within the same minute
+    const groupedMessages = React.useMemo(() => {
+        if (!channelMessages.length) return [];
+        
+        // Sort messages by created_at to ensure chronological order
+        const sortedMessages = [...channelMessages].sort((a, b) => 
+            new Date(a.created_at) - new Date(b.created_at)
+        );
+        
+        const grouped = [];
+        let currentGroup = null;
+        
+        const getMinuteKey = (dateString) => {
+            if (!dateString) return '';
+            const date = new Date(dateString);
+            // Create a key based on year, month, day, hour, and minute
+            return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}-${String(date.getHours()).padStart(2, '0')}-${String(date.getMinutes()).padStart(2, '0')}`;
+        };
+        
+        sortedMessages.forEach((msg, index) => {
+            const prevMsg = index > 0 ? sortedMessages[index - 1] : null;
+            const isSameUser = prevMsg && prevMsg.user_id === msg.user_id;
+            const isSameMinute = prevMsg && getMinuteKey(msg.created_at) === getMinuteKey(prevMsg.created_at);
+            
+            // Check if we can add to current group (same user, same minute)
+            if (isSameUser && isSameMinute && currentGroup && currentGroup.user_id === msg.user_id) {
+                // Same user, same minute - group it (no timestamp, no avatar)
+                currentGroup.messages.push({ 
+                    ...msg, 
+                    isGrouped: true, 
+                    showAvatar: false, 
+                    showTimestamp: false 
+                });
+            } else {
+                // Start a new group
+                if (currentGroup) grouped.push(currentGroup);
+                // New group - first message shows timestamp and avatar
+                currentGroup = {
+                    id: msg.id,
+                    user_id: msg.user_id,
+                    user: msg.user,
+                    created_at: msg.created_at,
+                    messages: [{ 
+                        ...msg, 
+                        isGrouped: false, 
+                        showAvatar: true, 
+                        showTimestamp: true 
+                    }]
+                };
+            }
+        });
+        
+        if (currentGroup) grouped.push(currentGroup);
+        return grouped;
+    }, [channelMessages]);
 
     const getProjectForChannel = (channelId) => state.projects.find(p => p.id === state.messageChannels.find(c => c.id === channelId)?.project_id);
     const getTeamCount = (projectId) => state.contacts.filter(c => c.project_contacts.some(pc => pc.project_id === projectId)).length;
@@ -37,10 +112,141 @@ function MessagesView() {
     );
 
     useEffect(() => {
-        if (!state.selectedChannelId && state.messageChannels.length > 0) {
-            dispatch({ type: 'SET_CHANNEL', payload: state.messageChannels[0].id });
+        if (!state.selectedChannelId && state.messageChannels.length > 0 && !hasAutoSelectedChannelRef.current) {
+            const firstChannelId = state.messageChannels[0]?.id;
+            if (firstChannelId) {
+                dispatch({ type: 'SET_CHANNEL', payload: firstChannelId });
+                hasAutoSelectedChannelRef.current = true;
+            }
         }
-    }, [state.messageChannels, state.selectedChannelId, dispatch]);
+        
+        // Reset the ref when channel is cleared
+        if (!state.selectedChannelId) {
+            hasAutoSelectedChannelRef.current = false;
+        }
+    }, [state.messageChannels.length, state.selectedChannelId, dispatch]);
+
+    // Load unread counts
+    useEffect(() => {
+        if (state.messageChannels.length > 0 && state.user?.id) {
+            const channelIds = state.messageChannels.map(ch => ch.id);
+            fetchUnreadCounts(supabaseClient, state.user.id, channelIds)
+                .then(counts => setUnreadCounts(counts))
+                .catch(err => console.error('Error fetching unread counts:', err));
+        }
+    }, [state.messageChannels, state.user?.id, state.messages.length]);
+
+    // Mark messages as read when viewing
+    useEffect(() => {
+        if (activeChannel && channelMessages.length > 0 && state.user?.id) {
+            const lastMessage = channelMessages[channelMessages.length - 1];
+            if (lastMessage && !lastMessage.isRead) {
+                markMessageAsRead(supabaseClient, lastMessage.id, state.user.id)
+                    .catch(err => console.error('Error marking message as read:', err));
+            }
+        }
+    }, [activeChannel?.id, channelMessages.length, state.user?.id]);
+
+    // Typing indicator setup
+    useEffect(() => {
+        if (activeChannel && state.user?.id) {
+            debouncedTypingRef.current = createDebouncedTypingStatus(
+                supabaseClient, 
+                activeChannel.id, 
+                state.user.id
+            );
+        }
+        return () => {
+            if (debouncedTypingRef.current && activeChannel && state.user?.id) {
+                setTypingStatus(supabaseClient, activeChannel.id, state.user.id, false);
+            }
+        };
+    }, [activeChannel?.id, state.user?.id]);
+
+    // Fetch typing users
+    useEffect(() => {
+        if (!activeChannel || !state.user?.id) return;
+        
+        const interval = setInterval(async () => {
+            try {
+                const users = await getTypingUsers(supabaseClient, activeChannel.id, state.user.id);
+                setTypingUsers(users);
+            } catch (err) {
+                console.error('Error fetching typing users:', err);
+            }
+        }, 1000);
+
+        return () => clearInterval(interval);
+    }, [activeChannel?.id, state.user?.id]);
+
+    // Real-time subscriptions
+    useEffect(() => {
+        if (!activeChannel) return;
+
+        // Subscribe to new messages
+        const messagesChannel = supabaseClient
+            .channel(`messages:${activeChannel.id}`)
+            .on('postgres_changes', {
+                event: 'INSERT',
+                schema: 'public',
+                table: 'messages',
+                filter: `channel_id=eq.${activeChannel.id}`
+            }, (payload) => {
+                if (!payload.new.parent_message_id) {
+                    dispatch({ type: 'ADD_MESSAGE', payload: payload.new });
+                }
+            })
+            .on('postgres_changes', {
+                event: 'UPDATE',
+                schema: 'public',
+                table: 'messages',
+                filter: `channel_id=eq.${activeChannel.id}`
+            }, (payload) => {
+                dispatch({ type: 'UPDATE_MESSAGE', payload: payload.new });
+            })
+            .subscribe();
+
+        // Subscribe to reactions
+        const reactionsChannel = supabaseClient
+            .channel(`reactions:${activeChannel.id}`)
+            .on('postgres_changes', {
+                event: '*',
+                schema: 'public',
+                table: 'message_reactions',
+                filter: `message_id=in.(${channelMessages.map(m => m.id).join(',')})`
+            }, async () => {
+                // Refetch reactions for visible messages
+                const messageIds = channelMessages.map(m => m.id);
+                if (messageIds.length > 0) {
+                    const { fetchMessageReactions } = await import('@siteweave/core-logic');
+                    const reactions = await fetchMessageReactions(supabaseClient, messageIds);
+                    dispatch({ type: 'UPDATE_MESSAGE_REACTIONS', payload: reactions });
+                }
+            })
+            .subscribe();
+
+        // Subscribe to typing indicators
+        const typingChannel = supabaseClient
+            .channel(`typing:${activeChannel.id}`)
+            .on('postgres_changes', {
+                event: '*',
+                schema: 'public',
+                table: 'typing_indicators',
+                filter: `channel_id=eq.${activeChannel.id}`
+            }, async () => {
+                if (state.user?.id) {
+                    const users = await getTypingUsers(supabaseClient, activeChannel.id, state.user.id);
+                    setTypingUsers(users);
+                }
+            })
+            .subscribe();
+
+        return () => {
+            supabaseClient.removeChannel(messagesChannel);
+            supabaseClient.removeChannel(reactionsChannel);
+            supabaseClient.removeChannel(typingChannel);
+        };
+    }, [activeChannel?.id, channelMessages.length, state.user?.id, dispatch]);
 
     useEffect(() => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -54,43 +260,69 @@ function MessagesView() {
         const content = newMessage.trim();
         if (!activeChannel || (!content && !file)) return;
 
-        let messageData = { 
-            channel_id: activeChannel.id, 
-            user_id: state.user.id, 
-            content, 
-            type: 'text' 
-        };
+        setIsUploading(true);
+        setUploadProgress(0);
 
-        if (file) {
-            // Check if Dropbox is connected
-            if (!state.dropboxConnected) {
-                addToast('Please connect to Dropbox in Settings to upload files', 'error');
-                return;
+        try {
+            let messageData = { 
+                channel_id: activeChannel.id, 
+                user_id: state.user.id, 
+                content, 
+                type: 'text',
+                topic: 'General',
+                extension: 'txt'
+            };
+
+            // Handle threading
+            if (replyingTo) {
+                messageData.parent_message_id = replyingTo.id;
+                const reply = await sendThreadReply(supabaseClient, messageData);
+                dispatch({ type: 'ADD_MESSAGE', payload: reply });
+                setReplyingTo(null);
+            } else {
+                // Handle file upload
+                if (file) {
+                    const fileName = `${Date.now()}_${file.name}`;
+                    const filePath = `messages/${activeChannel.id}/${fileName}`;
+                    
+                    try {
+                        setUploadProgress(30);
+                        await uploadFile(supabaseClient, 'message_files', filePath, file);
+                        setUploadProgress(70);
+                        
+                        const fileUrl = supabaseClient.storage
+                            .from('message_files')
+                            .getPublicUrl(filePath).data.publicUrl;
+                        
+                        messageData.file_url = fileUrl;
+                        messageData.file_name = file.name;
+                        messageData.type = file.type.startsWith('image/') ? 'image' : 'file';
+                        setUploadProgress(90);
+                    } catch (uploadError) {
+                        addToast('Error uploading file: ' + uploadError.message, 'error');
+                        setIsUploading(false);
+                        setUploadProgress(0);
+                        return;
+                    }
+                }
+
+                const sentMessage = await sendMessage(supabaseClient, messageData);
+                dispatch({ type: 'ADD_MESSAGE', payload: sentMessage });
             }
 
-            setIsUploading(true);
-            try {
-                const fileName = `${Date.now()}_${file.name}`;
-                const uploadResult = await dropboxStorage.uploadFile(file, `/messages/${activeChannel.id}`, fileName);
-                
-                messageData.file_url = uploadResult.sharedUrl;
-                messageData.file_name = file.name;
-                messageData.type = file.type.startsWith('image') ? 'image' : 'file';
-            } catch (error) {
-                addToast('Upload error: ' + error.message, 'error');
-                setIsUploading(false);
-                return;
+            // Clear typing status
+            if (debouncedTypingRef.current) {
+                debouncedTypingRef.current(false);
             }
-        }
 
-        const { error } = await supabaseClient.from('messages').insert(messageData);
-        if (error) {
+            setNewMessage('');
+            setUploadProgress(100);
+            setTimeout(() => setUploadProgress(0), 500);
+        } catch (error) {
             addToast('Error sending message: ' + error.message, 'error');
-        } else {
-            addToast('Message sent successfully!', 'success');
+        } finally {
+            setIsUploading(false);
         }
-        setNewMessage('');
-        setIsUploading(false);
     };
 
     const handleFileChange = e => e.target.files[0] && handleSendMessage(e.target.files[0]);
@@ -100,6 +332,13 @@ function MessagesView() {
         const cursorPosition = e.target.selectionStart;
         
         setNewMessage(value);
+        
+        // Update typing indicator
+        if (debouncedTypingRef.current && value.trim()) {
+            debouncedTypingRef.current(true);
+        } else if (debouncedTypingRef.current && !value.trim()) {
+            debouncedTypingRef.current(false);
+        }
         
         // Check for @mentions
         const textBeforeCursor = value.substring(0, cursorPosition);
@@ -112,6 +351,31 @@ function MessagesView() {
         } else {
             setShowMentions(false);
         }
+    };
+
+    const handleDragOver = (e) => {
+        e.preventDefault();
+        setIsDragging(true);
+    };
+
+    const handleDragLeave = (e) => {
+        e.preventDefault();
+        setIsDragging(false);
+    };
+
+    const handleDrop = (e) => {
+        e.preventDefault();
+        setIsDragging(false);
+        
+        const files = Array.from(e.dataTransfer.files);
+        if (files.length > 0) {
+            handleSendMessage(files[0]);
+        }
+    };
+
+    const handleReply = (message) => {
+        setReplyingTo(message);
+        messageInputRef.current?.focus();
     };
 
     const handleMentionSelect = (contact) => {
@@ -146,25 +410,29 @@ function MessagesView() {
                 className="w-80 bg-white rounded-l-xl shadow-sm border border-gray-200 flex flex-col p-4"
             >
                 <h2 className="text-xl font-bold mb-4 px-2">Projects</h2>
-                <ul className="space-y-1">
+                <ul className="space-y-1 overflow-y-auto flex-1">
                     {state.messageChannels.map(channel => {
                         const project = getProjectForChannel(channel.id);
                         return (
                             <li key={channel.id} onClick={() => dispatch({ type: 'SET_CHANNEL', payload: channel.id })}
                                 className={`flex justify-between items-center px-3 py-2 rounded-lg cursor-pointer ${state.selectedChannelId === channel.id ? 'bg-blue-100 text-blue-800' : 'hover:bg-gray-100'}`}>
-                                <span className="font-semibold"># {project?.name || channel.name}</span>
-                                {project?.notification_count > 0 && <span className="bg-red-500 text-white text-xs w-5 h-5 flex items-center justify-center rounded-full">{project.notification_count}</span>}
+                                <span className="font-semibold truncate flex-1 mr-2"># {project?.name || channel.name}</span>
+                                {(unreadCounts[channel.id] > 0 || project?.notification_count > 0) && (
+                                    <span className="bg-red-500 text-white text-xs px-2 py-0.5 rounded-full flex-shrink-0">
+                                        {unreadCounts[channel.id] || project?.notification_count || 0}
+                                    </span>
+                                )}
                             </li>
                         );
                     })}
                 </ul>
             </aside>
-            <main className="flex-1 bg-white rounded-r-xl shadow-sm border-t border-r border-b border-gray-200 flex flex-col">
+            <main className="flex-1 bg-white rounded-r-xl shadow-sm border-t border-r border-b border-gray-200 flex flex-col overflow-hidden">
                 {activeChannel ? (
                     <>
-                        <header className="p-4 border-b border-gray-200 flex justify-between items-center">
-                            <div>
-                                <h3 className="font-bold text-lg"># {getProjectForChannel(activeChannel.id)?.name}</h3>
+                        <header className="p-4 border-b border-gray-200 flex justify-between items-center gap-4">
+                            <div className="min-w-0 flex-1">
+                                <h3 className="font-bold text-lg truncate"># {getProjectForChannel(activeChannel.id)?.name}</h3>
                                 <p className="text-sm text-gray-500">{getTeamCount(activeChannel.project_id)} members</p>
                             </div>
                             {teamMembers.length > 0 && (
@@ -194,21 +462,91 @@ function MessagesView() {
                         </header>
                         <div 
                             data-onboarding="chat-area"
-                            className="flex-1 p-6 overflow-y-auto"
+                            className="flex-1 p-6 overflow-y-auto overflow-x-hidden"
+                            onDragOver={handleDragOver}
+                            onDragLeave={handleDragLeave}
+                            onDrop={handleDrop}
                         >
-                            {channelMessages.map(msg => <MessageItem key={msg.id} message={msg} />)}
+                            {isDragging && (
+                                <div className="fixed inset-0 bg-blue-500 bg-opacity-20 z-50 flex items-center justify-center pointer-events-none">
+                                    <div className="bg-white rounded-lg p-8 shadow-lg border-2 border-blue-500 border-dashed">
+                                        <p className="text-lg font-semibold text-blue-600">Drop file to upload</p>
+                                    </div>
+                                </div>
+                            )}
+                            {groupedMessages.map((group, groupIdx) => (
+                                <div key={group.id} className="space-y-1">
+                                    {group.messages.map((msg, idx) => {
+                                        // Check if this is the very last message in the entire channel
+                                        const isLastMessageInChannel = 
+                                            groupIdx === groupedMessages.length - 1 && 
+                                            idx === group.messages.length - 1;
+                                        
+                                        return (
+                                            <MessageItem 
+                                                key={msg.id} 
+                                                message={msg} 
+                                                isGrouped={msg.isGrouped}
+                                                showAvatar={msg.showAvatar}
+                                                showTimestamp={msg.showTimestamp}
+                                                isLastInChannel={isLastMessageInChannel}
+                                                onReply={handleReply}
+                                            />
+                                        );
+                                    })}
+                                </div>
+                            ))}
+                            {typingUsers.length > 0 && (
+                                <div className="text-sm text-gray-500 italic mt-2">
+                                    {typingUsers.length === 1 
+                                        ? `${typingUsers[0]?.name || 'Someone'} is typing...`
+                                        : `${typingUsers[0]?.name || 'Someone'} and ${typingUsers.length - 1} other${typingUsers.length > 2 ? 's' : ''} are typing...`
+                                    }
+                                </div>
+                            )}
                             <div ref={messagesEndRef} />
                         </div>
+                        {replyingTo && (
+                            <div className="px-4 py-2 bg-blue-50 border-t border-blue-200 flex items-center justify-between">
+                                <div className="flex items-center gap-2">
+                                    <Icon path="M12 20.25c4.97 0 9-3.694 9-8.25s-4.03-8.25-9-8.25S3 7.444 3 12c0 2.104.859 4.023 2.273 5.488.432.447.74 1.04.586 1.641a4.483 4.483 0 01-.923 1.785A5.969 5.969 0 006 21c1.282 0 2.47-.492 3.337-1.313.379-.38.708-.796.924-1.22a4.801 4.801 0 001.923-1.22 4.705 4.705 0 00.334-1.785c0-.6-.154-1.194-.432-1.641A8.98 8.98 0 0012 20.25z" className="w-4 h-4 text-blue-600" />
+                                    <span className="text-sm text-gray-700">
+                                        Replying to <span className="font-semibold">{replyingTo.user?.name || 'message'}</span>
+                                    </span>
+                                    <span className="text-xs text-gray-500 truncate max-w-xs">{replyingTo.content}</span>
+                                </div>
+                                <button
+                                    onClick={() => setReplyingTo(null)}
+                                    className="text-gray-500 hover:text-gray-700"
+                                >
+                                    <Icon path="M6 18L18 6M6 6l12 12" className="w-4 h-4" />
+                                </button>
+                            </div>
+                        )}
                         <div className="p-4 border-t bg-gray-50 relative">
+                            {uploadProgress > 0 && uploadProgress < 100 && (
+                                <div className="absolute top-0 left-0 right-0 h-1 bg-gray-200">
+                                    <div 
+                                        className="h-full bg-blue-600 transition-all duration-300"
+                                        style={{ width: `${uploadProgress}%` }}
+                                    />
+                                </div>
+                            )}
                             <div className="flex items-center gap-4">
-                                <input type="file" ref={fileInputRef} onChange={handleFileChange} className="hidden" />
+                                <input 
+                                    type="file" 
+                                    ref={fileInputRef} 
+                                    onChange={e => e.target.files[0] && handleSendMessage(e.target.files[0])} 
+                                    className="hidden" 
+                                    multiple={false}
+                                />
                                 <button 
                                     onClick={() => fileInputRef.current.click()} 
                                     disabled={isUploading} 
-                                    className="text-gray-500 hover:text-blue-600 disabled:opacity-50"
+                                    className="text-gray-500 hover:text-blue-600 disabled:opacity-50 transition-colors"
                                     title="Attach file"
                                 >
-                                    <Icon path="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" className="w-6 h-6" />
+                                    <Icon path="M18.375 2.25h-16.5A2.25 2.25 0 002.25 4.5v15a2.25 2.25 0 002.25 2.25h16.5A2.25 2.25 0 0021.75 19.5v-15a2.25 2.25 0 00-2.25-2.25zM9.75 8.25a.75.75 0 000 1.5H15M9.75 11.25a.75.75 0 000 1.5H15m-6-4.5a.75.75 0 000 1.5H15" className="w-6 h-6" />
                                 </button>
                                 
                                 <div className="flex-1 relative">

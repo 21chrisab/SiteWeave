@@ -23,6 +23,9 @@ serve(async (req) => {
       )
     }
 
+    // Normalize to field - handle both string and array
+    const toArray = Array.isArray(to) ? to : [to]
+
     // Option 1: Use Resend (recommended for production)
     if (RESEND_API_KEY) {
       const resendResponse = await fetch('https://api.resend.com/emails', {
@@ -33,7 +36,7 @@ serve(async (req) => {
         },
         body: JSON.stringify({
           from: 'SiteWeave Notifications <notifications@send.resend.dev>', // Resend shared domain for production
-          to: [to],
+          to: toArray,
           subject: subject,
           html: html,
           text: text
