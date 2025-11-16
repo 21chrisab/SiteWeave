@@ -2,8 +2,9 @@
   command = "npm install && npm run build"
   publish = "dist"
 
-# Redirect all requests to index.html except files that exist
-# This allows assets (JS, CSS, images) to be served normally
+# Redirect all requests to index.html EXCEPT files that exist
+# force = false means: only redirect if the file doesn't exist
+# This allows JS, CSS, and other assets to be served normally
 [[redirects]]
   from = "/*"
   to = "/index.html"
