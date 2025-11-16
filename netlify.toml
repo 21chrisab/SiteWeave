@@ -1,15 +1,10 @@
 [build]
   command = "npm install && npm run build"
   publish = "dist"
+  ignore = ".git"
 
-# Redirect all requests to index.html EXCEPT files that exist
-# force = false means: only redirect if the file doesn't exist
-# This allows JS, CSS, and other assets to be served normally
-[[redirects]]
-  from = "/*"
-  to = "/index.html"
-  status = 200
-  force = false
+# Redirects are handled by _redirects file in dist/ (copied from public/)
+# This allows better control over asset file serving
 
 [build.environment]
   NODE_VERSION = "20"
