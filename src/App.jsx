@@ -2,6 +2,7 @@ import React from 'react'
 import { Link, Route, Routes, useNavigate, useParams, useLocation } from 'react-router-dom'
 import { supabase } from './supabaseClient'
 import LoadingSpinner from './components/LoadingSpinner'
+import { fetchChannelMessages, sendMessage, fetchUnreadCounts, getTypingUsers, createDebouncedTypingStatus, setTypingStatus } from './utils/messageService.js'
 
 function UseSession() {
   const [session, setSession] = React.useState(null)
@@ -477,11 +478,6 @@ function Messages() {
   const [typingUsers, setTypingUsers] = React.useState([])
   const [unreadCounts, setUnreadCounts] = React.useState({})
   const messagesEndRef = React.useRef(null)
-  
-  // Import enhanced services
-  const { fetchChannelMessages, sendMessage, fetchUnreadCounts, getTypingUsers, createDebouncedTypingStatus, setTypingStatus } = React.useMemo(() => {
-    return require('@siteweave/core-logic')
-  }, [])
 
   React.useEffect(() => {
     let cancelled = false
