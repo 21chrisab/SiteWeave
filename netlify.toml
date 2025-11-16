@@ -1,13 +1,13 @@
 [build]
   command = "npm install && npm run build"
   publish = "dist"
-  ignore = ".git"
-
-# Redirects are handled by _redirects file in dist/ (copied from public/)
-# This allows better control over asset file serving
+  base = "."
 
 [build.environment]
   NODE_VERSION = "20"
+
+# Redirects are handled by _redirects file in dist/ (copied from public/)
+# The simple catch-all will only redirect if file doesn't exist
 
 # Headers for proper MIME types
 [[headers]]
@@ -24,8 +24,4 @@
   for = "/*.css"
   [headers.values]
     Content-Type = "text/css; charset=utf-8"
-
-# Ensure proper build output
-[build.processing]
-  skip_processing = false
 
