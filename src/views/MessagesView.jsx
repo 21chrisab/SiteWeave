@@ -36,6 +36,10 @@ function MessagesView() {
     const [uploadProgress, setUploadProgress] = useState(0);
     const [isDragging, setIsDragging] = useState(false);
     const debouncedTypingRef = useRef(null);
+    const messagesContainerRef = useRef(null);
+    const previousMessageCountRef = useRef(0);
+    const isUserScrollingRef = useRef(false);
+    const scrollTimeoutRef = useRef(null);
 
     const activeChannel = state.messageChannels.find(ch => ch.id === state.selectedChannelId);
     const channelMessages = state.messages.filter(msg => msg.channel_id === state.selectedChannelId && !msg.parent_message_id);
@@ -248,13 +252,51 @@ function MessagesView() {
         };
     }, [activeChannel?.id, channelMessages.length, state.user?.id, dispatch]);
 
+    // Check if user is near the bottom of the scroll container
+    const isNearBottom = () => {
+        if (!messagesContainerRef.current) return true;
+        const container = messagesContainerRef.current;
+        const threshold = 100; // pixels from bottom
+        return container.scrollHeight - container.scrollTop - container.clientHeight < threshold;
+    };
+
+    // Handle scroll events to detect user scrolling
+    const handleScroll = useCallback(() => {
+        if (scrollTimeoutRef.current) {
+            clearTimeout(scrollTimeoutRef.current);
+        }
+        isUserScrollingRef.current = true;
+        scrollTimeoutRef.current = setTimeout(() => {
+            isUserScrollingRef.current = false;
+        }, 150);
+    }, []);
+
+    // Auto-scroll only when appropriate
     useEffect(() => {
-        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
         const project = getProjectForChannel(state.selectedChannelId);
         if (project && project.notification_count > 0) {
             supabaseClient.from('projects').update({ notification_count: 0 }).eq('id', project.id).then(() => {});
         }
-    }, [channelMessages, state.selectedChannelId]);
+
+        // Check if this is a new message (count increased) or channel change
+        const currentMessageCount = channelMessages.length;
+        const isNewMessage = currentMessageCount > previousMessageCountRef.current;
+        const isChannelChange = previousMessageCountRef.current === 0;
+        
+        // Only auto-scroll if:
+        // 1. It's a new message AND user is near bottom (or channel just changed)
+        // 2. OR channel changed (initial load)
+        if ((isNewMessage && (isNearBottom() || isChannelChange)) || isChannelChange) {
+            // Small delay to ensure DOM is updated
+            setTimeout(() => {
+                if (!isUserScrollingRef.current || isChannelChange) {
+                    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+                }
+            }, 100);
+        }
+        
+        previousMessageCountRef.current = currentMessageCount;
+    }, [channelMessages.length, state.selectedChannelId]);
 
     const handleSendMessage = async (file = null) => {
         const content = newMessage.trim();
@@ -461,11 +503,13 @@ function MessagesView() {
                             )}
                         </header>
                         <div 
+                            ref={messagesContainerRef}
                             data-onboarding="chat-area"
                             className="flex-1 p-6 overflow-y-auto overflow-x-hidden"
                             onDragOver={handleDragOver}
                             onDragLeave={handleDragLeave}
                             onDrop={handleDrop}
+                            onScroll={handleScroll}
                         >
                             {isDragging && (
                                 <div className="fixed inset-0 bg-blue-500 bg-opacity-20 z-50 flex items-center justify-center pointer-events-none">

@@ -142,10 +142,17 @@ export const startOutlookCalendarOAuth = async () => {
         throw new Error('Microsoft OAuth client ID not configured');
     }
 
+    console.log('=== STARTING OUTLOOK OAUTH ===');
+    console.log('window.electronAPI:', window.electronAPI);
+    console.log('electronOAuth.isElectron:', electronOAuth.isElectron);
+
     try {
         const result = await electronOAuth.startOAuthFlow('microsoft', {
             clientId: clientId
         });
+
+        console.log('OAuth flow completed, received code. Exchanging for token...');
+        console.log('msCodeVerifier before exchange:', !!electronOAuth.msCodeVerifier);
 
         const tokenData = await electronOAuth.exchangeCodeForToken('microsoft', result.code, {
             clientId: clientId

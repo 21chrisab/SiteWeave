@@ -21,7 +21,16 @@ export async function uploadFile(supabase, bucket, path, file, options = {}) {
       ...options
     });
   
-  if (error) throw error;
+  if (error) {
+    // Provide more helpful error message for missing bucket
+    if (error.message && error.message.includes('Bucket not found')) {
+      throw new Error(
+        `Storage bucket "${bucket}" not found. Please create it in your Supabase dashboard: ` +
+        `Storage > New bucket > Name: "${bucket}" > Public bucket (if needed)`
+      );
+    }
+    throw error;
+  }
   
   // Get public URL
   const { data: urlData } = supabase.storage

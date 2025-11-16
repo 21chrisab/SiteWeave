@@ -81,19 +81,64 @@ export async function clearTypingStatus(supabase, channelId, userId) {
  * @returns {Promise<Array>} Array of typing users with user info
  */
 export async function getTypingUsers(supabase, channelId, currentUserId = null) {
-  const { data, error } = await supabase
+  // First, get typing indicators
+  const { data: indicators, error: indicatorsError } = await supabase
     .from('typing_indicators')
-    .select('*, user:user_id(id, name, avatar_url)')
+    .select('user_id')
     .eq('channel_id', channelId)
     .eq('is_typing', true)
-    .gt('updated_at', new Date(Date.now() - 5000).toISOString()); // Only get recent (last 5 seconds)
+    .gt('updated_at', new Date(Date.now() - 5000).toISOString()) // Only get recent (last 5 seconds)
+    .neq('user_id', currentUserId); // Exclude current user
 
-  if (error) throw error;
+  if (indicatorsError) throw indicatorsError;
 
-  // Filter out current user and return user info
-  const typingUsers = (data || [])
-    .filter(indicator => indicator.user_id !== currentUserId)
-    .map(indicator => indicator.user);
+  if (!indicators || indicators.length === 0) {
+    return [];
+  }
+
+  // Get unique user IDs
+  const userIds = [...new Set(indicators.map(i => i.user_id))];
+
+  // Get profiles with contact_ids
+  const { data: profiles, error: profilesError } = await supabase
+    .from('profiles')
+    .select('id, contact_id')
+    .in('id', userIds);
+
+  if (profilesError) throw profilesError;
+
+  if (!profiles || profiles.length === 0) return [];
+
+  // Get unique contact IDs
+  const contactIds = [...new Set(profiles.map(p => p.contact_id).filter(Boolean))];
+  
+  if (contactIds.length === 0) return [];
+
+  // Fetch contacts separately
+  const { data: contacts, error: contactsError } = await supabase
+    .from('contacts')
+    .select('id, name, avatar_url')
+    .in('id', contactIds);
+
+  if (contactsError) throw contactsError;
+
+  // Create contact map
+  const contactMap = {};
+  (contacts || []).forEach(contact => {
+    contactMap[contact.id] = contact;
+  });
+
+  // Map to return format with user info from contacts
+  const typingUsers = profiles
+    .filter(profile => profile.contact_id && contactMap[profile.contact_id])
+    .map(profile => {
+      const contact = contactMap[profile.contact_id];
+      return {
+        id: profile.id,
+        name: contact.name,
+        avatar_url: contact.avatar_url
+      };
+    });
 
   return typingUsers;
 }

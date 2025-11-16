@@ -118,6 +118,16 @@ try {
       }
     },
 
+    // Exchange OAuth token from main process (avoids CORS/origin issues)
+    exchangeOAuthToken: (params) => {
+      try {
+        return ipcRenderer.invoke('exchange-oauth-token', params);
+      } catch (error) {
+        console.error('Error exchanging OAuth token:', error);
+        return Promise.reject(error);
+      }
+    },
+
     // Platform detection
     platform: process.platform,
 
@@ -144,6 +154,7 @@ try {
     startOAuthServer: () => Promise.resolve(),
     stopOAuthServer: () => Promise.resolve(),
     openExternal: (url) => window.open(url, '_blank'),
-    sendOAuthCallback: () => Promise.resolve()
+    sendOAuthCallback: () => Promise.resolve(),
+    exchangeOAuthToken: () => Promise.reject(new Error('exchangeOAuthToken not available in fallback'))
   });
 }

@@ -162,6 +162,32 @@ CREATE TABLE IF NOT EXISTS message_reactions (
     UNIQUE(message_id, user_id, emoji)
 );
 
+-- Typing Indicators Table
+CREATE TABLE IF NOT EXISTS typing_indicators (
+    channel_id UUID NOT NULL,
+    user_id UUID NOT NULL,
+    is_typing BOOLEAN NOT NULL DEFAULT true,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT now(),
+    PRIMARY KEY (channel_id, user_id)
+);
+
+-- Message Reads Table (tracks which messages each user has read)
+CREATE TABLE IF NOT EXISTS message_reads (
+    message_id UUID NOT NULL,
+    user_id UUID NOT NULL,
+    read_at TIMESTAMP WITH TIME ZONE DEFAULT now(),
+    PRIMARY KEY (message_id, user_id)
+);
+
+-- Channel Reads Table (tracks last read message per channel per user)
+CREATE TABLE IF NOT EXISTS channel_reads (
+    user_id UUID NOT NULL,
+    channel_id UUID NOT NULL,
+    last_read_message_id UUID,
+    last_read_at TIMESTAMP WITH TIME ZONE,
+    PRIMARY KEY (user_id, channel_id)
+);
+
 -- Project Contacts Junction Table
 CREATE TABLE IF NOT EXISTS project_contacts (
     project_id UUID NOT NULL,
@@ -591,6 +617,42 @@ BEGIN
     END IF;
 END $$;
 
+-- Typing indicators constraints
+DO $$ 
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_typing_indicators_channel_id') THEN
+        ALTER TABLE typing_indicators ADD CONSTRAINT fk_typing_indicators_channel_id FOREIGN KEY (channel_id) REFERENCES message_channels(id) ON DELETE CASCADE;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_typing_indicators_user_id') THEN
+        ALTER TABLE typing_indicators ADD CONSTRAINT fk_typing_indicators_user_id FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE;
+    END IF;
+END $$;
+
+-- Message reads constraints
+DO $$ 
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_message_reads_message_id') THEN
+        ALTER TABLE message_reads ADD CONSTRAINT fk_message_reads_message_id FOREIGN KEY (message_id) REFERENCES messages(id) ON DELETE CASCADE;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_message_reads_user_id') THEN
+        ALTER TABLE message_reads ADD CONSTRAINT fk_message_reads_user_id FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE;
+    END IF;
+END $$;
+
+-- Channel reads constraints
+DO $$ 
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_channel_reads_user_id') THEN
+        ALTER TABLE channel_reads ADD CONSTRAINT fk_channel_reads_user_id FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_channel_reads_channel_id') THEN
+        ALTER TABLE channel_reads ADD CONSTRAINT fk_channel_reads_channel_id FOREIGN KEY (channel_id) REFERENCES message_channels(id) ON DELETE CASCADE;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_channel_reads_last_read_message_id') THEN
+        ALTER TABLE channel_reads ADD CONSTRAINT fk_channel_reads_last_read_message_id FOREIGN KEY (last_read_message_id) REFERENCES messages(id) ON DELETE SET NULL;
+    END IF;
+END $$;
+
 -- Project contacts constraints
 DO $$ 
 BEGIN
@@ -808,6 +870,21 @@ DROP POLICY IF EXISTS "Users can see reactions for accessible messages" ON publi
 DROP POLICY IF EXISTS "Users can create reactions for accessible messages" ON public.message_reactions;
 DROP POLICY IF EXISTS "Users can delete their own reactions" ON public.message_reactions;
 
+DROP POLICY IF EXISTS "Users can see typing indicators for accessible channels" ON public.typing_indicators;
+DROP POLICY IF EXISTS "Users can create typing indicators for accessible channels" ON public.typing_indicators;
+DROP POLICY IF EXISTS "Users can update their own typing indicators" ON public.typing_indicators;
+DROP POLICY IF EXISTS "Users can delete their own typing indicators" ON public.typing_indicators;
+
+DROP POLICY IF EXISTS "Users can see their own message reads" ON public.message_reads;
+DROP POLICY IF EXISTS "Users can create their own message reads" ON public.message_reads;
+DROP POLICY IF EXISTS "Users can update their own message reads" ON public.message_reads;
+DROP POLICY IF EXISTS "Users can delete their own message reads" ON public.message_reads;
+
+DROP POLICY IF EXISTS "Users can see their own channel reads" ON public.channel_reads;
+DROP POLICY IF EXISTS "Users can create their own channel reads" ON public.channel_reads;
+DROP POLICY IF EXISTS "Users can update their own channel reads" ON public.channel_reads;
+DROP POLICY IF EXISTS "Users can delete their own channel reads" ON public.channel_reads;
+
 DROP POLICY IF EXISTS "Users can see project contacts for accessible projects" ON public.project_contacts;
 DROP POLICY IF EXISTS "Admins and PMs can assign contacts to projects" ON public.project_contacts;
 DROP POLICY IF EXISTS "Admins and PMs can update project contacts" ON public.project_contacts;
@@ -859,6 +936,9 @@ ALTER TABLE issue_steps ENABLE ROW LEVEL SECURITY;
 ALTER TABLE message_channels ENABLE ROW LEVEL SECURITY;
 ALTER TABLE messages ENABLE ROW LEVEL SECURITY;
 ALTER TABLE message_reactions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE typing_indicators ENABLE ROW LEVEL SECURITY;
+ALTER TABLE message_reads ENABLE ROW LEVEL SECURITY;
+ALTER TABLE channel_reads ENABLE ROW LEVEL SECURITY;
 ALTER TABLE project_contacts ENABLE ROW LEVEL SECURITY;
 ALTER TABLE project_issues ENABLE ROW LEVEL SECURITY;
 ALTER TABLE project_phases ENABLE ROW LEVEL SECURITY;
@@ -1313,14 +1393,30 @@ USING (
 );
 
 -- Messages INSERT policy
+-- Use the same access logic as message_channels SELECT policy
 CREATE POLICY "Users can create messages for accessible projects"
 ON public.messages
 FOR INSERT
 WITH CHECK (
+  user_id = auth.uid() -- Users can only create messages as themselves
+  AND
   channel_id IN (
     SELECT mc.id 
     FROM public.message_channels mc 
-    WHERE mc.project_id IN (SELECT id FROM public.projects)
+    WHERE mc.project_id IN (
+      SELECT id FROM public.projects WHERE
+        (get_user_role() = 'Admin')
+        OR
+        (project_manager_id = auth.uid())
+        OR
+        (created_by_user_id = auth.uid())
+        OR
+        (id IN (
+          SELECT project_id
+          FROM public.project_contacts
+          WHERE contact_id = get_user_contact_id()
+        ))
+    )
   )
 );
 
@@ -1393,6 +1489,115 @@ WITH CHECK (
 -- Message reactions DELETE policy
 CREATE POLICY "Users can delete their own reactions"
 ON public.message_reactions
+FOR DELETE
+USING (user_id = auth.uid());
+
+-- ============================================================================
+-- TYPING INDICATORS TABLE POLICIES
+-- ============================================================================
+
+-- Typing indicators SELECT policy
+CREATE POLICY "Users can see typing indicators for accessible channels"
+ON public.typing_indicators
+FOR SELECT
+USING (
+  channel_id IN (
+    SELECT mc.id 
+    FROM public.message_channels mc 
+    WHERE mc.project_id IN (SELECT id FROM public.projects)
+  )
+);
+
+-- Typing indicators INSERT policy
+CREATE POLICY "Users can create typing indicators for accessible channels"
+ON public.typing_indicators
+FOR INSERT
+WITH CHECK (
+  user_id = auth.uid()
+  AND
+  channel_id IN (
+    SELECT mc.id 
+    FROM public.message_channels mc 
+    WHERE mc.project_id IN (SELECT id FROM public.projects)
+  )
+);
+
+-- Typing indicators UPDATE policy
+CREATE POLICY "Users can update their own typing indicators"
+ON public.typing_indicators
+FOR UPDATE
+USING (user_id = auth.uid())
+WITH CHECK (user_id = auth.uid());
+
+-- Typing indicators DELETE policy
+CREATE POLICY "Users can delete their own typing indicators"
+ON public.typing_indicators
+FOR DELETE
+USING (user_id = auth.uid());
+
+-- ============================================================================
+-- MESSAGE READS TABLE POLICIES
+-- ============================================================================
+
+-- Message reads SELECT policy
+CREATE POLICY "Users can see their own message reads"
+ON public.message_reads
+FOR SELECT
+USING (user_id = auth.uid());
+
+-- Message reads INSERT policy
+CREATE POLICY "Users can create their own message reads"
+ON public.message_reads
+FOR INSERT
+WITH CHECK (user_id = auth.uid());
+
+-- Message reads UPDATE policy
+CREATE POLICY "Users can update their own message reads"
+ON public.message_reads
+FOR UPDATE
+USING (user_id = auth.uid())
+WITH CHECK (user_id = auth.uid());
+
+-- Message reads DELETE policy
+CREATE POLICY "Users can delete their own message reads"
+ON public.message_reads
+FOR DELETE
+USING (user_id = auth.uid());
+
+-- ============================================================================
+-- CHANNEL READS TABLE POLICIES
+-- ============================================================================
+
+-- Channel reads SELECT policy
+CREATE POLICY "Users can see their own channel reads"
+ON public.channel_reads
+FOR SELECT
+USING (user_id = auth.uid());
+
+-- Channel reads INSERT policy
+CREATE POLICY "Users can create their own channel reads"
+ON public.channel_reads
+FOR INSERT
+WITH CHECK (
+  user_id = auth.uid()
+  AND
+  channel_id IN (
+    SELECT mc.id 
+    FROM public.message_channels mc 
+    WHERE mc.project_id IN (SELECT id FROM public.projects)
+  )
+);
+
+-- Channel reads UPDATE policy
+CREATE POLICY "Users can update their own channel reads"
+ON public.channel_reads
+FOR UPDATE
+USING (user_id = auth.uid())
+WITH CHECK (user_id = auth.uid());
+
+-- Channel reads DELETE policy
+CREATE POLICY "Users can delete their own channel reads"
+ON public.channel_reads
 FOR DELETE
 USING (user_id = auth.uid());
 
@@ -1690,6 +1895,13 @@ CREATE INDEX IF NOT EXISTS idx_message_channels_project_id ON message_channels(p
 CREATE INDEX IF NOT EXISTS idx_messages_channel_id ON messages(channel_id);
 CREATE INDEX IF NOT EXISTS idx_messages_user_id ON messages(user_id);
 CREATE INDEX IF NOT EXISTS idx_messages_created_at ON messages(created_at);
+CREATE INDEX IF NOT EXISTS idx_typing_indicators_channel_id ON typing_indicators(channel_id);
+CREATE INDEX IF NOT EXISTS idx_typing_indicators_user_id ON typing_indicators(user_id);
+CREATE INDEX IF NOT EXISTS idx_typing_indicators_updated_at ON typing_indicators(updated_at);
+CREATE INDEX IF NOT EXISTS idx_message_reads_message_id ON message_reads(message_id);
+CREATE INDEX IF NOT EXISTS idx_message_reads_user_id ON message_reads(user_id);
+CREATE INDEX IF NOT EXISTS idx_channel_reads_user_id ON channel_reads(user_id);
+CREATE INDEX IF NOT EXISTS idx_channel_reads_channel_id ON channel_reads(channel_id);
 CREATE INDEX IF NOT EXISTS idx_project_issues_project_id ON project_issues(project_id);
 CREATE INDEX IF NOT EXISTS idx_project_issues_status ON project_issues(status);
 CREATE INDEX IF NOT EXISTS idx_project_issues_priority ON project_issues(priority);

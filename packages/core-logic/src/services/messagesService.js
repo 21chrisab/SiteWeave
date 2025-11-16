@@ -4,6 +4,60 @@
  */
 
 /**
+ * Helper function to fetch user info from contacts via profiles
+ * @param {import('@supabase/supabase-js').SupabaseClient} supabase - Supabase client
+ * @param {Array<string>} userIds - Array of user IDs
+ * @returns {Promise<Object>} Object mapping user_id to user info
+ */
+async function fetchUserInfo(supabase, userIds) {
+  if (!userIds || userIds.length === 0) return {};
+  
+  // First, get profiles with contact_ids
+  const { data: profiles, error: profilesError } = await supabase
+    .from('profiles')
+    .select('id, contact_id')
+    .in('id', userIds);
+  
+  if (profilesError) throw profilesError;
+  
+  if (!profiles || profiles.length === 0) return {};
+  
+  // Get unique contact IDs
+  const contactIds = [...new Set(profiles.map(p => p.contact_id).filter(Boolean))];
+  
+  if (contactIds.length === 0) return {};
+  
+  // Then, fetch contacts
+  const { data: contacts, error: contactsError } = await supabase
+    .from('contacts')
+    .select('id, name, avatar_url')
+    .in('id', contactIds);
+  
+  if (contactsError) throw contactsError;
+  
+  // Create a map of contact_id to contact info
+  const contactMap = {};
+  (contacts || []).forEach(contact => {
+    contactMap[contact.id] = contact;
+  });
+  
+  // Map profiles to user info
+  const userMap = {};
+  profiles.forEach(profile => {
+    if (profile.contact_id && contactMap[profile.contact_id]) {
+      const contact = contactMap[profile.contact_id];
+      userMap[profile.id] = {
+        id: profile.id,
+        name: contact.name,
+        avatar_url: contact.avatar_url
+      };
+    }
+  });
+  
+  return userMap;
+}
+
+/**
  * Fetch all message channels
  * @param {import('@supabase/supabase-js').SupabaseClient} supabase - Supabase client
  * @returns {Promise<Array>} Array of message channels
@@ -29,7 +83,7 @@ export async function fetchChannelMessages(supabase, channelId, userId = null) {
   // Fetch top-level messages only (exclude thread replies)
   const { data, error } = await supabase
     .from('messages')
-    .select('*, user:user_id(name, avatar_url)')
+    .select('*')
     .eq('channel_id', channelId)
     .is('parent_message_id', null)
     .order('created_at', { ascending: true });
@@ -37,6 +91,10 @@ export async function fetchChannelMessages(supabase, channelId, userId = null) {
   if (error) throw error;
   
   if (!data || data.length === 0) return [];
+  
+  // Fetch user info for all message authors
+  const userIds = [...new Set(data.map(m => m.user_id).filter(Boolean))];
+  const userInfo = await fetchUserInfo(supabase, userIds);
   
   // Fetch reactions for all messages
   const messageIds = data.map(m => m.id);
@@ -59,9 +117,10 @@ export async function fetchChannelMessages(supabase, channelId, userId = null) {
     }
   }
   
-  // Attach reactions and read status to messages
+  // Attach user info, reactions and read status to messages
   return data.map(message => ({
     ...message,
+    user: userInfo[message.user_id] || null,
     reactions: reactions[message.id] || [],
     isRead: readStatuses[message.id] || false
   }));
@@ -82,10 +141,17 @@ export async function sendMessage(supabase, messageData) {
       inserted_at: new Date().toISOString(),
       updated_at: new Date().toISOString()
     })
-    .select('*, user:user_id(name, avatar_url)')
+    .select('*')
     .single();
   
   if (error) throw error;
+  
+  // Fetch user info for the message author
+  if (data.user_id) {
+    const userInfo = await fetchUserInfo(supabase, [data.user_id]);
+    data.user = userInfo[data.user_id] || null;
+  }
+  
   return data;
 }
 
@@ -117,10 +183,14 @@ export async function fetchMessageReactions(supabase, messageIds) {
   
   const { data, error } = await supabase
     .from('message_reactions')
-    .select('*, user:user_id(id, name, avatar_url)')
+    .select('*')
     .in('message_id', messageIds);
   
   if (error) throw error;
+  
+  // Fetch user info for all reaction authors
+  const userIds = [...new Set((data || []).map(r => r.user_id).filter(Boolean))];
+  const userInfo = await fetchUserInfo(supabase, userIds);
   
   // Group reactions by message_id and emoji, count users
   const reactionsMap = {};
@@ -136,7 +206,9 @@ export async function fetchMessageReactions(supabase, messageIds) {
       };
     }
     reactionsMap[reaction.message_id][reaction.emoji].count++;
-    reactionsMap[reaction.message_id][reaction.emoji].users.push(reaction.user);
+    if (userInfo[reaction.user_id]) {
+      reactionsMap[reaction.message_id][reaction.emoji].users.push(userInfo[reaction.user_id]);
+    }
   });
   
   // Convert to array format
@@ -250,7 +322,7 @@ export async function markMessageAsRead(supabase, messageId, userId) {
 export async function fetchThreadReplies(supabase, parentMessageId) {
   const { data, error } = await supabase
     .from('messages')
-    .select('*, user:user_id(name, avatar_url)')
+    .select('*')
     .eq('parent_message_id', parentMessageId)
     .order('created_at', { ascending: true });
   
@@ -258,12 +330,17 @@ export async function fetchThreadReplies(supabase, parentMessageId) {
   
   if (!data || data.length === 0) return [];
   
+  // Fetch user info for all reply authors
+  const userIds = [...new Set(data.map(m => m.user_id).filter(Boolean))];
+  const userInfo = await fetchUserInfo(supabase, userIds);
+  
   // Fetch reactions for thread replies
   const messageIds = data.map(m => m.id);
   const reactions = await fetchMessageReactions(supabase, messageIds);
   
   return data.map(message => ({
     ...message,
+    user: userInfo[message.user_id] || null,
     reactions: reactions[message.id] || []
   }));
 }
@@ -299,10 +376,16 @@ export async function sendThreadReply(supabase, messageData) {
       inserted_at: new Date().toISOString(),
       updated_at: new Date().toISOString()
     })
-    .select('*, user:user_id(name, avatar_url)')
+    .select('*')
     .single();
   
   if (error) throw error;
+  
+  // Fetch user info for the reply author
+  if (data.user_id) {
+    const userInfo = await fetchUserInfo(supabase, [data.user_id]);
+    data.user = userInfo[data.user_id] || null;
+  }
   
   // Update thread_reply_count on parent message
   if (messageData.parent_message_id) {

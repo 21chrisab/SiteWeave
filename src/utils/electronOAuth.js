@@ -24,6 +24,7 @@ class ElectronOAuth {
   async startOAuthFlow(provider, config) {
     console.log('Starting OAuth flow for provider:', provider);
     console.log('isElectron:', this.isElectron);
+    console.log('window.electronAPI:', window.electronAPI);
     
     const redirectUri = this.isElectron 
       ? `http://127.0.0.1:5000/${provider}-callback`
@@ -37,7 +38,11 @@ class ElectronOAuth {
       const codeVerifier = this.generateCodeVerifier();
       const codeChallenge = await this.generateCodeChallenge(codeVerifier);
       this.msCodeVerifier = codeVerifier;
+      console.log('Generated PKCE code_verifier for Microsoft (length:', codeVerifier.length, ')');
+      console.log('Code challenge generated');
       pkceConfig = { ...pkceConfig, codeChallenge };
+    } else if (provider === 'microsoft' && !this.isElectron) {
+      console.log('Microsoft OAuth in web mode - will use client_secret');
     }
 
     const authUrl = this.buildAuthUrl(provider, pkceConfig, redirectUri);
@@ -215,6 +220,13 @@ class ElectronOAuth {
       ? `http://127.0.0.1:5000/${provider}-callback`
       : `${window.location.origin}/${provider}-callback`;
 
+    console.log('=== TOKEN EXCHANGE DEBUG ===');
+    console.log('Provider:', provider);
+    console.log('isElectron:', this.isElectron);
+    console.log('Redirect URI:', redirectUri);
+    console.log('msCodeVerifier exists:', !!this.msCodeVerifier);
+    console.log('msCodeVerifier length:', this.msCodeVerifier?.length);
+
     const body = new URLSearchParams({
       client_id: config.clientId,
       code: code,
@@ -225,13 +237,52 @@ class ElectronOAuth {
     // Only include client_secret for confidential clients (web/backend). Public clients (Electron) must not send it.
     if (!(provider === 'microsoft' && this.isElectron) && config.clientSecret) {
       body.set('client_secret', config.clientSecret);
+      console.log('Including client_secret (web flow)');
     }
 
     // Microsoft public client requires PKCE code_verifier
-    if (provider === 'microsoft' && this.isElectron && this.msCodeVerifier) {
-      body.set('code_verifier', this.msCodeVerifier);
+    // CRITICAL: For Electron, we MUST include code_verifier, otherwise Microsoft treats it as cross-origin
+    if (provider === 'microsoft' && this.isElectron) {
+      if (this.msCodeVerifier) {
+        body.set('code_verifier', this.msCodeVerifier);
+        console.log('Including code_verifier (PKCE flow)');
+      } else {
+        console.error('ERROR: Microsoft Electron flow requires code_verifier but it is missing!');
+        throw new Error('PKCE code_verifier is required for Microsoft OAuth in Electron but was not found. This usually means the authorization flow did not complete properly.');
+      }
+      // For Native apps with PKCE, do NOT include scope in token exchange
+      // The scope is already bound to the authorization code
+    } else if (provider === 'microsoft' && !this.isElectron) {
+      // Web flow: include scope if provided
+      if (config.scope) {
+        body.set('scope', config.scope);
+      }
     }
 
+    console.log('Token exchange body keys:', Array.from(body.keys()));
+
+    // For Microsoft in Electron, try using main process to avoid CORS/origin issues
+    if (provider === 'microsoft' && this.isElectron && window.electronAPI?.exchangeOAuthToken) {
+      console.log('Attempting token exchange via main process (to avoid CORS issues)...');
+      try {
+        const json = await window.electronAPI.exchangeOAuthToken({
+          provider: 'microsoft',
+          code: code,
+          clientId: config.clientId,
+          redirectUri: redirectUri,
+          codeVerifier: this.msCodeVerifier
+        });
+        // Clear one-time verifier after successful exchange
+        this.msCodeVerifier = null;
+        console.log('Token exchange successful via main process');
+        return json;
+      } catch (mainProcessError) {
+        console.warn('Token exchange via main process failed, falling back to renderer:', mainProcessError);
+        // Fall through to renderer process attempt
+      }
+    }
+
+    // Fallback to renderer process fetch (original method)
     const response = await fetch(tokenUrls[provider], {
       method: 'POST',
       headers: {
@@ -242,6 +293,7 @@ class ElectronOAuth {
 
     if (!response.ok) {
       const error = await response.text();
+      console.error('Token exchange failed. Response:', error);
       throw new Error(`Token exchange failed: ${error}`);
     }
 

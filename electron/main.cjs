@@ -497,6 +497,76 @@ ipcMain.handle('send-oauth-callback', (event, data) => {
   return true;
 });
 
+// Handle OAuth token exchange from main process (to avoid CORS/origin issues)
+ipcMain.handle('exchange-oauth-token', async (event, { provider, code, clientId, redirectUri, codeVerifier }) => {
+  const https = require('https');
+  const { URL, URLSearchParams } = require('url');
+  
+  const tokenUrls = {
+    google: 'https://oauth2.googleapis.com/token',
+    microsoft: 'https://login.microsoftonline.com/common/oauth2/v2.0/token'
+  };
+  
+  const tokenUrl = tokenUrls[provider];
+  if (!tokenUrl) {
+    throw new Error(`Unknown OAuth provider: ${provider}`);
+  }
+  
+  return new Promise((resolve, reject) => {
+    const body = new URLSearchParams({
+      client_id: clientId,
+      code: code,
+      grant_type: 'authorization_code',
+      redirect_uri: redirectUri
+    });
+    
+    // Add code_verifier for Microsoft PKCE flow
+    if (provider === 'microsoft' && codeVerifier) {
+      body.set('code_verifier', codeVerifier);
+    }
+    
+    const url = new URL(tokenUrl);
+    const options = {
+      hostname: url.hostname,
+      port: url.port || 443,
+      path: url.pathname,
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Content-Length': Buffer.byteLength(body.toString())
+      }
+    };
+    
+    const req = https.request(options, (res) => {
+      let data = '';
+      
+      res.on('data', (chunk) => {
+        data += chunk;
+      });
+      
+      res.on('end', () => {
+        if (res.statusCode >= 200 && res.statusCode < 300) {
+          try {
+            const json = JSON.parse(data);
+            resolve(json);
+          } catch (error) {
+            reject(new Error(`Failed to parse token response: ${error.message}`));
+          }
+        } else {
+          reject(new Error(`Token exchange failed (${res.statusCode}): ${data}`));
+        }
+      });
+    });
+    
+    req.on('error', (error) => {
+      reject(new Error(`Token exchange request failed: ${error.message}`));
+    });
+    
+    req.write(body.toString());
+    req.end();
+  });
+});
+
 // Handle deep links on Windows
 if (process.platform === 'win32') {
   app.setAsDefaultProtocolClient(PROTOCOL_NAME);

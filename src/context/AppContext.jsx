@@ -426,7 +426,31 @@ export const AppProvider = ({ children }) => {
 
     const messagesSubscription = supabaseClient.channel('public:messages')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, async (payload) => {
-        const { data: newMessage } = await supabaseClient.from('messages').select('*, user:user_id(name, avatar_url)').eq('id', payload.new.id).single();
+        const { data: newMessage } = await supabaseClient.from('messages').select('*').eq('id', payload.new.id).single();
+        if (newMessage && newMessage.user_id) {
+          // Fetch user info from contacts via profiles (using separate queries to avoid relationship ambiguity)
+          const { data: profile } = await supabaseClient
+            .from('profiles')
+            .select('id, contact_id')
+            .eq('id', newMessage.user_id)
+            .maybeSingle();
+          
+          if (profile?.contact_id) {
+            const { data: contact } = await supabaseClient
+              .from('contacts')
+              .select('id, name, avatar_url')
+              .eq('id', profile.contact_id)
+              .maybeSingle();
+            
+            if (contact) {
+              newMessage.user = {
+                id: profile.id,
+                name: contact.name,
+                avatar_url: contact.avatar_url
+              };
+            }
+          }
+        }
         if (newMessage) dispatch({ type: 'ADD_MESSAGE', payload: newMessage });
       })
       .subscribe();
