@@ -5,6 +5,15 @@ import App from './App.jsx'
 import ErrorBoundary from './components/ErrorBoundary.jsx'
 import './index.css'
 
+// Unregister any existing service workers to prevent caching issues
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.getRegistrations().then(function(registrations) {
+    for(let registration of registrations) {
+      registration.unregister()
+    }
+  })
+}
+
 const router = createBrowserRouter([
   { path: '/*', element: <App /> }
 ])
