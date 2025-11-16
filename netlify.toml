@@ -2,21 +2,32 @@
   command = "npm install && npm run build"
   publish = "dist"
 
-# Serve static assets normally
-[[redirects]]
-  from = "/assets/*"
-  to = "/assets/:splat"
-  status = 200
-  force = true
-
-# Redirect all other requests to index.html for SPA routing
+# Redirect all requests to index.html except files that exist
+# This allows assets (JS, CSS, images) to be served normally
 [[redirects]]
   from = "/*"
   to = "/index.html"
   status = 200
+  force = false
 
 [build.environment]
   NODE_VERSION = "20"
+
+# Headers for proper MIME types
+[[headers]]
+  for = "/assets/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
+[[headers]]
+  for = "/*.js"
+  [headers.values]
+    Content-Type = "application/javascript; charset=utf-8"
+
+[[headers]]
+  for = "/*.css"
+  [headers.values]
+    Content-Type = "text/css; charset=utf-8"
 
 # Ensure proper build output
 [build.processing]
