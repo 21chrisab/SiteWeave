@@ -2,8 +2,6 @@ import React from 'react'
 import { Link, Route, Routes, useNavigate, useParams, useLocation } from 'react-router-dom'
 import { supabase } from './supabaseClient'
 import LoadingSpinner from './components/LoadingSpinner'
-import MessageItem from './components/MessageItem'
-import { fetchChannelMessages, sendMessage, fetchUnreadCounts, getTypingUsers, createDebouncedTypingStatus, setTypingStatus, markMessageAsRead, fetchMessageReactions } from './utils/messageService.js'
 
 function UseSession() {
   const [session, setSession] = React.useState(null)
@@ -285,7 +283,158 @@ function Home() {
   React.useEffect(() => {
     let cancelled = false
     ;(async () => {
+      if (!session?.user) {
+        if (!cancelled) {
+          setProjects([])
+          setTasks([])
+          setLoading(false)
+        }
+        return
+      }
+
       try {
+        // CRITICAL: Ensure user's profile is linked to a contact before fetching projects
+        // This allows users added via invite_or_add_member to see their projects
+        const { data: profile, error: profileError } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', session.user.id)
+          .maybeSingle()
+        
+        if (profileError) {
+          console.error('Profile error:', profileError)
+        }
+
+        // If profile exists but no contact_id, find or create contact and link it
+        if (profile && !profile.contact_id && session.user.email) {
+          console.log('Profile exists but no contact_id. Looking for existing contact with email:', session.user.email)
+          
+          // First, try to find existing contact by email (from invite_or_add_member)
+          const { data: existingContact } = await supabase
+            .from('contacts')
+            .select('id')
+            .ilike('email', session.user.email)
+            .maybeSingle()
+          
+          if (existingContact) {
+            console.log('Found existing contact, linking to profile:', existingContact.id)
+            const { error: linkError } = await supabase
+              .from('profiles')
+              .update({ contact_id: existingContact.id })
+              .eq('id', session.user.id)
+            
+            if (linkError) {
+              console.error('Error linking contact to profile:', linkError)
+            } else {
+              console.log('Successfully linked contact to profile. Refreshing profile...')
+              // Refresh profile to ensure RLS sees the updated contact_id
+              const { data: refreshedProfile } = await supabase
+                .from('profiles')
+                .select('*')
+                .eq('id', session.user.id)
+                .single()
+              if (refreshedProfile) {
+                console.log('Profile refreshed with contact_id:', refreshedProfile.contact_id)
+              }
+            }
+          } else {
+            // No existing contact found - create one for the user
+            console.log('No existing contact found. Creating new contact for user:', session.user.email)
+            const { data: newContact, error: createContactError } = await supabase
+              .from('contacts')
+              .insert({
+                name: session.user.user_metadata?.full_name || session.user.email.split('@')[0] || 'User',
+                email: session.user.email,
+                type: profile.role === 'Client' ? 'Client' : 'Team',
+                role: profile.role === 'PM' ? 'PM' : profile.role === 'Admin' ? 'Admin' : 'Team Member',
+                status: 'Available',
+                created_by_user_id: session.user.id
+              })
+              .select('id')
+              .single()
+            
+            if (createContactError) {
+              console.error('Error creating contact:', createContactError)
+            } else if (newContact) {
+              console.log('Created new contact:', newContact.id)
+              // Link the new contact to the profile
+              const { error: linkError } = await supabase
+                .from('profiles')
+                .update({ contact_id: newContact.id })
+                .eq('id', session.user.id)
+              
+              if (linkError) {
+                console.error('Error linking new contact to profile:', linkError)
+              } else {
+                console.log('Successfully created and linked contact to profile. Refreshing profile...')
+                // Refresh profile to ensure RLS sees the updated contact_id
+                const { data: refreshedProfile } = await supabase
+                  .from('profiles')
+                  .select('*')
+                  .eq('id', session.user.id)
+                  .single()
+                if (refreshedProfile) {
+                  console.log('Profile refreshed with contact_id:', refreshedProfile.contact_id)
+                }
+              }
+            }
+          }
+        } else if (!profile && !profileError && session.user.email) {
+          // No profile exists, create one and ensure contact exists
+          console.log('Creating profile for user:', session.user.id)
+          
+          // First, check if contact exists by email
+          let contactIdToLink = null
+          const { data: existingContact } = await supabase
+            .from('contacts')
+            .select('id')
+            .ilike('email', session.user.email)
+            .maybeSingle()
+          
+          if (existingContact) {
+            contactIdToLink = existingContact.id
+            console.log('Found existing contact for new profile:', contactIdToLink)
+          } else {
+            // Create contact for new user
+            const { data: newContact, error: contactError } = await supabase
+              .from('contacts')
+              .insert({
+                name: session.user.user_metadata?.full_name || session.user.email.split('@')[0] || 'User',
+                email: session.user.email,
+                type: 'Team',
+                role: 'Team Member',
+                status: 'Available',
+                created_by_user_id: session.user.id
+              })
+              .select('id')
+              .single()
+            
+            if (!contactError && newContact) {
+              contactIdToLink = newContact.id
+              console.log('Created new contact for new profile:', contactIdToLink)
+            } else {
+              console.error('Error creating contact for new profile:', contactError)
+            }
+          }
+          
+          const { error: createProfileError } = await supabase
+            .from('profiles')
+            .upsert({
+              id: session.user.id,
+              role: 'Team',
+              contact_id: contactIdToLink
+            }, {
+              onConflict: 'id'
+            })
+          
+          if (createProfileError) {
+            console.error('Error creating profile:', createProfileError)
+          } else {
+            console.log('Profile created successfully with contact_id:', contactIdToLink)
+          }
+        }
+
+        // Now fetch projects - RLS policy will see the contact_id if it was just linked
         const [projectsResult, tasksResult] = await Promise.all([
           supabase.from('projects').select('*').order('updated_at', { ascending: false }),
           session ? supabase.from('tasks').select('*').eq('completed', false).order('due_date', { ascending: true }) : Promise.resolve({ data: [], error: null })
@@ -479,12 +628,11 @@ function Messages() {
   const [typingUsers, setTypingUsers] = React.useState([])
   const [unreadCounts, setUnreadCounts] = React.useState({})
   const messagesEndRef = React.useRef(null)
-  const messagesContainerRef = React.useRef(null)
-  const previousMessageCountRef = React.useRef(0)
-  const isUserScrollingRef = React.useRef(false)
-  const scrollTimeoutRef = React.useRef(null)
-  const debouncedTypingRef = React.useRef(null)
-  const hasAutoSelectedChannelRef = React.useRef(false)
+  
+  // Import enhanced services
+  const { fetchChannelMessages, sendMessage, fetchUnreadCounts, getTypingUsers, createDebouncedTypingStatus, setTypingStatus } = React.useMemo(() => {
+    return require('@siteweave/core-logic')
+  }, [])
 
   React.useEffect(() => {
     let cancelled = false
@@ -498,9 +646,8 @@ function Messages() {
         const { data: channelsData } = await supabase.from('message_channels').select('*').order('name')
         if (!cancelled) {
           setChannels(channelsData || [])
-          if (channelsData && channelsData.length > 0 && !selectedChannelId && !hasAutoSelectedChannelRef.current) {
+          if (channelsData && channelsData.length > 0 && !selectedChannelId) {
             setSelectedChannelId(channelsData[0].id)
-            hasAutoSelectedChannelRef.current = true
           }
         }
       } catch (e) {
@@ -535,39 +682,9 @@ function Messages() {
         .then(counts => setUnreadCounts(counts))
         .catch(err => console.error('Error fetching unread counts:', err))
     }
-  }, [channels, session?.user?.id, messages.length])
+  }, [channels, session?.user?.id])
 
-  // Mark messages as read when viewing
-  React.useEffect(() => {
-    const activeChannel = channels.find(c => c.id === selectedChannelId)
-    const channelMessages = messages.filter(msg => msg.channel_id === selectedChannelId && !msg.parent_message_id)
-    
-    if (activeChannel && channelMessages.length > 0 && session?.user?.id) {
-      const lastMessage = channelMessages[channelMessages.length - 1]
-      if (lastMessage && !lastMessage.isRead) {
-        markMessageAsRead(supabase, lastMessage.id, session.user.id)
-          .catch(err => console.error('Error marking message as read:', err))
-      }
-    }
-  }, [selectedChannelId, messages.length, session?.user?.id])
-
-  // Typing indicator setup
-  React.useEffect(() => {
-    if (selectedChannelId && session?.user?.id) {
-      debouncedTypingRef.current = createDebouncedTypingStatus(
-        supabase, 
-        selectedChannelId, 
-        session.user.id
-      )
-    }
-    return () => {
-      if (debouncedTypingRef.current && selectedChannelId && session?.user?.id) {
-        setTypingStatus(supabase, selectedChannelId, session.user.id, false)
-      }
-    }
-  }, [selectedChannelId, session?.user?.id])
-
-  // Fetch typing users
+  // Typing indicators
   React.useEffect(() => {
     if (!selectedChannelId || !session?.user?.id) return
     
@@ -583,158 +700,33 @@ function Messages() {
     return () => clearInterval(interval)
   }, [selectedChannelId, session?.user?.id])
 
-  // Check if user is near the bottom of the scroll container
-  const isNearBottom = React.useCallback(() => {
-    if (!messagesContainerRef.current) return true
-    const container = messagesContainerRef.current
-    const threshold = 100 // pixels from bottom
-    return container.scrollHeight - container.scrollTop - container.clientHeight < threshold
-  }, [])
-
-  // Handle scroll events to detect user scrolling
-  const handleScroll = React.useCallback(() => {
-    if (scrollTimeoutRef.current) {
-      clearTimeout(scrollTimeoutRef.current)
-    }
-    isUserScrollingRef.current = true
-    scrollTimeoutRef.current = setTimeout(() => {
-      isUserScrollingRef.current = false
-    }, 150)
-  }, [])
-
-  // Auto-scroll only when appropriate
   React.useEffect(() => {
-    const channelMessages = messages.filter(msg => msg.channel_id === selectedChannelId && !msg.parent_message_id)
-    
-    // Check if this is a new message (count increased) or channel change
-    const currentMessageCount = channelMessages.length
-    const isNewMessage = currentMessageCount > previousMessageCountRef.current
-    const isChannelChange = previousMessageCountRef.current === 0
-    
-    // Only auto-scroll if:
-    // 1. It's a new message AND user is near bottom (or channel just changed)
-    // 2. OR channel changed (initial load)
-    if ((isNewMessage && (isNearBottom() || isChannelChange)) || isChannelChange) {
-      // Small delay to ensure DOM is updated
-      setTimeout(() => {
-        if (!isUserScrollingRef.current || isChannelChange) {
-          messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-        }
-      }, 100)
-    }
-    
-    previousMessageCountRef.current = currentMessageCount
-  }, [messages.length, selectedChannelId, isNearBottom])
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [messages])
 
-  // Real-time subscriptions
+  // Subscribe to new messages
   React.useEffect(() => {
     if (!selectedChannelId) return
 
-    const channelMessages = messages.filter(msg => msg.channel_id === selectedChannelId && !msg.parent_message_id)
-
-    // Subscribe to new messages
-    const messagesChannel = supabase
+    const channel = supabase
       .channel(`messages:${selectedChannelId}`)
       .on('postgres_changes', {
         event: 'INSERT',
         schema: 'public',
         table: 'messages',
         filter: `channel_id=eq.${selectedChannelId}`
-      }, async (payload) => {
-        if (!payload.new.parent_message_id) {
-          // Fetch user info for new message
-          const userIds = [payload.new.user_id].filter(Boolean)
-          if (userIds.length > 0) {
-            const { data: profiles } = await supabase
-              .from('profiles')
-              .select('id, contact_id')
-              .in('id', userIds)
-            
-            if (profiles && profiles.length > 0) {
-              const contactIds = profiles.map(p => p.contact_id).filter(Boolean)
-              if (contactIds.length > 0) {
-                const { data: contacts } = await supabase
-                  .from('contacts')
-                  .select('id, name, avatar_url')
-                  .in('id', contactIds)
-                
-                if (contacts && contacts.length > 0) {
-                  const profile = profiles[0]
-                  const contact = contacts.find(c => c.id === profile.contact_id)
-                  if (contact) {
-                    payload.new.user = {
-                      id: profile.id,
-                      name: contact.name,
-                      avatar_url: contact.avatar_url
-                    }
-                  }
-                }
-              }
-            }
-          }
-          setMessages(prev => [...prev, payload.new])
-        }
-      })
-      .on('postgres_changes', {
-        event: 'UPDATE',
-        schema: 'public',
-        table: 'messages',
-        filter: `channel_id=eq.${selectedChannelId}`
       }, (payload) => {
-        setMessages(prev => prev.map(msg => msg.id === payload.new.id ? payload.new : msg))
+        setMessages(prev => [...prev, payload.new])
       })
       .subscribe()
 
-    // Subscribe to reactions
-    const messageIds = channelMessages.map(m => m.id)
-    if (messageIds.length > 0) {
-      const reactionsChannel = supabase
-        .channel(`reactions:${selectedChannelId}`)
-        .on('postgres_changes', {
-          event: '*',
-          schema: 'public',
-          table: 'message_reactions',
-          filter: `message_id=in.(${messageIds.join(',')})`
-        }, async () => {
-          // Refetch reactions for visible messages
-          const reactions = await fetchMessageReactions(supabase, messageIds)
-          setMessages(prev => prev.map(msg => ({
-            ...msg,
-            reactions: reactions[msg.id] || []
-          })))
-        })
-        .subscribe()
-
-      // Subscribe to typing indicators
-      const typingChannel = supabase
-        .channel(`typing:${selectedChannelId}`)
-        .on('postgres_changes', {
-          event: '*',
-          schema: 'public',
-          table: 'typing_indicators',
-          filter: `channel_id=eq.${selectedChannelId}`
-        }, async () => {
-          if (session?.user?.id) {
-            const users = await getTypingUsers(supabase, selectedChannelId, session.user.id)
-            setTypingUsers(users)
-          }
-        })
-        .subscribe()
-
-      return () => {
-        supabase.removeChannel(messagesChannel)
-        supabase.removeChannel(reactionsChannel)
-        supabase.removeChannel(typingChannel)
-      }
-    }
-
     return () => {
-      supabase.removeChannel(messagesChannel)
+      supabase.removeChannel(channel)
     }
-  }, [selectedChannelId, messages.length, session?.user?.id])
+  }, [selectedChannelId])
 
   const handleSendMessage = async (e) => {
-    e?.preventDefault()
+    e.preventDefault()
     if (!newMessage.trim() || !selectedChannelId || !session) return
 
     setSending(true)
@@ -748,11 +740,6 @@ function Messages() {
         extension: 'txt'
       })
       setNewMessage('')
-      
-      // Clear typing status
-      if (debouncedTypingRef.current) {
-        debouncedTypingRef.current(false)
-      }
     } catch (e) {
       console.error('Error sending message:', e)
       alert('Error sending message: ' + e.message)
@@ -761,79 +748,15 @@ function Messages() {
     }
   }
 
-  const handleInputChange = (e) => {
-    const value = e.target.value
-    setNewMessage(value)
-    
-    // Update typing indicator
-    if (debouncedTypingRef.current && value.trim()) {
-      debouncedTypingRef.current(true)
-    } else if (debouncedTypingRef.current && !value.trim()) {
-      debouncedTypingRef.current(false)
-    }
-  }
-
   const getProjectForChannel = (channelId) => {
     const channel = channels.find(c => c.id === channelId)
     return projects.find(p => p.id === channel?.project_id)
   }
 
-  // Message grouping logic - group consecutive messages from same user within the same minute
-  const groupedMessages = React.useMemo(() => {
-    const channelMessages = messages.filter(msg => msg.channel_id === selectedChannelId && !msg.parent_message_id)
-    if (!channelMessages.length) return []
-    
-    // Sort messages by created_at to ensure chronological order
-    const sortedMessages = [...channelMessages].sort((a, b) => 
-      new Date(a.created_at) - new Date(b.created_at)
-    )
-    
-    const grouped = []
-    let currentGroup = null
-    
-    const getMinuteKey = (dateString) => {
-      if (!dateString) return ''
-      const date = new Date(dateString)
-      // Create a key based on year, month, day, hour, and minute
-      return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}-${String(date.getHours()).padStart(2, '0')}-${String(date.getMinutes()).padStart(2, '0')}`
-    }
-    
-    sortedMessages.forEach((msg, index) => {
-      const prevMsg = index > 0 ? sortedMessages[index - 1] : null
-      const isSameUser = prevMsg && prevMsg.user_id === msg.user_id
-      const isSameMinute = prevMsg && getMinuteKey(msg.created_at) === getMinuteKey(prevMsg.created_at)
-      
-      // Check if we can add to current group (same user, same minute)
-      if (isSameUser && isSameMinute && currentGroup && currentGroup.user_id === msg.user_id) {
-        // Same user, same minute - group it (no timestamp, no avatar)
-        currentGroup.messages.push({ 
-          ...msg, 
-          isGrouped: true, 
-          showAvatar: false, 
-          showTimestamp: false 
-        })
-      } else {
-        // Start a new group
-        if (currentGroup) grouped.push(currentGroup)
-        // New group - first message shows timestamp and avatar
-        currentGroup = {
-          id: msg.id,
-          user_id: msg.user_id,
-          user: msg.user,
-          created_at: msg.created_at,
-          messages: [{ 
-            ...msg, 
-            isGrouped: false, 
-            showAvatar: true, 
-            showTimestamp: true 
-          }]
-        }
-      }
-    })
-    
-    if (currentGroup) grouped.push(currentGroup)
-    return grouped
-  }, [messages, selectedChannelId])
+  const formatTime = (isoString) => {
+    const date = new Date(isoString)
+    return date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
+  }
 
   if (loading) {
     return (
@@ -897,41 +820,56 @@ function Messages() {
                 <h3 className="font-bold text-lg text-gray-800"># {activeProject?.name || activeChannel.name}</h3>
               </header>
               
-              <div 
-                ref={messagesContainerRef}
-                className="flex-1 overflow-y-auto p-6 space-y-4"
-                onScroll={handleScroll}
-              >
-                {groupedMessages.length === 0 ? (
+              <div className="flex-1 overflow-y-auto p-6 space-y-4">
+                {messages.length === 0 ? (
                   <div className="text-center text-gray-500 py-8">
                     No messages yet. Start the conversation!
                   </div>
                 ) : (
-                  groupedMessages.map((group, groupIdx) => (
-                    <div key={group.id} className="space-y-1">
-                      {group.messages.map((msg, idx) => {
-                        // Check if this is the very last message in the entire channel
-                        const isLastMessageInChannel = 
-                          groupIdx === groupedMessages.length - 1 && 
-                          idx === group.messages.length - 1
-                        
-                        const isCurrentUser = msg.user_id === session?.user?.id
-                        
-                        return (
-                          <MessageItem 
-                            key={msg.id} 
-                            message={msg} 
-                            isGrouped={msg.isGrouped}
-                            showAvatar={msg.showAvatar}
-                            showTimestamp={msg.showTimestamp}
-                            isLastInChannel={isLastMessageInChannel}
-                            isCurrentUser={isCurrentUser}
-                            currentUserId={session?.user?.id}
-                          />
-                        )
-                      })}
-                    </div>
-                  ))
+                  messages.map(msg => {
+                    const isCurrentUser = msg.user_id === session?.user?.id
+                    const userEmail = isCurrentUser ? session?.user?.email : 'Team Member'
+                    const userInitial = userEmail?.[0]?.toUpperCase() || 'U'
+                    return (
+                      <div
+                        key={msg.id}
+                        className={`flex items-start gap-3 ${isCurrentUser ? 'flex-row-reverse' : ''}`}
+                      >
+                        <div className="w-10 h-10 rounded-full bg-blue-600 flex items-center justify-center text-white font-semibold flex-shrink-0">
+                          {userInitial}
+                        </div>
+                        <div className={`flex flex-col gap-1 max-w-lg ${isCurrentUser ? 'items-end' : ''}`}>
+                          <div className={`flex items-baseline gap-2 ${isCurrentUser ? 'flex-row-reverse' : ''}`}>
+                            {!isCurrentUser && (
+                              <span className="font-semibold text-sm text-gray-800">
+                                {userEmail}
+                              </span>
+                            )}
+                            <span className="text-xs text-gray-400">{formatTime(msg.created_at)}</span>
+                          </div>
+                          <div
+                            className={`p-3 rounded-lg ${
+                              isCurrentUser
+                                ? 'bg-blue-600 text-white'
+                                : 'bg-gray-100 text-gray-800'
+                            }`}
+                          >
+                            <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
+                            {msg.file_url && (
+                              <a
+                                href={msg.file_url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className={`mt-2 inline-block text-sm ${isCurrentUser ? 'text-blue-100 hover:text-white' : 'text-blue-600 hover:text-blue-700'} underline`}
+                              >
+                                {msg.file_name || 'View file'}
+                              </a>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    )
+                  })
                 )}
                 {typingUsers.length > 0 && (
                   <div className="text-sm text-gray-500 italic mt-2">
@@ -949,13 +887,7 @@ function Messages() {
                   <input
                     type="text"
                     value={newMessage}
-                    onChange={handleInputChange}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' && !e.shiftKey) {
-                        e.preventDefault()
-                        handleSendMessage()
-                      }
-                    }}
+                    onChange={(e) => setNewMessage(e.target.value)}
                     placeholder="Type a message..."
                     className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     disabled={sending}
