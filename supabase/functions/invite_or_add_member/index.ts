@@ -33,22 +33,37 @@ function mapContactType(role?: string): string {
   return 'Team'
 }
 
+// CORS headers helper
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+}
+
 serve(async (req) => {
+  // Handle CORS preflight requests
+  if (req.method === 'OPTIONS') {
+    return new Response('ok', { headers: corsHeaders })
+  }
+
   if (req.method !== 'POST') {
-    return new Response('Method not allowed', { status: 405 })
+    return new Response('Method not allowed', { 
+      status: 405,
+      headers: corsHeaders
+    })
   }
 
   try {
     const body = await req.json()
     console.log('Received request body:', JSON.stringify(body))
     
-    const { projectId, entries } = body
+    const { projectId, entries, addedByUserId } = body
 
     if (!projectId || !Array.isArray(entries) || entries.length === 0) {
       console.error('Invalid payload:', { projectId, entries })
       return new Response(
         JSON.stringify({ error: 'Invalid payload', details: { projectId, entriesCount: entries?.length } }),
-        { status: 400, headers: { 'Content-Type': 'application/json' } }
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
     }
     
@@ -96,7 +111,8 @@ serve(async (req) => {
             email,
             type: mapContactType(role),
             role: role,
-            status: 'Available'
+            status: 'Available',
+            created_by_user_id: addedByUserId || null
           }
           console.log('Contact data to insert:', contactData)
           
@@ -174,7 +190,7 @@ serve(async (req) => {
                     To access the project and start collaborating with your team, please sign in or create an account:
                   </p>
                   <div style="text-align: center; margin: 30px 0;">
-                    <a href="https://siteweave.com" style="display: inline-block; padding: 14px 32px; background-color: #2563eb; color: white; text-decoration: none; border-radius: 8px; font-weight: 600; font-size: 16px;">Access SiteWeave</a>
+                    <a href="https://siteweave.netlify.app" style="display: inline-block; padding: 14px 32px; background-color: #2563eb; color: white; text-decoration: none; border-radius: 8px; font-weight: 600; font-size: 16px;">Access SiteWeave</a>
                   </div>
                   <div style="background: #f3f4f6; padding: 20px; border-radius: 8px; margin-top: 20px;">
                     <p style="color: #6b7280; font-size: 14px; margin: 0; line-height: 1.5;">
@@ -198,7 +214,7 @@ serve(async (req) => {
                 'Content-Type': 'application/json'
               },
               body: JSON.stringify({
-                from: 'SiteWeave <onboarding@resend.dev>',
+                from: 'SiteWeave <noreply@siteweave.org>',
                 to: [email],
                 subject: 'You\'ve been added to a project on SiteWeave',
                 html: emailHtml
@@ -248,7 +264,7 @@ serve(async (req) => {
     console.log('Completed processing. Results:', JSON.stringify(results))
     return new Response(JSON.stringify({ results }), {
       status: 200,
-      headers: { 'Content-Type': 'application/json' }
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     })
   } catch (error) {
     console.error('invite_or_add_member top-level error:', error)
@@ -261,7 +277,7 @@ serve(async (req) => {
       name: error.name
     }), {
       status: 500,
-      headers: { 'Content-Type': 'application/json' }
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     })
   }
 })

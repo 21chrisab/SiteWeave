@@ -9,9 +9,9 @@ const ProjectCard = memo(function ProjectCard({ project, onEdit, onDelete }) {
     const { dispatch, state } = useAppContext();
     const [showActions, setShowActions] = useState(false);
     
-    // Get team members for this project
+    // Get all members for this project (any contact linked via project_contacts)
     const teamMembers = state.contacts.filter(contact => 
-        contact.project_contacts && contact.project_contacts.some(pc => pc.project_id === project.id) && contact.type === 'Team'
+        contact.project_contacts && contact.project_contacts.some(pc => pc.project_id === project.id)
     );
     
     // Auto-determine status color based on status (using helper from projectHelpers)

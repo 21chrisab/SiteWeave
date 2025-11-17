@@ -73,9 +73,9 @@ function ProjectDetailsView() {
     const project = state.projects.find(p => p.id === state.selectedProjectId);
     const allTasks = state.tasks.filter(t => t.project_id === state.selectedProjectId);
     
-    // Get team members for this project
+    // Get all project members (any contact linked to this project)
     const teamMembers = state.contacts.filter(contact => 
-        contact.project_contacts && contact.project_contacts.some(pc => pc.project_id === project?.id) && contact.type === 'Team'
+        contact.project_contacts && contact.project_contacts.some(pc => pc.project_id === project?.id)
     );
     
     // Filter and sort tasks

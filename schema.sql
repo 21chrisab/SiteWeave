@@ -756,6 +756,12 @@ RETURNS UUID AS $$
   SELECT contact_id FROM public.profiles WHERE id = auth.uid();
 $$ LANGUAGE sql SECURITY DEFINER;
 
+-- Gets the email of the currently logged-in user
+CREATE OR REPLACE FUNCTION get_user_email()
+RETURNS TEXT AS $$
+  SELECT email FROM auth.users WHERE id = auth.uid();
+$$ LANGUAGE sql SECURITY DEFINER;
+
 -- ============================================================================
 -- TRIGGERS
 -- ============================================================================
@@ -819,6 +825,7 @@ ALTER TABLE profiles DISABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS "All authenticated users can view contacts" ON public.contacts;
 DROP POLICY IF EXISTS "Users can view their own contacts" ON public.contacts;
+DROP POLICY IF EXISTS "Users can view their own contacts and contacts with their email" ON public.contacts;
 DROP POLICY IF EXISTS "Only admins can create contacts" ON public.contacts;
 DROP POLICY IF EXISTS "Authenticated users can create contacts" ON public.contacts;
 DROP POLICY IF EXISTS "Only admins can update contacts" ON public.contacts;
@@ -1031,10 +1038,48 @@ USING (
 -- ============================================================================
 
 -- Contacts SELECT policy
-CREATE POLICY "Users can view their own contacts"
+-- Allow users to see contacts they created OR contacts that match their email
+-- This enables users to find contacts created by invite_or_add_member function
+-- Also allows Admins/PMs to see all contacts
+CREATE POLICY "Users can view their own contacts and contacts with their email"
 ON public.contacts
 FOR SELECT
-USING (created_by_user_id = auth.uid());
+USING (
+  -- Users can see contacts they created
+  (created_by_user_id = auth.uid())
+  OR
+  -- Users can see contacts that match their email (using helper function)
+  (LOWER(email) = LOWER(get_user_email()))
+  OR
+  -- Admins and PMs can see all contacts
+  (get_user_role() IN ('Admin', 'PM'))
+  OR
+  -- Anyone can see contacts who share a project with them
+  (
+    get_user_contact_id() IS NOT NULL
+    AND EXISTS (
+      SELECT 1
+      FROM public.project_contacts pc_user
+      JOIN public.project_contacts pc_contact
+        ON pc_contact.project_id = pc_user.project_id
+      WHERE pc_user.contact_id = get_user_contact_id()
+        AND pc_contact.contact_id = contacts.id
+    )
+  )
+  OR
+  -- Project creators/managers can see contacts assigned to their projects
+  EXISTS (
+    SELECT 1
+    FROM public.project_contacts pc_mgr
+    WHERE pc_mgr.contact_id = contacts.id
+      AND pc_mgr.project_id IN (
+        SELECT id
+        FROM public.projects
+        WHERE project_manager_id = auth.uid()
+           OR created_by_user_id = auth.uid()
+      )
+  )
+);
 
 -- Contacts INSERT policy
 CREATE POLICY "Authenticated users can create contacts"
@@ -1625,6 +1670,12 @@ WITH CHECK (
     SELECT id FROM public.projects 
     WHERE project_manager_id = auth.uid()
   ))
+  OR
+  -- Allow users to add themselves to projects they created
+  (project_id IN (
+    SELECT id FROM public.projects 
+    WHERE created_by_user_id = auth.uid()
+  ) AND contact_id = get_user_contact_id())
 );
 
 -- Project contacts UPDATE policy

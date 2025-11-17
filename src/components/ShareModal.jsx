@@ -12,6 +12,22 @@ function ShareModal({ projectId, onClose }) {
   const [error, setError] = useState(null);
   const [results, setResults] = useState(null);
   const [showContactPicker, setShowContactPicker] = useState(true);
+  const [warning, setWarning] = useState(null);
+
+  const projectMembers = useMemo(() => {
+    return state.contacts.filter(contact => {
+      if (!contact.email) return false;
+      return contact.project_contacts?.some(pc => String(pc.project_id) === String(projectId));
+    });
+  }, [state.contacts, projectId]);
+
+  const projectMemberEmails = useMemo(() => {
+    return new Set(
+      projectMembers
+        .map(member => member.email?.toLowerCase())
+        .filter(Boolean)
+    );
+  }, [projectMembers]);
 
   // Get contacts not already in the project
   const availableContacts = useMemo(() => {
@@ -44,10 +60,32 @@ function ShareModal({ projectId, onClose }) {
       .map(e => e.trim().toLowerCase())
       .filter(Boolean);
     const deduped = Array.from(new Set(parts));
+
+    const alreadyInProject = deduped.filter(email => projectMemberEmails.has(email));
+    const alreadyQueued = deduped.filter(email => entries.some(en => en.email === email));
+
     const newEntries = deduped
+      .filter(e => !projectMemberEmails.has(e))
       .filter(e => !entries.some(en => en.email === e))
       .map(e => ({ email: e, role: DEFAULT_ROLE }));
-    if (newEntries.length) setEntries(prev => [...prev, ...newEntries]);
+
+    if (newEntries.length) {
+      setEntries(prev => [...prev, ...newEntries]);
+    }
+
+    if (alreadyInProject.length || alreadyQueued.length) {
+      const messages = [];
+      if (alreadyInProject.length) {
+        messages.push(`Already on this project: ${alreadyInProject.join(', ')}`);
+      }
+      if (alreadyQueued.length) {
+        messages.push(`Already selected: ${alreadyQueued.join(', ')}`);
+      }
+      setWarning(messages.join(' • '));
+    } else {
+      setWarning(null);
+    }
+
     setInput('');
   };
 
@@ -65,7 +103,7 @@ function ShareModal({ projectId, onClose }) {
     setError(null);
     setResults(null);
     try {
-      const payload = { projectId, entries };
+      const payload = { projectId, entries, addedByUserId: state.user?.id };
       console.log('Invoking invite_or_add_member with:', JSON.stringify(payload, null, 2));
       console.log('ProjectId type:', typeof projectId, 'Value:', projectId);
       console.log('Entries:', JSON.stringify(entries, null, 2));
@@ -98,6 +136,36 @@ function ShareModal({ projectId, onClose }) {
         </div>
 
         <form onSubmit={onSubmit}>
+          {/* Current Team Section */}
+          {projectMembers.length > 0 && (
+            <div className="mb-6">
+              <div className="flex items-center justify-between mb-3">
+                <label className="text-sm font-semibold text-gray-700">
+                  Current Team Members ({projectMembers.length})
+                </label>
+              </div>
+              <div className="flex flex-wrap gap-3">
+                {projectMembers.map(member => (
+                  <div
+                    key={member.id}
+                    className="flex items-center gap-3 rounded-lg border border-gray-200 px-3 py-2 bg-gray-50"
+                  >
+                    <div className="flex-shrink-0 w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-purple-500 flex items-center justify-center text-white text-sm font-semibold">
+                      {member.name?.charAt(0)?.toUpperCase() || member.email.charAt(0).toUpperCase()}
+                    </div>
+                    <div className="min-w-0">
+                      <div className="text-sm font-medium text-gray-900 truncate">{member.name || member.email}</div>
+                      <div className="text-xs text-gray-500 truncate">{member.email}</div>
+                    </div>
+                    <span className="text-xs font-medium text-gray-600 bg-white border border-gray-200 rounded-full px-2 py-0.5">
+                      {member.project_contacts?.find(pc => String(pc.project_id) === String(projectId))?.role || member.type || 'Member'}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Contact Picker Section */}
           {availableContacts.length > 0 && (
             <div className="mb-6">
@@ -156,6 +224,11 @@ function ShareModal({ projectId, onClose }) {
               />
               <button type="button" onClick={addEmails} className="rounded-md bg-gray-100 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-200">Add</button>
             </div>
+            {warning && (
+              <div className="mt-2 rounded-md bg-yellow-50 border border-yellow-200 px-3 py-2 text-xs text-yellow-800">
+                {warning}
+              </div>
+            )}
           </div>
 
           {entries.length > 0 && (
