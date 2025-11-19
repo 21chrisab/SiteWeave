@@ -5,6 +5,7 @@ const UpdateNotification = () => {
   const [updateDownloaded, setUpdateDownloaded] = useState(false);
   const [updateError, setUpdateError] = useState(null);
   const [isInstalling, setIsInstalling] = useState(false);
+  const [downloadProgress, setDownloadProgress] = useState(null);
 
   useEffect(() => {
     if (!window.electronAPI) return;
@@ -12,11 +13,13 @@ const UpdateNotification = () => {
     // Listen for update events
     window.electronAPI.onUpdateAvailable(() => {
       setUpdateAvailable(true);
+      setDownloadProgress(null); // Reset progress when new download starts
     });
 
     window.electronAPI.onUpdateDownloaded(() => {
       setUpdateDownloaded(true);
       setUpdateAvailable(false);
+      setDownloadProgress(null); // Clear progress when download completes
     });
 
     window.electronAPI.onUpdateError((error) => {
@@ -29,7 +32,15 @@ const UpdateNotification = () => {
       setUpdateError(error);
       setUpdateAvailable(false);
       setUpdateDownloaded(false);
+      setDownloadProgress(null);
     });
+
+    // Listen for download progress
+    if (window.electronAPI.onUpdateDownloadProgress) {
+      window.electronAPI.onUpdateDownloadProgress((progress) => {
+        setDownloadProgress(progress);
+      });
+    }
 
     // Check for updates on mount
     checkForUpdates();
@@ -67,6 +78,16 @@ const UpdateNotification = () => {
     setUpdateAvailable(false);
     setUpdateDownloaded(false);
     setUpdateError(null);
+    setDownloadProgress(null);
+  };
+
+  // Format bytes to human readable format
+  const formatBytes = (bytes) => {
+    if (!bytes || bytes === 0) return '0 B';
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
   };
 
   if (updateError) {
@@ -121,12 +142,21 @@ const UpdateNotification = () => {
   }
 
   if (updateAvailable) {
+    const percent = downloadProgress ? Math.round(downloadProgress.percent) : 0;
+    const speed = downloadProgress?.bytesPerSecond ? formatBytes(downloadProgress.bytesPerSecond) + '/s' : '';
+    const transferred = downloadProgress?.transferred ? formatBytes(downloadProgress.transferred) : '';
+    const total = downloadProgress?.total ? formatBytes(downloadProgress.total) : '';
+
     return (
       <div className="fixed top-4 right-4 bg-blue-100 border border-blue-400 text-blue-700 px-4 py-3 rounded-lg shadow-lg z-50 max-w-sm">
-        <div className="flex items-center justify-between">
-          <div>
+        <div className="flex items-center justify-between mb-2">
+          <div className="flex-1">
             <h4 className="font-semibold">Update Available</h4>
-            <p className="text-sm">Downloading update...</p>
+            <p className="text-sm text-blue-600">
+              {downloadProgress 
+                ? `Downloading... ${percent}%`
+                : 'Preparing download...'}
+            </p>
           </div>
           <button
             onClick={dismissNotification}
@@ -135,6 +165,22 @@ const UpdateNotification = () => {
             ✕
           </button>
         </div>
+        
+        {/* Progress Bar */}
+        {downloadProgress && (
+          <div className="mt-3">
+            <div className="w-full bg-blue-200 rounded-full h-2 mb-2">
+              <div 
+                className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+                style={{ width: `${percent}%` }}
+              ></div>
+            </div>
+            <div className="flex justify-between text-xs text-blue-600">
+              <span>{transferred} / {total}</span>
+              {speed && <span>{speed}</span>}
+            </div>
+          </div>
+        )}
       </div>
     );
   }

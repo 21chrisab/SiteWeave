@@ -1,8 +1,8 @@
-version: 1.0.32
+version: 1.0.33
 files:
-  - url: SiteWeave-Setup-1.0.32.exe
-    sha512: iDG+bSUu0bM7i61EIq291JAOKjKRKmx+fZWSFJNR+QX6dk9g9uIcNWmZ5AiBtpVhfZidP6xd/T+SOsR+z+Ijxg==
-    size: 171919056
-path: SiteWeave-Setup-1.0.32.exe
-sha512: iDG+bSUu0bM7i61EIq291JAOKjKRKmx+fZWSFJNR+QX6dk9g9uIcNWmZ5AiBtpVhfZidP6xd/T+SOsR+z+Ijxg==
-releaseDate: '2025-11-19T21:23:47.632Z'
+  - url: SiteWeave-Setup-1.0.33.exe
+    sha512: 5a3O0ZVaIZT/73RLI4CKWLQZ+ikxUcFRRWNSH6L/eYqfhO0sjtU/Yi8Eh0gD2KIxuaP0S5FcHcYr8wc+etK62w==
+    size: 171917239
+path: SiteWeave-Setup-1.0.33.exe
+sha512: 5a3O0ZVaIZT/73RLI4CKWLQZ+ikxUcFRRWNSH6L/eYqfhO0sjtU/Yi8Eh0gD2KIxuaP0S5FcHcYr8wc+etK62w==
+releaseDate: '2025-11-19T23:05:42.179Z'

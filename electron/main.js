@@ -441,6 +441,16 @@ autoUpdater.on('error', (error) => {
   }
 });
 
+// Add download progress tracking
+autoUpdater.on('download-progress', (progressObj) => {
+  mainWindow?.webContents.send('update-download-progress', {
+    percent: progressObj.percent,
+    transferred: progressObj.transferred,
+    total: progressObj.total,
+    bytesPerSecond: progressObj.bytesPerSecond
+  });
+});
+
 // IPC handlers
 ipcMain.handle('get-app-version', () => {
   return app.getVersion();

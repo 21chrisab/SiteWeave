@@ -40,6 +40,14 @@ try {
       }
     },
 
+    onUpdateDownloadProgress: (callback) => {
+      try {
+        ipcRenderer.on('update-download-progress', (event, progress) => callback(progress));
+      } catch (error) {
+        console.error('Error setting up update download progress callback:', error);
+      }
+    },
+
     // Menu actions
     onMenuAction: (callback) => {
       try {
@@ -147,6 +155,7 @@ try {
     onUpdateAvailable: () => {},
     onUpdateDownloaded: () => {},
     onUpdateError: () => {},
+    onUpdateDownloadProgress: () => {},
     onMenuAction: () => {},
     getAppVersion: () => '1.0.0',
     installUpdate: () => Promise.resolve(),
