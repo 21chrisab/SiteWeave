@@ -20,10 +20,42 @@ function Sidebar() {
     const [isCollapsed, setIsCollapsed] = useState(false);
 
     const handleLogout = async () => {
-        const { error } = await supabaseClient.auth.signOut();
-        if (error) {
-            addToast('Error signing out: ' + error.message, 'error');
-        } else {
+        try {
+            // Check if there's a valid session first
+            const { data: { session } } = await supabaseClient.auth.getSession();
+            
+            if (!session) {
+                // No session exists, just clear local state
+                console.log('No active session, clearing local state');
+                dispatch({ type: 'SET_USER', payload: null });
+                addToast('Signed out successfully', 'success');
+                return;
+            }
+            
+            // Try to sign out
+            const { error } = await supabaseClient.auth.signOut();
+            if (error) {
+                // If session is already missing or invalid, just clear local state
+                if (error.message?.includes('session') || 
+                    error.message?.includes('Session') || 
+                    error.message?.includes('403') ||
+                    error.status === 403) {
+                    console.log('Session invalid, clearing local state');
+                    dispatch({ type: 'SET_USER', payload: null });
+                    addToast('Signed out successfully', 'success');
+                } else {
+                    console.error('Sign out error:', error);
+                    // Still clear local state even if there's an error
+                    dispatch({ type: 'SET_USER', payload: null });
+                    addToast('Signed out successfully', 'success');
+                }
+            } else {
+                addToast('Signed out successfully', 'success');
+            }
+        } catch (err) {
+            // Handle any errors gracefully - always clear local state
+            console.log('Sign out error caught, clearing local state:', err);
+            dispatch({ type: 'SET_USER', payload: null });
             addToast('Signed out successfully', 'success');
         }
     };

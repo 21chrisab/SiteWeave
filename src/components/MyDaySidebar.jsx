@@ -110,8 +110,8 @@ function MyDaySidebar() {
                                 // Video camera icon for meetings
                                 return "M15.75 10.5l4.72-4.72a.75.75 0 011.28.53v11.38a.75.75 0 01-1.28.53l-4.72-4.72M4.5 18.75h9a2.25 2.25 0 002.25-2.25v-9a2.25 2.25 0 00-2.25-2.25h-9A2.25 2.25 0 002.25 7.5v9a2.25 2.25 0 002.25 2.25z";
                             } else if (title.includes('site') || title.includes('visit') || title.includes('inspection')) {
-                                // Map pin icon for site visits
-                                return "M15 10.5a3 3 0 11-6 0 3 3 0 016 0z M19.5 10.5c0 6.627-5.373 12-12 12s-12-5.373-12-12 5.373-12 12-12 12 5.373 12 12z";
+                                // Map pin icon for site visits (location/map pin - teardrop shape)
+                                return "M12 2.25a8.25 8.25 0 00-8.25 8.25c0 4.5 6.75 11.25 8.25 12.75 1.5-1.5 8.25-8.25 8.25-12.75A8.25 8.25 0 0012 2.25zm0 11.25a3 3 0 110-6 3 3 0 010 6z";
                             } else if (title.includes('presentation') || title.includes('demo')) {
                                 // Presentation screen icon
                                 return "M3.75 3v11.25A2.25 2.25 0 006 16.5h2.25M3.75 3h-1.5m1.5 0h16.5m0 0h1.5m-1.5 0v11.25A2.25 2.25 0 0118 16.5h-2.25m-7.5 0h7.5m-7.5 0l-1 3m8.5-3l1 3m0 0l-1-3m1 3l-1-3m-16.5-3h9v2.25M6 20.25l2.25-2.25M6 20.25l-2.25-2.25M6 20.25v-2.25";

@@ -196,27 +196,41 @@ export async function acceptInvitation(invitationToken, userId) {
         if (existingProfile?.contact_id) {
             contactId = existingProfile.contact_id;
         } else {
-            // Create new contact
-            const { data: newContact, error: contactError } = await supabaseClient
+            // Check if a contact already exists with this email (from invite_or_add_member)
+            const { data: existingContact } = await supabaseClient
                 .from('contacts')
-                .insert({
-                    name: user?.user?.user_metadata?.full_name || userEmail,
-                    role: 'Team Member',
-                    type: 'Team',
-                    email: userEmail,
-                    company: 'SiteWeave',
-                    trade: 'Internal',
-                    status: 'Available'
-                })
-                .select()
-                .single();
+                .select('id')
+                .ilike('email', userEmail)
+                .maybeSingle();
+            
+            if (existingContact) {
+                // Use existing contact
+                contactId = existingContact.id;
+                console.log('Found existing contact for email, linking to profile:', contactId);
+            } else {
+                // Create new contact
+                const { data: newContact, error: contactError } = await supabaseClient
+                    .from('contacts')
+                    .insert({
+                        name: user?.user?.user_metadata?.full_name || userEmail,
+                        role: 'Team Member',
+                        type: 'Team',
+                        email: userEmail,
+                        company: 'SiteWeave',
+                        trade: 'Internal',
+                        status: 'Available',
+                        created_by_user_id: userId
+                    })
+                    .select()
+                    .single();
 
-            if (contactError) {
-                console.error('Error creating contact:', contactError);
-                return { success: false, error: 'Failed to create contact record' };
+                if (contactError) {
+                    console.error('Error creating contact:', contactError);
+                    return { success: false, error: 'Failed to create contact record' };
+                }
+
+                contactId = newContact.id;
             }
-
-            contactId = newContact.id;
 
             // Link contact to profile
             await supabaseClient

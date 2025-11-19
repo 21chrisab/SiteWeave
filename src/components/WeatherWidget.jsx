@@ -51,8 +51,17 @@ function WeatherWidget({ compact = false }) {
         getWeatherForecast(location.latitude, location.longitude),
       ]);
 
+      // Handle null returns (when API key is missing)
+      if (!currentWeather) {
+        // Fall back to saved city or default
+        const savedLocation = localStorage.getItem(STORAGE_KEY);
+        const fallbackCity = savedLocation || 'New York';
+        await loadWeatherByCity(fallbackCity);
+        return;
+      }
+
       setWeather(currentWeather);
-      setForecast(weatherForecast);
+      setForecast(weatherForecast || []);
       setUseGeolocation(true);
       setShowCityInput(false);
     } catch (err) {
@@ -93,8 +102,16 @@ function WeatherWidget({ compact = false }) {
         getWeatherForecastByCity(cityName.trim()),
       ]);
 
+      // Handle null returns (when API key is missing)
+      if (!currentWeather) {
+        setError('Weather API key is not configured. Please add VITE_WEATHER_API_KEY to your .env file.');
+        setWeather(null);
+        setForecast([]);
+        return;
+      }
+
       setWeather(currentWeather);
-      setForecast(weatherForecast);
+      setForecast(weatherForecast || []);
       setUseGeolocation(false);
       
       // Save preference as fallback (but don't use it on next load - geolocation takes priority)

@@ -51,7 +51,8 @@ export const getUserLocation = () => {
  */
 export const getCurrentWeather = async (latitude, longitude) => {
   if (!WEATHER_API_KEY) {
-    throw new Error('Weather API key is not configured. Please add VITE_WEATHER_API_KEY to your .env file.');
+    console.warn('Weather API key is not configured. Weather features will be disabled. Please add VITE_WEATHER_API_KEY to your .env file.');
+    return null;
   }
 
   try {
@@ -92,7 +93,8 @@ export const getCurrentWeather = async (latitude, longitude) => {
  */
 export const getCurrentWeatherByCity = async (cityName) => {
   if (!WEATHER_API_KEY) {
-    throw new Error('Weather API key is not configured. Please add VITE_WEATHER_API_KEY to your .env file.');
+    console.warn('Weather API key is not configured. Weather features will be disabled. Please add VITE_WEATHER_API_KEY to your .env file.');
+    return null;
   }
 
   try {
@@ -150,7 +152,8 @@ export const getCurrentWeatherByCity = async (cityName) => {
  */
 export const getWeatherForecast = async (latitude, longitude) => {
   if (!WEATHER_API_KEY) {
-    throw new Error('Weather API key is not configured. Please add VITE_WEATHER_API_KEY to your .env file.');
+    console.warn('Weather API key is not configured. Weather features will be disabled. Please add VITE_WEATHER_API_KEY to your .env file.');
+    return [];
   }
 
   try {
@@ -193,7 +196,8 @@ export const getWeatherForecast = async (latitude, longitude) => {
  */
 export const getWeatherForecastByCity = async (cityName) => {
   if (!WEATHER_API_KEY) {
-    throw new Error('Weather API key is not configured. Please add VITE_WEATHER_API_KEY to your .env file.');
+    console.warn('Weather API key is not configured. Weather features will be disabled. Please add VITE_WEATHER_API_KEY to your .env file.');
+    return [];
   }
 
   try {
@@ -251,7 +255,8 @@ export const getWeatherForecastByCity = async (cityName) => {
  */
 export const getExtendedWeatherForecast = async (cityName, days = 14) => {
   if (!WEATHER_API_KEY) {
-    throw new Error('Weather API key is not configured. Please add VITE_WEATHER_API_KEY to your .env file.');
+    console.warn('Weather API key is not configured. Weather features will be disabled. Please add VITE_WEATHER_API_KEY to your .env file.');
+    return {};
   }
 
   try {

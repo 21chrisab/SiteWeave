@@ -35,8 +35,14 @@ function CategoryColorManager({ isOpen, onClose }) {
                 // Use default categories if table doesn't exist or is empty
                 setCategories(DEFAULT_CATEGORIES);
             } else {
-                const loadedCategories = data.length > 0 ? data : DEFAULT_CATEGORIES;
-                setCategories(loadedCategories);
+                // Merge database categories with defaults
+                // Database categories take precedence, but include defaults that aren't in DB
+                const dbCategoryIds = new Set((data || []).map(cat => cat.id));
+                const mergedCategories = [
+                    ...(data || []),
+                    ...DEFAULT_CATEGORIES.filter(cat => !dbCategoryIds.has(cat.id))
+                ];
+                setCategories(mergedCategories.length > 0 ? mergedCategories : DEFAULT_CATEGORIES);
             }
         } catch (error) {
             console.error('Error loading categories:', error);
@@ -52,18 +58,68 @@ function CategoryColorManager({ isOpen, onClose }) {
 
             const updatedCategory = { ...category, color: newColor };
             
-            // Update in database
-            const { error } = await supabaseClient
+            // Check if category exists in database first
+            const { data: existingCategory } = await supabaseClient
                 .from('event_categories')
-                .upsert(updatedCategory);
+                .select('id')
+                .eq('id', categoryId)
+                .maybeSingle();
+
+            let error;
+            let success = false;
+            if (existingCategory) {
+                // Category exists, use UPDATE
+                const { data: updatedData, error: updateError } = await supabaseClient
+                    .from('event_categories')
+                    .update({ color: newColor, updated_at: new Date().toISOString() })
+                    .eq('id', categoryId)
+                    .select();
+                
+                error = updateError;
+                // Check if update was successful (might return empty array if RLS blocks it)
+                if (!error && updatedData && updatedData.length > 0) {
+                    success = true;
+                } else if (!error && (!updatedData || updatedData.length === 0)) {
+                    // Update didn't return data - likely blocked by RLS
+                    error = { 
+                        message: 'Update was blocked. Only administrators can update categories.',
+                        code: 'PGRST406'
+                    };
+                }
+            } else {
+                // Category doesn't exist, use INSERT
+                const { data: insertedData, error: insertError } = await supabaseClient
+                    .from('event_categories')
+                    .insert({ id: categoryId, name: category.name, color: newColor })
+                    .select()
+                    .maybeSingle();
+                error = insertError;
+                success = !error && insertedData;
+            }
 
             if (error) {
-                addToast('Error updating category color: ' + error.message, 'error');
+                console.error('Error updating category color:', error);
+                // Check for RLS/permission errors (406 Not Acceptable usually means RLS blocked)
+                const isRLSError = error.code === 'PGRST406' || 
+                                 error.status === 406 || 
+                                 error.statusCode === 406 ||
+                                 error.message?.includes('row-level security') || 
+                                 error.message?.includes('RLS') || 
+                                 error.message?.includes('blocked') ||
+                                 error.message?.includes('Not Acceptable');
+                if (isRLSError) {
+                    addToast('Only administrators can update categories. Please contact your administrator.', 'error');
+                } else {
+                    addToast('Error updating category color: ' + (error.message || 'Unknown error'), 'error');
+                }
+            } else if (success) {
+                // Reload categories from database to ensure we have the latest data
+                await loadCategories();
+                addToast('Category color updated successfully!', 'success');
             } else {
-                // Update local state
-                setCategories(prev => prev.map(cat => 
-                    cat.id === categoryId ? updatedCategory : cat
-                ));
+                console.warn('Update appeared to succeed but no data returned');
+                // Still reload to check
+                await loadCategories();
                 addToast('Category color updated successfully!', 'success');
             }
         } catch (error) {
@@ -82,18 +138,68 @@ function CategoryColorManager({ isOpen, onClose }) {
 
             const updatedCategory = { ...category, name: newName.trim() };
             
-            // Update in database
-            const { error } = await supabaseClient
+            // Check if category exists in database first
+            const { data: existingCategory } = await supabaseClient
                 .from('event_categories')
-                .upsert(updatedCategory);
+                .select('id')
+                .eq('id', categoryId)
+                .maybeSingle();
+
+            let error;
+            let success = false;
+            if (existingCategory) {
+                // Category exists, use UPDATE
+                const { data: updatedData, error: updateError } = await supabaseClient
+                    .from('event_categories')
+                    .update({ name: newName.trim(), updated_at: new Date().toISOString() })
+                    .eq('id', categoryId)
+                    .select();
+                
+                error = updateError;
+                // Check if update was successful (might return empty array if RLS blocks it)
+                if (!error && updatedData && updatedData.length > 0) {
+                    success = true;
+                } else if (!error && (!updatedData || updatedData.length === 0)) {
+                    // Update didn't return data - likely blocked by RLS
+                    error = { 
+                        message: 'Update was blocked. Only administrators can update categories.',
+                        code: 'PGRST406'
+                    };
+                }
+            } else {
+                // Category doesn't exist, use INSERT
+                const { data: insertedData, error: insertError } = await supabaseClient
+                    .from('event_categories')
+                    .insert({ id: categoryId, name: newName.trim(), color: category.color })
+                    .select()
+                    .maybeSingle();
+                error = insertError;
+                success = !error && insertedData;
+            }
 
             if (error) {
-                addToast('Error updating category name: ' + error.message, 'error');
+                console.error('Error updating category name:', error);
+                // Check for RLS/permission errors (406 Not Acceptable usually means RLS blocked)
+                const isRLSError = error.code === 'PGRST406' || 
+                                 error.status === 406 || 
+                                 error.statusCode === 406 ||
+                                 error.message?.includes('row-level security') || 
+                                 error.message?.includes('RLS') || 
+                                 error.message?.includes('blocked') ||
+                                 error.message?.includes('Not Acceptable');
+                if (isRLSError) {
+                    addToast('Only administrators can update categories. Please contact your administrator.', 'error');
+                } else {
+                    addToast('Error updating category name: ' + (error.message || 'Unknown error'), 'error');
+                }
+            } else if (success) {
+                // Reload categories from database to ensure we have the latest data
+                await loadCategories();
+                addToast('Category name updated successfully!', 'success');
             } else {
-                // Update local state
-                setCategories(prev => prev.map(cat => 
-                    cat.id === categoryId ? updatedCategory : cat
-                ));
+                console.warn('Update appeared to succeed but no data returned');
+                // Still reload to check
+                await loadCategories();
                 addToast('Category name updated successfully!', 'success');
             }
         } catch (error) {
@@ -111,18 +217,30 @@ function CategoryColorManager({ isOpen, onClose }) {
 
         setIsLoading(true);
         try {
-            const { error } = await supabaseClient
+            const { data, error } = await supabaseClient
                 .from('event_categories')
-                .insert(newCategory);
+                .insert(newCategory)
+                .select()
+                .single();
 
             if (error) {
-                addToast('Error adding category: ' + error.message, 'error');
-            } else {
-                setCategories(prev => [...prev, newCategory]);
+                // Check if it's an RLS policy error
+                if (error.message?.includes('row-level security') || error.message?.includes('RLS')) {
+                    addToast('Only administrators can create new categories. Please contact your administrator.', 'error');
+                } else {
+                    addToast('Error adding category: ' + error.message, 'error');
+                }
+            } else if (data) {
+                // Reload categories from database to ensure we have the latest data
+                await loadCategories();
                 addToast('Category added successfully!', 'success');
             }
         } catch (error) {
-            addToast('Error adding category: ' + error.message, 'error');
+            if (error.message?.includes('row-level security') || error.message?.includes('RLS')) {
+                addToast('Only administrators can create new categories. Please contact your administrator.', 'error');
+            } else {
+                addToast('Error adding category: ' + error.message, 'error');
+            }
         }
         setIsLoading(false);
     };

@@ -277,15 +277,55 @@ export const AppProvider = ({ children }) => {
             console.error('Profile error:', profileError);
           }
           
-          // If no profile exists, create one
+          let finalProfile = profile;
+          let contactId = profile?.contact_id;
+          
+          // If no profile exists, create one and ensure contact exists
           if (!profile && !profileError) {
             console.log('Creating profile for user:', state.user.id);
+            
+            // First, check if contact exists by email
+            let contactIdToLink = null;
+            if (state.user.email) {
+              const { data: existingContact } = await supabaseClient
+                .from('contacts')
+                .select('id')
+                .ilike('email', state.user.email)
+                .maybeSingle();
+              
+              if (existingContact) {
+                contactIdToLink = existingContact.id;
+                console.log('Found existing contact for new profile:', contactIdToLink);
+              } else {
+                // Create contact for new user
+                const { data: newContact, error: contactError } = await supabaseClient
+                  .from('contacts')
+                  .insert({
+                    name: state.user.user_metadata?.full_name || state.user.email.split('@')[0] || 'User',
+                    email: state.user.email,
+                    type: 'Team',
+                    role: 'Team Member',
+                    status: 'Available',
+                    created_by_user_id: state.user.id
+                  })
+                  .select('id')
+                  .single();
+                
+                if (!contactError && newContact) {
+                  contactIdToLink = newContact.id;
+                  console.log('Created new contact for new profile:', contactIdToLink);
+                } else {
+                  console.error('Error creating contact for new profile:', contactError);
+                }
+              }
+            }
+            
             const { error: createProfileError } = await supabaseClient
               .from('profiles')
               .upsert({
                 id: state.user.id,
                 role: 'Team',
-                contact_id: null
+                contact_id: contactIdToLink
               }, {
                 onConflict: 'id'
               });
@@ -293,13 +333,88 @@ export const AppProvider = ({ children }) => {
             if (createProfileError) {
               console.error('Error creating profile:', createProfileError);
             } else {
-              console.log('Profile created successfully');
+              console.log('Profile created successfully with contact_id:', contactIdToLink);
+              // Re-fetch the profile
+              const { data: newProfile } = await supabaseClient
+                .from('profiles')
+                .select('*')
+                .eq('id', state.user.id)
+                .single();
+              finalProfile = newProfile;
+              contactId = contactIdToLink;
             }
           }
           
-          const [{ data: projects }, { data: contacts }, { data: tasks }, { data: files }, {data: calendarEvents}, {data: messageChannels}, {data: messages}, { data: userPreferences, error: userPrefsError }, { data: activityLog }] = await Promise.all([
+          // If profile exists but no contact_id, ensure user has a contact
+          if (finalProfile && !finalProfile.contact_id && state.user.email) {
+            console.log('Profile exists but no contact_id. Ensuring contact exists for email:', state.user.email);
+            
+            // First, try to find existing contact by email
+            const { data: existingContact } = await supabaseClient
+              .from('contacts')
+              .select('id')
+              .ilike('email', state.user.email)
+              .maybeSingle();
+            
+            if (existingContact) {
+              console.log('Found existing contact, linking to profile:', existingContact.id);
+              const { error: linkError } = await supabaseClient
+                .from('profiles')
+                .update({ contact_id: existingContact.id })
+                .eq('id', state.user.id);
+              
+              if (linkError) {
+                console.error('Error linking contact to profile:', linkError);
+              } else {
+                contactId = existingContact.id;
+                console.log('Successfully linked contact to profile');
+              }
+            } else {
+              // No existing contact found - create one for the user
+              console.log('No existing contact found. Creating new contact for user:', state.user.email);
+              const { data: newContact, error: createContactError } = await supabaseClient
+                .from('contacts')
+                .insert({
+                  name: state.user.user_metadata?.full_name || state.user.email.split('@')[0] || 'User',
+                  email: state.user.email,
+                  type: finalProfile.role === 'Client' ? 'Client' : 'Team',
+                  role: finalProfile.role === 'PM' ? 'PM' : finalProfile.role === 'Admin' ? 'Admin' : 'Team Member',
+                  status: 'Available',
+                  created_by_user_id: state.user.id
+                })
+                .select('id')
+                .single();
+              
+              if (createContactError) {
+                console.error('Error creating contact:', createContactError);
+              } else if (newContact) {
+                console.log('Created new contact:', newContact.id);
+                // Link the new contact to the profile
+                const { error: linkError } = await supabaseClient
+                  .from('profiles')
+                  .update({ contact_id: newContact.id })
+                  .eq('id', state.user.id);
+                
+                if (linkError) {
+                  console.error('Error linking new contact to profile:', linkError);
+                } else {
+                  contactId = newContact.id;
+                  console.log('Successfully created and linked contact to profile');
+                }
+              }
+            }
+          } else if (finalProfile?.contact_id) {
+            contactId = finalProfile.contact_id;
+          }
+          
+          // Fetch projects - RLS policy handles filtering automatically
+          // The RLS policy allows:
+          // - Admins: all projects
+          // - PMs: projects where project_manager_id = auth.uid()
+          // - Team: projects where created_by_user_id = auth.uid() OR in project_contacts
+          const [{ data: projects }, { data: contacts, error: contactsError }, { data: tasks }, { data: files }, {data: calendarEvents}, {data: messageChannels}, {data: messages}, { data: userPreferences, error: userPrefsError }, { data: activityLog }] = await Promise.all([
             supabaseClient.from('projects').select('*'),
-            supabaseClient.from('contacts').select('*, project_contacts!fk_project_contacts_contact_id(project_id)'),
+            supabaseClient.from('contacts').select('*'),
             supabaseClient.from('tasks').select('*'),
             supabaseClient.from('files').select('*'),
             supabaseClient.from('calendar_events').select('*'),
@@ -309,9 +424,37 @@ export const AppProvider = ({ children }) => {
             supabaseClient.from('activity_log').select('*').order('created_at', { ascending: false }).limit(50)
           ]);
           
+          // RLS policy automatically filters projects based on user role
+          // No need for manual filtering - RLS handles it
+          const finalProjects = projects || [];
+          console.log('Loaded projects:', finalProjects.length);
+          
+          // Handle contacts query - fetch project_contacts separately to avoid RLS join issues
+          let finalContacts = contacts || [];
+          
+          if (contactsError) {
+            console.error('Error fetching contacts:', contactsError);
+            finalContacts = [];
+          } else if (finalContacts.length > 0) {
+            // Fetch project_contacts separately and attach to contacts
+            const contactIds = finalContacts.map(c => c.id);
+            const { data: projectContacts } = await supabaseClient
+              .from('project_contacts')
+              .select('contact_id, project_id')
+              .in('contact_id', contactIds);
+            
+            // Manually attach project_contacts to contacts (matching the original query structure)
+            finalContacts = finalContacts.map(contact => ({
+              ...contact,
+              project_contacts: (projectContacts || [])
+                .filter(pc => pc.contact_id === contact.id)
+                .map(pc => ({ project_id: pc.project_id }))
+            }));
+          }
+          
           dispatch({ type: 'SET_DATA', payload: { 
-            projects: projects || [], 
-            contacts: contacts || [], 
+            projects: finalProjects, 
+            contacts: finalContacts, 
             tasks: tasks || [], 
             files: files || [], 
             calendarEvents: calendarEvents || [], 

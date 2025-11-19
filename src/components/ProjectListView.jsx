@@ -143,12 +143,12 @@ function ProjectListView({ projects, onEdit, onDelete, onProjectClick }) {
 
     return (
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-            <div className="overflow-x-auto">
-                <table className="w-full">
+            <div className="w-full">
+                <table className="w-full table-auto">
                     <thead className="bg-gray-50 border-b border-gray-200">
                         <tr>
                             <th
-                                className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                                className="px-4 sm:px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider cursor-pointer hover:bg-gray-100 min-w-[150px]"
                                 onClick={() => handleSort('name')}
                             >
                                 <div className="flex items-center gap-2">
@@ -157,7 +157,7 @@ function ProjectListView({ projects, onEdit, onDelete, onProjectClick }) {
                                 </div>
                             </th>
                             <th
-                                className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                                className="px-4 sm:px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
                                 onClick={() => handleSort('status')}
                             >
                                 <div className="flex items-center gap-2">
@@ -166,7 +166,7 @@ function ProjectListView({ projects, onEdit, onDelete, onProjectClick }) {
                                 </div>
                             </th>
                             <th
-                                className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                                className="px-4 sm:px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider cursor-pointer hover:bg-gray-100 min-w-[140px]"
                                 onClick={() => handleSort('progress')}
                             >
                                 <div className="flex items-center gap-2">
@@ -175,7 +175,7 @@ function ProjectListView({ projects, onEdit, onDelete, onProjectClick }) {
                                 </div>
                             </th>
                             <th
-                                className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                                className="px-4 sm:px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
                                 onClick={() => handleSort('due_date')}
                             >
                                 <div className="flex items-center gap-2">
@@ -184,7 +184,7 @@ function ProjectListView({ projects, onEdit, onDelete, onProjectClick }) {
                                 </div>
                             </th>
                             <th
-                                className="pl-6 pr-2 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                                className="px-4 sm:px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
                                 onClick={() => handleSort('budget_remaining')}
                             >
                                 <div className="flex items-center gap-2">
@@ -192,7 +192,7 @@ function ProjectListView({ projects, onEdit, onDelete, onProjectClick }) {
                                     <SortIcon columnKey="budget_remaining" />
                                 </div>
                             </th>
-                            <th className="pl-2 pr-3 py-3 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                            <th className="px-4 sm:px-6 py-3 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider">
                                 Actions
                             </th>
                         </tr>
@@ -207,24 +207,24 @@ function ProjectListView({ projects, onEdit, onDelete, onProjectClick }) {
                                     className="hover:bg-gray-50 transition-colors cursor-pointer"
                                     onClick={() => onProjectClick && onProjectClick(project)}
                                 >
-                                    <td className="px-6 py-4 whitespace-nowrap">
+                                    <td className="px-4 sm:px-6 py-4">
                                         <div className="text-sm font-semibold text-gray-900">{project.name}</div>
                                         <div className="text-xs text-gray-500">{project.project_type}</div>
                                     </td>
-                                    <td className="px-6 py-4 whitespace-nowrap">
+                                    <td className="px-4 sm:px-6 py-4">
                                         <span className={`px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(project.status)}`}>
                                             {normalizeStatusDisplay(project.status) || 'N/A'}
                                         </span>
                                     </td>
-                                    <td className="px-6 py-4 whitespace-nowrap">
+                                    <td className="px-4 sm:px-6 py-4">
                                         {data.loading ? (
-                                            <div className="flex items-center gap-2">
-                                                <div className="w-28 h-2.5 bg-gray-200 rounded-full animate-pulse"></div>
+                                            <div className="flex items-center gap-2 flex-wrap">
+                                                <div className="flex-1 min-w-[80px] max-w-[120px] h-2.5 bg-gray-200 rounded-full animate-pulse"></div>
                                                 <div className="w-12 h-4 bg-gray-200 rounded animate-pulse"></div>
                                             </div>
                                         ) : (
-                                            <div className="flex items-center gap-2">
-                                                <div className="w-28 bg-gray-200 rounded-full h-2.5 relative overflow-hidden">
+                                            <div className="flex items-center gap-2 flex-wrap">
+                                                <div className="flex-1 min-w-[80px] max-w-[120px] bg-gray-200 rounded-full h-2.5 relative overflow-hidden">
                                                     {progress > 0 ? (
                                                         <div
                                                             className={`h-full rounded-full transition-all duration-300 ${getProgressColor(progress)}`}
@@ -240,21 +240,21 @@ function ProjectListView({ projects, onEdit, onDelete, onProjectClick }) {
                                                         ></div>
                                                     )}
                                                 </div>
-                                                <span className="text-sm text-gray-600 w-12 text-right font-medium">{progress}%</span>
+                                                <span className="text-sm text-gray-600 font-medium whitespace-nowrap">{progress}%</span>
                                             </div>
                                         )}
                                     </td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                                    <td className="px-4 sm:px-6 py-4 text-sm text-gray-600">
                                         {formatDateShort(project.due_date) || '—'}
                                     </td>
-                                    <td className="pl-6 pr-2 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                                    <td className="px-4 sm:px-6 py-4 text-sm font-medium text-gray-900">
                                         {data.loading ? (
                                             <div className="w-16 h-4 bg-gray-200 rounded animate-pulse"></div>
                                         ) : (
                                             formatCurrency(data.budget?.remaining || 0)
                                         )}
                                     </td>
-                                    <td className="pl-2 pr-3 py-3 whitespace-nowrap text-right">
+                                    <td className="px-4 sm:px-6 py-3 text-right">
                                         <div className="flex items-center justify-end gap-1">
                                             <button
                                                 onClick={(e) => {

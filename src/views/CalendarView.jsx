@@ -135,6 +135,7 @@ function CalendarView() {
     const [isImporting, setIsImporting] = useState(false);
     const [showCategoryManager, setShowCategoryManager] = useState(false);
     const [categories, setCategories] = useState([]);
+    const [visibleCategories, setVisibleCategories] = useState(new Set());
     const [weatherForecast, setWeatherForecast] = useState({});
     const [weatherCity, setWeatherCity] = useState(null);
 
@@ -142,6 +143,29 @@ function CalendarView() {
         loadCategories();
         loadWeatherForCalendar();
     }, []);
+
+    // Sync visible categories when categories list changes (e.g., after adding new categories)
+    useEffect(() => {
+        if (categories.length > 0) {
+            setVisibleCategories(prev => {
+                const newSet = new Set(prev);
+                // Add any new categories that aren't in the visible set
+                categories.forEach(cat => {
+                    if (!newSet.has(cat.id)) {
+                        newSet.add(cat.id);
+                    }
+                });
+                // Remove any categories that no longer exist
+                const categoryIds = new Set(categories.map(c => c.id));
+                Array.from(newSet).forEach(id => {
+                    if (!categoryIds.has(id)) {
+                        newSet.delete(id);
+                    }
+                });
+                return newSet;
+            });
+        }
+    }, [categories]);
 
     // Load weather when view changes or date changes
     useEffect(() => {
@@ -172,10 +196,12 @@ function CalendarView() {
             
             // Fetch extended forecast (14 days)
             const forecast = await getExtendedWeatherForecast(savedCity, 14);
-            setWeatherForecast(forecast);
+            // Handle null/empty returns gracefully (when API key is missing)
+            setWeatherForecast(forecast || {});
         } catch (error) {
             console.error('Error loading weather for calendar:', error);
             // Silently fail - weather is optional
+            setWeatherForecast({});
         }
     };
 
@@ -189,13 +215,16 @@ function CalendarView() {
             if (error) {
                 console.error('Error loading categories:', error);
                 // Use default categories if table doesn't exist
-                setCategories([
+                const defaultCategories = [
                     { id: 'meeting', name: 'Meeting', color: '#3B82F6' },
                     { id: 'work', name: 'Work', color: '#F59E0B' },
                     { id: 'personal', name: 'Personal', color: '#10B981' },
                     { id: 'deadline', name: 'Deadline', color: '#EF4444' },
                     { id: 'other', name: 'Other', color: '#8B5CF6' }
-                ]);
+                ];
+                setCategories(defaultCategories);
+                // Initialize all categories as visible
+                setVisibleCategories(new Set(defaultCategories.map(c => c.id)));
             } else {
                 const loadedCategories = data.length > 0 ? data : [
                     { id: 'meeting', name: 'Meeting', color: '#3B82F6' },
@@ -205,16 +234,21 @@ function CalendarView() {
                     { id: 'other', name: 'Other', color: '#8B5CF6' }
                 ];
                 setCategories(loadedCategories);
+                // Initialize all categories as visible
+                setVisibleCategories(new Set(loadedCategories.map(c => c.id)));
             }
         } catch (error) {
             console.error('Error loading categories:', error);
-            setCategories([
+            const defaultCategories = [
                 { id: 'meeting', name: 'Meeting', color: '#3B82F6' },
                 { id: 'work', name: 'Work', color: '#F59E0B' },
                 { id: 'personal', name: 'Personal', color: '#10B981' },
                 { id: 'deadline', name: 'Deadline', color: '#EF4444' },
                 { id: 'other', name: 'Other', color: '#8B5CF6' }
-            ]);
+            ];
+            setCategories(defaultCategories);
+            // Initialize all categories as visible
+            setVisibleCategories(new Set(defaultCategories.map(c => c.id)));
         }
     };
 
@@ -304,22 +338,30 @@ function CalendarView() {
         const allEvents = [];
 
         state.calendarEvents.forEach(event => {
-            // Use category color, fallback to 'other' if category not found
-            let eventColor = categoryColors[event.category] || categoryColors.other || '#8B5CF6';
+            // Determine event category (use existing or detect from title)
+            let eventCategory = event.category || 'other';
             
-            // Fallback to title-based color detection if no category
+            // Fallback to title-based category detection if no category
             if (!event.category) {
                 const title = event.title.toLowerCase();
                 if (title.includes('meeting') || title.includes('standup') || title.includes('call') || title.includes('team')) {
-                    eventColor = categoryColors.meeting || '#3B82F6';
+                    eventCategory = 'meeting';
                 } else if (title.includes('deadline') || title.includes('due') || title.includes('urgent') || title.includes('review')) {
-                    eventColor = categoryColors.deadline || '#EF4444';
+                    eventCategory = 'deadline';
                 } else if (title.includes('personal') || title.includes('break') || title.includes('lunch') || title.includes('vacation')) {
-                    eventColor = categoryColors.personal || '#10B981';
+                    eventCategory = 'personal';
                 } else if (title.includes('work') || title.includes('project') || title.includes('task') || title.includes('planning')) {
-                    eventColor = categoryColors.work || '#F59E0B';
+                    eventCategory = 'work';
                 }
             }
+            
+            // Filter: Skip events whose category is not visible
+            if (!visibleCategories.has(eventCategory)) {
+                return;
+            }
+            
+            // Use category color, fallback to 'other' if category not found
+            let eventColor = categoryColors[eventCategory] || categoryColors.other || '#8B5CF6';
 
             // Base event properties
             const baseEventProps = {
@@ -378,7 +420,7 @@ function CalendarView() {
         });
 
         return allEvents;
-    }, [state.calendarEvents, state.projects, categories]);
+    }, [state.calendarEvents, state.projects, categories, visibleCategories]);
 
     const handleDateClick = (arg) => {
         setModalDate(arg.date);
@@ -547,10 +589,13 @@ function CalendarView() {
         if (editingEvent) {
             setIsUpdatingEvent(true);
             
+            // Remove sync fields that don't exist in database schema
+            const { sync_to_google, sync_to_outlook, ...dbEventData } = eventData;
+            
             // Update in database first
             const { data: updatedEvent, error } = await supabaseClient
                 .from('calendar_events')
-                .update(eventData)
+                .update(dbEventData)
                 .eq('id', eventData.id)
                 .select()
                 .single();
@@ -714,10 +759,13 @@ function CalendarView() {
         } else {
             setIsCreatingEvent(true);
             
+            // Remove sync fields that don't exist in database schema
+            const { sync_to_google, sync_to_outlook, ...dbEventData } = eventData;
+            
             // Create in database first
             const { data: newEvent, error } = await supabaseClient
                 .from('calendar_events')
-                .insert({ ...eventData, user_id: state.user?.id || null })
+                .insert({ ...dbEventData, user_id: state.user?.id || null })
                 .select()
                 .single();
             
@@ -867,6 +915,9 @@ function CalendarView() {
             dispatch({ type: 'DELETE_EVENT', payload: eventToDelete.id });
             setShowDeleteConfirm(false);
             setEventToDelete(null);
+            // Close the event editing modal if it's open
+            setShowModal(false);
+            setEditingEvent(null);
         }
         
         setIsDeletingEvent(false);
@@ -878,6 +929,18 @@ function CalendarView() {
             const calendarApi = calendarRef.current.getApi();
             calendarApi.changeView(view);
         }
+    };
+
+    const toggleCategoryVisibility = (categoryId) => {
+        setVisibleCategories(prev => {
+            const newSet = new Set(prev);
+            if (newSet.has(categoryId)) {
+                newSet.delete(categoryId);
+            } else {
+                newSet.add(categoryId);
+            }
+            return newSet;
+        });
     };
 
 
@@ -916,15 +979,29 @@ function CalendarView() {
                     <div className="mt-6" data-onboarding="calendar-legend">
                         <h3 className="text-sm font-semibold text-gray-500 mb-3">Event Categories</h3>
                         <div className="space-y-2">
-                            {categories.map(category => (
-                                <div key={category.id} className="flex items-center gap-2 text-xs">
-                                    <div 
-                                        className="w-3 h-3 rounded" 
-                                        style={{backgroundColor: category.color}}
-                                    ></div>
-                                    <span className="text-gray-600">{category.name}</span>
-                                </div>
-                            ))}
+                            {categories.map(category => {
+                                const isVisible = visibleCategories.has(category.id);
+                                return (
+                                    <label 
+                                        key={category.id} 
+                                        className="flex items-center gap-2 text-xs cursor-pointer hover:bg-gray-50 rounded px-1 py-1 -mx-1 transition-colors"
+                                    >
+                                        <input 
+                                            type="checkbox" 
+                                            checked={isVisible}
+                                            onChange={() => toggleCategoryVisibility(category.id)}
+                                            className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                        />
+                                        <div 
+                                            className="w-3 h-3 rounded flex-shrink-0" 
+                                            style={{backgroundColor: category.color}}
+                                        ></div>
+                                        <span className={`text-gray-600 flex-1 ${!isVisible ? 'opacity-50 line-through' : ''}`}>
+                                            {category.name}
+                                        </span>
+                                    </label>
+                                );
+                            })}
                         </div>
                     </div>
                 </aside>

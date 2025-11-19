@@ -18,8 +18,21 @@ function ContactsView() {
     const [contactToDelete, setContactToDelete] = useState(null);
     const [searchTerm, setSearchTerm] = useState('');
     const [statusFilter, setStatusFilter] = useState('All');
+    const roleOptions = ['All Roles', 'Estimator', 'Foreman', 'Technician'];
+    const availabilityOptions = [
+        { label: 'Any Availability', value: 'Any Availability' },
+        { label: 'Available Now', value: 'Available' },
+        { label: 'On Site', value: 'Busy' }
+    ];
+    const [roleFilter, setRoleFilter] = useState('All Roles');
+    const [projectFilter, setProjectFilter] = useState('All Projects');
+    const [availabilityFilter, setAvailabilityFilter] = useState('Any Availability');
     const [showImportModal, setShowImportModal] = useState(false);
     const [showExportModal, setShowExportModal] = useState(false);
+    const [showAssignModal, setShowAssignModal] = useState(false);
+    const [assignContact, setAssignContact] = useState(null);
+    const [selectedAssignProject, setSelectedAssignProject] = useState('');
+    const [isAssigningContact, setIsAssigningContact] = useState(false);
 
     // Listen for tour navigation to switch to Subcontractors tab
     useEffect(() => {
@@ -53,9 +66,26 @@ function ContactsView() {
         if (statusFilter !== 'All') {
             contacts = contacts.filter(contact => contact.status === statusFilter);
         }
+
+        if (roleFilter !== 'All Roles') {
+            contacts = contacts.filter(contact => 
+                contact.role?.toLowerCase().includes(roleFilter.toLowerCase())
+            );
+        }
+
+        if (projectFilter !== 'All Projects') {
+            contacts = contacts.filter(contact =>
+                Array.isArray(contact.project_contacts) && 
+                contact.project_contacts.some(pc => String(pc.project_id) === projectFilter)
+            );
+        }
+
+        if (availabilityFilter !== 'Any Availability') {
+            contacts = contacts.filter(contact => contact.status === availabilityFilter);
+        }
         
         return contacts;
-    }, [activeTab, teamMembers, subcontractors, searchTerm, statusFilter]);
+    }, [activeTab, teamMembers, subcontractors, searchTerm, statusFilter, roleFilter, projectFilter, availabilityFilter]);
 
     const handleSaveContact = async (contactData) => {
         if (editingContact) {
@@ -190,6 +220,97 @@ function ContactsView() {
         setShowExportModal(false);
     };
 
+    const handleAssignToProject = (contact) => {
+        if (state.projects.length === 0) {
+            addToast('No projects available to assign', 'warning');
+            return;
+        }
+        setAssignContact(contact);
+        const assignedIds = (contact.project_contacts || []).map(pc => String(pc.project_id));
+        const unassignedProject = state.projects.find(project => !assignedIds.includes(String(project.id)));
+        const defaultProject = unassignedProject || state.projects[0];
+        setSelectedAssignProject(defaultProject ? String(defaultProject.id) : '');
+        setShowAssignModal(true);
+    };
+
+    const closeAssignModal = () => {
+        setShowAssignModal(false);
+        setAssignContact(null);
+        setSelectedAssignProject('');
+        setIsAssigningContact(false);
+    };
+
+    const handleConfirmAssign = async () => {
+        if (!assignContact || !selectedAssignProject) {
+            return;
+        }
+
+        if (assignContact.project_contacts?.some(pc => String(pc.project_id) === selectedAssignProject)) {
+            addToast('Contact is already assigned to that project', 'info');
+            return;
+        }
+
+        setIsAssigningContact(true);
+        try {
+            // project_id is a UUID, not an integer, so use it directly as a string
+            const { error } = await supabaseClient
+                .from('project_contacts')
+                .insert({
+                    project_id: selectedAssignProject,
+                    contact_id: assignContact.id
+                });
+
+            if (error) {
+                addToast('Error assigning contact: ' + error.message, 'error');
+            } else {
+                dispatch({ 
+                    type: 'ADD_PROJECT_CONTACT', 
+                    payload: { project_id: selectedAssignProject, contact_id: assignContact.id } 
+                });
+                addToast(`${assignContact.name} assigned to project`, 'success');
+                closeAssignModal();
+            }
+        } catch (error) {
+            addToast('Error assigning contact: ' + error.message, 'error');
+        } finally {
+            setIsAssigningContact(false);
+        }
+    };
+
+    const handleDeactivateContact = async (contact) => {
+        try {
+            const { data, error } = await supabaseClient
+                .from('contacts')
+                .update({ status: 'Inactive' })
+                .eq('id', contact.id)
+                .select()
+                .single();
+
+            if (error) {
+                addToast('Error deactivating contact: ' + error.message, 'error');
+            } else if (data) {
+                dispatch({ type: 'UPDATE_CONTACT', payload: data });
+                addToast(`${contact.name} deactivated`, 'success');
+            }
+        } catch (error) {
+            addToast('Error deactivating contact: ' + error.message, 'error');
+        }
+    };
+
+    const handleMessageContact = (contact) => {
+        if (!contact) return;
+        const firstProjectId = contact.project_contacts?.[0]?.project_id;
+        if (firstProjectId) {
+            const channel = state.messageChannels.find(ch => String(ch.project_id) === String(firstProjectId));
+            if (channel) {
+                dispatch({ type: 'SET_CHANNEL', payload: channel.id });
+                return;
+            }
+        }
+        dispatch({ type: 'SET_VIEW', payload: 'Messages' });
+        addToast('Switching to Messages. Select a channel to start chatting.', 'info');
+    };
+
     return (
         <>
             <header className="flex items-center justify-between mb-6">
@@ -221,7 +342,7 @@ function ContactsView() {
             </header>
 
             {/* Search and Filter */}
-            <div className="mb-6 flex flex-col sm:flex-row gap-4">
+            <div className="mb-4 flex flex-col sm:flex-row gap-4">
                 <div className="flex-1">
                     <input
                         type="text"
@@ -241,6 +362,46 @@ function ContactsView() {
                         <option value="Available">Available</option>
                         <option value="Busy">Busy</option>
                         <option value="Offline">Offline</option>
+                    </select>
+                </div>
+            </div>
+
+            <div className="mb-6 grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                    <label className="text-xs font-semibold text-gray-500 uppercase mb-1 block">Role</label>
+                    <select
+                        value={roleFilter}
+                        onChange={e => setRoleFilter(e.target.value)}
+                        className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    >
+                        {roleOptions.map(role => (
+                            <option key={role} value={role}>{role}</option>
+                        ))}
+                    </select>
+                </div>
+                <div>
+                    <label className="text-xs font-semibold text-gray-500 uppercase mb-1 block">Project</label>
+                    <select
+                        value={projectFilter}
+                        onChange={e => setProjectFilter(e.target.value)}
+                        className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    >
+                        <option value="All Projects">All Projects</option>
+                        {state.projects.map(project => (
+                            <option key={project.id} value={String(project.id)}>{project.name}</option>
+                        ))}
+                    </select>
+                </div>
+                <div>
+                    <label className="text-xs font-semibold text-gray-500 uppercase mb-1 block">Availability</label>
+                    <select
+                        value={availabilityFilter}
+                        onChange={e => setAvailabilityFilter(e.target.value)}
+                        className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    >
+                        {availabilityOptions.map(option => (
+                            <option key={option.value} value={option.value}>{option.label}</option>
+                        ))}
                     </select>
                 </div>
             </div>
@@ -273,6 +434,9 @@ function ContactsView() {
                                 onEdit={handleEditContact}
                                 onDelete={handleDeleteContact}
                                 showActions={true}
+                                onAssignToProject={handleAssignToProject}
+                                onDeactivate={handleDeactivateContact}
+                                onMessage={handleMessageContact}
                             />
                         ))}
                     </ul>
@@ -298,6 +462,9 @@ function ContactsView() {
                                 onEdit={handleEditContact}
                                 onDelete={handleDeleteContact}
                                 showActions={true}
+                                onAssignToProject={handleAssignToProject}
+                                onDeactivate={handleDeactivateContact}
+                                onMessage={handleMessageContact}
                             />
                         ))}
                     </ul>
@@ -393,6 +560,93 @@ function ContactsView() {
                     </div>
                 </div>
             )}
+
+            {/* Assign to Project Modal */}
+            {showAssignModal && assignContact && (() => {
+                // Get projects the contact is already assigned to
+                const assignedProjectIds = (assignContact.project_contacts || []).map(pc => String(pc.project_id));
+                const assignedProjects = state.projects.filter(p => assignedProjectIds.includes(String(p.id)));
+                const unassignedProjects = state.projects.filter(p => !assignedProjectIds.includes(String(p.id)));
+                
+                return (
+                    <div className="fixed inset-0 backdrop-blur-[2px] bg-white/20 flex items-center justify-center z-50 p-4">
+                        <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-6 max-h-[90vh] overflow-y-auto">
+                            <h2 className="text-2xl font-bold mb-2">Assign to Project</h2>
+                            <p className="text-gray-600 text-sm mb-4">
+                                Manage project assignments for <span className="font-semibold">{assignContact.name}</span>.
+                            </p>
+                            
+                            {/* Show currently assigned projects */}
+                            {assignedProjects.length > 0 && (
+                                <div className="mb-6">
+                                    <label className="block text-sm font-semibold text-gray-700 mb-2">
+                                        Currently Assigned ({assignedProjects.length})
+                                    </label>
+                                    <div className="space-y-2">
+                                        {assignedProjects.map(project => (
+                                            <div
+                                                key={project.id}
+                                                className="flex items-center justify-between px-3 py-2 bg-blue-50 border border-blue-200 rounded-lg"
+                                            >
+                                                <span className="text-sm font-medium text-blue-900">{project.name}</span>
+                                                <span className="text-xs text-blue-600 font-semibold">Assigned</span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+                            
+                            {/* Select new project to assign */}
+                            <div className="mb-6">
+                                <label className="block text-sm font-semibold text-gray-700 mb-1">
+                                    {assignedProjects.length > 0 ? 'Assign to Another Project' : 'Select Project'}
+                                </label>
+                                <select
+                                    value={selectedAssignProject}
+                                    onChange={e => setSelectedAssignProject(e.target.value)}
+                                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
+                                    disabled={state.projects.length === 0 || unassignedProjects.length === 0}
+                                >
+                                    <option value="" disabled>
+                                        {unassignedProjects.length === 0 
+                                            ? 'All projects assigned' 
+                                            : 'Select a project'}
+                                    </option>
+                                    {unassignedProjects.map(project => (
+                                        <option key={project.id} value={String(project.id)}>
+                                            {project.name}
+                                        </option>
+                                    ))}
+                                </select>
+                                {unassignedProjects.length === 0 && assignedProjects.length > 0 && (
+                                    <p className="text-sm text-gray-500 mt-2">
+                                        This contact is already assigned to all available projects.
+                                    </p>
+                                )}
+                                {assignContact && state.projects.length === 0 && (
+                                    <p className="text-sm text-amber-600 mt-2">Create a project to use this action.</p>
+                                )}
+                            </div>
+                            
+                            <div className="flex justify-end gap-3">
+                                <button
+                                    onClick={closeAssignModal}
+                                    className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200"
+                                >
+                                    Close
+                                </button>
+                                <button
+                                    onClick={handleConfirmAssign}
+                                    disabled={isAssigningContact || !selectedAssignProject || unassignedProjects.length === 0}
+                                    className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:bg-gray-400"
+                                >
+                                    {isAssigningContact ? 'Assigning...' : 'Assign'}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                );
+            })()}
         </>
     );
 }

@@ -38,8 +38,9 @@ function EventModal({ onClose, onSave, onDelete, event = null, date, isLoading =
     
     // Parse initial times
     const getInitialDateTime = (timeString, defaultDate) => {
-        if (!timeString && !defaultDate) return { date: '', time: '09:00' };
-        const dt = timeString ? new Date(timeString) : defaultDate;
+        // Always provide a fallback date if none is provided
+        const fallbackDate = defaultDate || new Date();
+        const dt = timeString ? new Date(timeString) : fallbackDate;
         const dateStr = dt.toISOString().substring(0, 10);
         const timeStr = dt.toTimeString().substring(0, 5);
         return { date: dateStr, time: timeStr };
@@ -48,17 +49,17 @@ function EventModal({ onClose, onSave, onDelete, event = null, date, isLoading =
     const initialStart = getInitialDateTime(event?.start_time, date);
     const initialEnd = getInitialDateTime(
         event?.end_time, 
-        date ? new Date(date.getTime() + 60*60*1000) : null
+        date ? new Date(date.getTime() + 60*60*1000) : (event?.start_time ? new Date(new Date(event.start_time).getTime() + 60*60*1000) : new Date())
     );
     
     const [title, setTitle] = useState(event?.title || '');
     const [description, setDescription] = useState(event?.description || '');
     const [projectId, setProjectId] = useState(event?.project_id || '');
     const [category, setCategory] = useState(event?.category || 'meeting');
-    const [startDate, setStartDate] = useState(initialStart.date);
-    const [startTime, setStartTime] = useState(initialStart.time);
-    const [endDate, setEndDate] = useState(initialEnd.date);
-    const [endTime, setEndTime] = useState(initialEnd.time);
+    const [startDate, setStartDate] = useState(initialStart.date || new Date().toISOString().substring(0, 10));
+    const [startTime, setStartTime] = useState(initialStart.time || '09:00');
+    const [endDate, setEndDate] = useState(initialEnd.date || new Date().toISOString().substring(0, 10));
+    const [endTime, setEndTime] = useState(initialEnd.time || '10:00');
     const [isAllDay, setIsAllDay] = useState(event?.is_all_day || false);
     const [location, setLocation] = useState(event?.location || '');
     const [attendeeEmails, setAttendeeEmails] = useState(() => {
@@ -228,13 +229,39 @@ function EventModal({ onClose, onSave, onDelete, event = null, date, isLoading =
             recurrenceJson = JSON.stringify(recurrence);
         }
         
-        // Combine date and time for start/end
-        const startDateTime = isAllDay 
-            ? `${startDate}T00:00:00` 
-            : `${startDate}T${startTime}:00`;
-        const endDateTime = isAllDay 
-            ? `${endDate}T23:59:59` 
-            : `${endDate}T${endTime}:00`;
+        // Ensure dates are set (fallback to today if empty)
+        const finalStartDate = startDate || new Date().toISOString().substring(0, 10);
+        const finalEndDate = endDate || finalStartDate;
+        const finalStartTime = startTime || '09:00';
+        const finalEndTime = endTime || '10:00';
+        
+        // Combine date and time for start/end, ensuring proper ISO format
+        let startDateTime, endDateTime;
+        try {
+            let startDateObj, endDateObj;
+            if (isAllDay) {
+                // For all-day events, use start of day and end of day
+                startDateObj = new Date(`${finalStartDate}T00:00:00`);
+                endDateObj = new Date(`${finalEndDate}T23:59:59`);
+            } else {
+                // For timed events, combine date and time
+                startDateObj = new Date(`${finalStartDate}T${finalStartTime}:00`);
+                endDateObj = new Date(`${finalEndDate}T${finalEndTime}:00`);
+            }
+            
+            // Validate the dates are valid
+            if (isNaN(startDateObj.getTime()) || isNaN(endDateObj.getTime())) {
+                alert('Invalid date/time format. Please check your dates and times.');
+                return;
+            }
+            
+            // Convert to ISO string format
+            startDateTime = startDateObj.toISOString();
+            endDateTime = endDateObj.toISOString();
+        } catch (e) {
+            alert('Invalid date/time format. Please check your dates and times.');
+            return;
+        }
         
         const eventData = {
             title,
@@ -249,7 +276,6 @@ function EventModal({ onClose, onSave, onDelete, event = null, date, isLoading =
             recurrence: recurrenceJson,
             user_id: state.user?.id,
             // Include sync preferences
-            sync_enabled: syncToGoogle || syncToOutlook,
             sync_to_google: syncToGoogle,
             sync_to_outlook: syncToOutlook
         };

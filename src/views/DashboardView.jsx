@@ -31,8 +31,8 @@ function DashboardView() {
     const handleSaveProject = async (projectData) => {
         if (editingProject) {
             setIsUpdatingProject(true);
-            // Remove selectedContacts from projectData as it's not a column in the projects table
-            const { selectedContacts, ...projectFields } = projectData;
+            // Remove selectedContacts and emailAddresses from projectData as they're not columns in the projects table
+            const { selectedContacts, emailAddresses, ...projectFields } = projectData;
             const projectDataWithAudit = {
                 ...projectFields,
                 updated_by_user_id: state.user.id,
@@ -130,7 +130,8 @@ function DashboardView() {
             setIsUpdatingProject(false);
         } else {
             setIsCreatingProject(true);
-            const { selectedContacts, ...projectFields } = projectData;
+            // Remove selectedContacts and emailAddresses from projectData as they're not columns in the projects table
+            const { selectedContacts, emailAddresses, ...projectFields } = projectData;
             const projectDataWithAudit = {
                 ...projectFields,
                 project_manager_id: state.user.id,
@@ -212,19 +213,38 @@ function DashboardView() {
                     }
                 }
                 
-                // Add all contacts (existing + newly created) to the project
+                // Always add the creator to project_contacts if they have a contact_id
+                // This ensures they can see the project they created
+                const { data: profile } = await supabaseClient
+                    .from('profiles')
+                    .select('contact_id')
+                    .eq('id', state.user.id)
+                    .single();
+                
+                const creatorContactId = profile?.contact_id;
+                if (creatorContactId && !contactsToAdd.includes(creatorContactId)) {
+                    contactsToAdd.push(creatorContactId);
+                    console.log('Adding creator to project_contacts:', creatorContactId);
+                } else if (!creatorContactId) {
+                    console.warn('Creator does not have a contact_id - project may not be visible after reload');
+                }
+                
+                // Add all contacts (existing + newly created + creator) to the project
                 if (contactsToAdd.length > 0) {
                     const projectContactsData = contactsToAdd.map(contactId => ({
                         project_id: createdProject.id,
                         contact_id: contactId
                     }));
-                    const { error: contactsError } = await supabaseClient
+                    console.log('Inserting project_contacts:', projectContactsData);
+                    const { data: insertedContacts, error: contactsError } = await supabaseClient
                         .from('project_contacts')
-                        .insert(projectContactsData);
+                        .insert(projectContactsData)
+                        .select();
                     if (contactsError) {
                         console.error('Error adding contacts to project:', contactsError);
-                        addToast('Project created, but some contacts could not be added', 'warning');
+                        addToast('Project created, but some contacts could not be added: ' + contactsError.message, 'warning');
                     } else {
+                        console.log('Successfully added contacts to project:', insertedContacts);
                         // Dispatch action to update local state with project contacts
                         contactsToAdd.forEach(contactId => {
                             dispatch({ 
@@ -233,6 +253,8 @@ function DashboardView() {
                             });
                         });
                     }
+                } else {
+                    console.warn('No contacts to add to project - project may not be visible after reload');
                 }
                 dispatch({ type: 'ADD_PROJECT', payload: createdProject });
                 addToast('Project created successfully!', 'success');

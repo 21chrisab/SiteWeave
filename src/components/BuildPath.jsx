@@ -26,6 +26,8 @@ function BuildPath({ project }) {
     const [editingValues, setEditingValues] = useState({});
     const [userRole, setUserRole] = useState(null);
     const [draggedPhase, setDraggedPhase] = useState(null);
+    const [dragOverPhase, setDragOverPhase] = useState(null);
+    const [dragOverPosition, setDragOverPosition] = useState(null);
     const [editingProgressPhaseId, setEditingProgressPhaseId] = useState(null);
 
     // Default phases for construction projects
@@ -214,25 +216,47 @@ function BuildPath({ project }) {
         setIsLoading(false);
     };
 
+    const resetDragState = () => {
+        setDraggedPhase(null);
+        setDragOverPhase(null);
+        setDragOverPosition(null);
+    };
+
     const handleDragStart = (e, phaseId) => {
         setDraggedPhase(phaseId);
+        setDragOverPhase(null);
+        setDragOverPosition(null);
         e.dataTransfer.effectAllowed = 'move';
         e.dataTransfer.setData('text/html', e.target);
     };
 
     const handleDragEnd = () => {
-        setDraggedPhase(null);
+        resetDragState();
     };
 
-    const handleDragOver = (e) => {
+    const handleDragOver = (e, phaseId) => {
         e.preventDefault();
         e.dataTransfer.dropEffect = 'move';
+
+        const rect = e.currentTarget.getBoundingClientRect();
+        const offset = e.clientY - rect.top;
+        const position = offset < rect.height / 2 ? 'top' : 'bottom';
+
+        if (dragOverPhase !== phaseId || dragOverPosition !== position) {
+            setDragOverPhase(phaseId);
+            setDragOverPosition(position);
+        }
+    };
+
+    const handleDragLeave = () => {
+        setDragOverPhase(null);
+        setDragOverPosition(null);
     };
 
     const handleDrop = async (e, targetPhaseId) => {
         e.preventDefault();
         if (!draggedPhase || draggedPhase === targetPhaseId) {
-            setDraggedPhase(null);
+            resetDragState();
             return;
         }
 
@@ -247,7 +271,17 @@ function BuildPath({ project }) {
         // Create new array with reordered phases
         const newPhases = [...phases];
         const [draggedPhaseData] = newPhases.splice(draggedIndex, 1);
-        newPhases.splice(targetIndex, 0, draggedPhaseData);
+
+        let insertIndex = newPhases.findIndex(p => p.id === targetPhaseId);
+        if (insertIndex === -1) {
+            resetDragState();
+            return;
+        }
+        if ((dragOverPosition || 'bottom') === 'bottom') {
+            insertIndex += 1;
+        }
+
+        newPhases.splice(insertIndex, 0, draggedPhaseData);
 
         // Update order values for all phases
         const updatedPhases = newPhases.map((phase, index) => ({
@@ -291,7 +325,7 @@ function BuildPath({ project }) {
             loadPhases();
         } finally {
             setIsLoading(false);
-            setDraggedPhase(null);
+            resetDragState();
         }
     };
 
@@ -369,14 +403,20 @@ function BuildPath({ project }) {
 
             {/* Phases List - Fixed height with scroll */}
             <div className="flex-1 overflow-y-auto space-y-2 pr-2">
-                {phases.map((phase, index) => (
-                    <div 
-                        key={phase.id} 
-                        className={`border border-gray-200 rounded-lg p-3 ${draggedPhase === phase.id ? 'opacity-50' : ''} ${draggedPhase ? 'cursor-move' : ''}`}
+                {phases.map((phase) => {
+                    const isDragTarget = dragOverPhase === phase.id;
+                    return (
+                    <div key={phase.id}>
+                        {isDragTarget && dragOverPosition === 'top' && (
+                            <div className="h-2 -mb-1 rounded border-2 border-dashed border-blue-400 bg-blue-50"></div>
+                        )}
+                        <div 
+                        className={`relative border border-gray-200 rounded-lg p-3 transition-all duration-150 ${draggedPhase === phase.id ? 'opacity-50' : ''} ${draggedPhase ? 'cursor-move' : ''} ${isDragTarget ? 'ring-2 ring-blue-400 bg-blue-50/40' : ''}`}
                         draggable={!isLoading}
                         onDragStart={(e) => handleDragStart(e, phase.id)}
                         onDragEnd={handleDragEnd}
-                        onDragOver={handleDragOver}
+                        onDragOver={(e) => handleDragOver(e, phase.id)}
+                        onDragLeave={handleDragLeave}
                         onDrop={(e) => handleDrop(e, phase.id)}
                     >
                         <div className="flex justify-between items-start mb-2">
@@ -487,7 +527,11 @@ function BuildPath({ project }) {
                             </div>
                         )}
                     </div>
-                ))}
+                        {isDragTarget && dragOverPosition === 'bottom' && (
+                            <div className="h-2 mt-1 rounded border-2 border-dashed border-blue-400 bg-blue-50"></div>
+                        )}
+                    </div>
+                )})}
             </div>
 
             {/* Phase Modal */}
@@ -524,7 +568,7 @@ function PhaseModal({ phase, onClose, onSave, isLoading }) {
     };
 
     return (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div className="fixed inset-0 backdrop-blur-[2px] bg-white/20 flex items-center justify-center z-50 p-4">
             <div className="bg-white rounded-lg p-6 w-96 max-w-full mx-4 max-h-[90vh] overflow-y-auto">
                 <h3 className="text-lg font-bold mb-4">
                     {phase ? 'Edit Phase' : 'Add New Phase'}

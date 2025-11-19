@@ -1,11 +1,13 @@
 import React, { useState, useMemo } from 'react';
 import { supabaseClient, useAppContext } from '../context/AppContext';
+import { useToast } from '../context/ToastContext';
 
 const DEFAULT_ROLE = 'Team';
 const ROLE_OPTIONS = ['PM', 'Team', 'Subcontractor', 'Client'];
 
 function ShareModal({ projectId, onClose }) {
-  const { state } = useAppContext();
+  const { state, dispatch } = useAppContext();
+  const { addToast } = useToast();
   const [input, setInput] = useState('');
   const [entries, setEntries] = useState([]); // [{ email, role }]
   const [submitting, setSubmitting] = useState(false);
@@ -13,6 +15,7 @@ function ShareModal({ projectId, onClose }) {
   const [results, setResults] = useState(null);
   const [showContactPicker, setShowContactPicker] = useState(true);
   const [warning, setWarning] = useState(null);
+  const [removingMemberId, setRemovingMemberId] = useState(null);
 
   const projectMembers = useMemo(() => {
     return state.contacts.filter(contact => {
@@ -52,6 +55,38 @@ function ShareModal({ projectId, onClose }) {
     if (!contact.email) return;
     const newEntry = { email: contact.email.toLowerCase(), role: DEFAULT_ROLE };
     setEntries(prev => [...prev, newEntry]);
+  };
+
+  const handleRemoveMember = async (member) => {
+    if (!projectId || !member?.id || removingMemberId) return;
+    
+    const confirmed = window.confirm(`Remove ${member.name || member.email} from this project?`);
+    if (!confirmed) return;
+
+    setRemovingMemberId(member.id);
+    try {
+      const { error } = await supabaseClient
+        .from('project_contacts')
+        .delete()
+        .eq('project_id', projectId)
+        .eq('contact_id', member.id);
+
+      if (error) {
+        throw error;
+      }
+
+      dispatch({
+        type: 'REMOVE_PROJECT_CONTACT',
+        payload: { project_id: projectId, contact_id: member.id }
+      });
+
+      addToast(`${member.name || member.email} removed from project`, 'success');
+    } catch (err) {
+      console.error('Error removing member:', err);
+      addToast(err?.message || 'Failed to remove member', 'error');
+    } finally {
+      setRemovingMemberId(null);
+    }
   };
 
   const addEmails = () => {
@@ -160,6 +195,14 @@ function ShareModal({ projectId, onClose }) {
                     <span className="text-xs font-medium text-gray-600 bg-white border border-gray-200 rounded-full px-2 py-0.5">
                       {member.project_contacts?.find(pc => String(pc.project_id) === String(projectId))?.role || member.type || 'Member'}
                     </span>
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveMember(member)}
+                      disabled={removingMemberId === member.id}
+                      className="ml-auto text-xs font-semibold text-red-600 hover:text-red-700 disabled:text-gray-400"
+                    >
+                      {removingMemberId === member.id ? 'Removing…' : 'Remove'}
+                    </button>
                   </div>
                 ))}
               </div>
