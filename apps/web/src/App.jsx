@@ -8,7 +8,8 @@ import {
   fetchUnreadCounts,
   getTypingUsers,
   createDebouncedTypingStatus,
-  setTypingStatus
+  setTypingStatus,
+  completeTask
 } from '@siteweave/core-logic'
 
 function UseSession() {
@@ -971,6 +972,17 @@ function ProjectDetails() {
     return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
   }
 
+  const handleCompleteTask = async (taskId) => {
+    try {
+      await completeTask(supabase, taskId)
+      // Remove the task from the list since we only show incomplete tasks
+      setTasks(prev => prev.filter(t => t.id !== taskId))
+    } catch (error) {
+      console.error('Error completing task:', error)
+      alert('Error completing task: ' + error.message)
+    }
+  }
+
   const getStatusColor = (status) => {
     switch (status?.toLowerCase()) {
       case 'planning':
@@ -1058,12 +1070,24 @@ function ProjectDetails() {
             <div className="space-y-3">
               {tasks.map(t => (
                 <div key={t.id} className="rounded-xl border border-gray-200 bg-white p-5 hover:border-blue-500 transition-all hover:shadow-md">
-                  <div className="flex items-start justify-between">
-                    <div className="flex-1">
-                      <h4 className="font-bold text-lg text-gray-800 mb-1">{t.text || 'Untitled Task'}</h4>
-                      {t.description && (
-                        <p className="text-sm text-gray-600 mt-2">{t.description}</p>
-                      )}
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="flex items-start gap-3 flex-1">
+                      <button
+                        onClick={() => handleCompleteTask(t.id)}
+                        className="mt-1 flex-shrink-0 w-5 h-5 border-2 border-gray-300 rounded hover:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-all cursor-pointer flex items-center justify-center bg-white hover:bg-blue-50 group"
+                        title="Mark as complete"
+                        aria-label="Complete task"
+                      >
+                        <svg className="w-3.5 h-3.5 text-blue-600 opacity-0 group-hover:opacity-100 transition-opacity" fill="currentColor" viewBox="0 0 20 20">
+                          <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                        </svg>
+                      </button>
+                      <div className="flex-1">
+                        <h4 className="font-bold text-lg text-gray-800 mb-1">{t.text || 'Untitled Task'}</h4>
+                        {t.description && (
+                          <p className="text-sm text-gray-600 mt-2">{t.description}</p>
+                        )}
+                      </div>
                     </div>
                     {t.due_date && (
                       <div className="ml-4 text-right flex-shrink-0">
