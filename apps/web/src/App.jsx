@@ -2,6 +2,14 @@ import React from 'react'
 import { Link, Route, Routes, useNavigate, useParams, useLocation } from 'react-router-dom'
 import { supabase } from './supabaseClient'
 import LoadingSpinner from './components/LoadingSpinner'
+import {
+  fetchChannelMessages,
+  sendMessage,
+  fetchUnreadCounts,
+  getTypingUsers,
+  createDebouncedTypingStatus,
+  setTypingStatus
+} from '@siteweave/core-logic'
 
 function UseSession() {
   const [session, setSession] = React.useState(null)
@@ -283,7 +291,158 @@ function Home() {
   React.useEffect(() => {
     let cancelled = false
     ;(async () => {
+      if (!session?.user) {
+        if (!cancelled) {
+          setProjects([])
+          setTasks([])
+          setLoading(false)
+        }
+        return
+      }
+
       try {
+        // CRITICAL: Ensure user's profile is linked to a contact before fetching projects
+        // This allows users added via invite_or_add_member to see their projects
+        const { data: profile, error: profileError } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', session.user.id)
+          .maybeSingle()
+        
+        if (profileError) {
+          console.error('Profile error:', profileError)
+        }
+
+        // If profile exists but no contact_id, find or create contact and link it
+        if (profile && !profile.contact_id && session.user.email) {
+          console.log('Profile exists but no contact_id. Looking for existing contact with email:', session.user.email)
+          
+          // First, try to find existing contact by email (from invite_or_add_member)
+          const { data: existingContact } = await supabase
+            .from('contacts')
+            .select('id')
+            .ilike('email', session.user.email)
+            .maybeSingle()
+          
+          if (existingContact) {
+            console.log('Found existing contact, linking to profile:', existingContact.id)
+            const { error: linkError } = await supabase
+              .from('profiles')
+              .update({ contact_id: existingContact.id })
+              .eq('id', session.user.id)
+            
+            if (linkError) {
+              console.error('Error linking contact to profile:', linkError)
+            } else {
+              console.log('Successfully linked contact to profile. Refreshing profile...')
+              // Refresh profile to ensure RLS sees the updated contact_id
+              const { data: refreshedProfile } = await supabase
+                .from('profiles')
+                .select('*')
+                .eq('id', session.user.id)
+                .single()
+              if (refreshedProfile) {
+                console.log('Profile refreshed with contact_id:', refreshedProfile.contact_id)
+              }
+            }
+          } else {
+            // No existing contact found - create one for the user
+            console.log('No existing contact found. Creating new contact for user:', session.user.email)
+            const { data: newContact, error: createContactError } = await supabase
+              .from('contacts')
+              .insert({
+                name: session.user.user_metadata?.full_name || session.user.email.split('@')[0] || 'User',
+                email: session.user.email,
+                type: profile.role === 'Client' ? 'Client' : 'Team',
+                role: profile.role === 'PM' ? 'PM' : profile.role === 'Admin' ? 'Admin' : 'Team Member',
+                status: 'Available',
+                created_by_user_id: session.user.id
+              })
+              .select('id')
+              .single()
+            
+            if (createContactError) {
+              console.error('Error creating contact:', createContactError)
+            } else if (newContact) {
+              console.log('Created new contact:', newContact.id)
+              // Link the new contact to the profile
+              const { error: linkError } = await supabase
+                .from('profiles')
+                .update({ contact_id: newContact.id })
+                .eq('id', session.user.id)
+              
+              if (linkError) {
+                console.error('Error linking new contact to profile:', linkError)
+              } else {
+                console.log('Successfully created and linked contact to profile. Refreshing profile...')
+                // Refresh profile to ensure RLS sees the updated contact_id
+                const { data: refreshedProfile } = await supabase
+                  .from('profiles')
+                  .select('*')
+                  .eq('id', session.user.id)
+                  .single()
+                if (refreshedProfile) {
+                  console.log('Profile refreshed with contact_id:', refreshedProfile.contact_id)
+                }
+              }
+            }
+          }
+        } else if (!profile && !profileError && session.user.email) {
+          // No profile exists, create one and ensure contact exists
+          console.log('Creating profile for user:', session.user.id)
+          
+          // First, check if contact exists by email
+          let contactIdToLink = null
+          const { data: existingContact } = await supabase
+            .from('contacts')
+            .select('id')
+            .ilike('email', session.user.email)
+            .maybeSingle()
+          
+          if (existingContact) {
+            contactIdToLink = existingContact.id
+            console.log('Found existing contact for new profile:', contactIdToLink)
+          } else {
+            // Create contact for new user
+            const { data: newContact, error: contactError } = await supabase
+              .from('contacts')
+              .insert({
+                name: session.user.user_metadata?.full_name || session.user.email.split('@')[0] || 'User',
+                email: session.user.email,
+                type: 'Team',
+                role: 'Team Member',
+                status: 'Available',
+                created_by_user_id: session.user.id
+              })
+              .select('id')
+              .single()
+            
+            if (!contactError && newContact) {
+              contactIdToLink = newContact.id
+              console.log('Created new contact for new profile:', contactIdToLink)
+            } else {
+              console.error('Error creating contact for new profile:', contactError)
+            }
+          }
+          
+          const { error: createProfileError } = await supabase
+            .from('profiles')
+            .upsert({
+              id: session.user.id,
+              role: 'Team',
+              contact_id: contactIdToLink
+            }, {
+              onConflict: 'id'
+            })
+          
+          if (createProfileError) {
+            console.error('Error creating profile:', createProfileError)
+          } else {
+            console.log('Profile created successfully with contact_id:', contactIdToLink)
+          }
+        }
+
+        // Now fetch projects - RLS policy will see the contact_id if it was just linked
         const [projectsResult, tasksResult] = await Promise.all([
           supabase.from('projects').select('*').order('updated_at', { ascending: false }),
           session ? supabase.from('tasks').select('*').eq('completed', false).order('due_date', { ascending: true }) : Promise.resolve({ data: [], error: null })
@@ -477,11 +636,6 @@ function Messages() {
   const [typingUsers, setTypingUsers] = React.useState([])
   const [unreadCounts, setUnreadCounts] = React.useState({})
   const messagesEndRef = React.useRef(null)
-  
-  // Import enhanced services
-  const { fetchChannelMessages, sendMessage, fetchUnreadCounts, getTypingUsers, createDebouncedTypingStatus, setTypingStatus } = React.useMemo(() => {
-    return require('@siteweave/core-logic')
-  }, [])
 
   React.useEffect(() => {
     let cancelled = false
@@ -509,7 +663,7 @@ function Messages() {
   }, [])
 
   React.useEffect(() => {
-    if (!selectedChannelId || !session?.user?.id) return
+    if (!selectedChannelId || !session?.user?.id || !fetchChannelMessages) return
     
     let cancelled = false
     ;(async () => {
@@ -521,21 +675,21 @@ function Messages() {
       }
     })()
     return () => { cancelled = true }
-  }, [selectedChannelId, session?.user?.id])
+  }, [selectedChannelId, session?.user?.id, fetchChannelMessages])
 
   // Load unread counts
   React.useEffect(() => {
-    if (channels.length > 0 && session?.user?.id) {
+    if (channels.length > 0 && session?.user?.id && fetchUnreadCounts) {
       const channelIds = channels.map(ch => ch.id)
       fetchUnreadCounts(supabase, session.user.id, channelIds)
         .then(counts => setUnreadCounts(counts))
         .catch(err => console.error('Error fetching unread counts:', err))
     }
-  }, [channels, session?.user?.id])
+  }, [channels, session?.user?.id, fetchUnreadCounts])
 
   // Typing indicators
   React.useEffect(() => {
-    if (!selectedChannelId || !session?.user?.id) return
+    if (!selectedChannelId || !session?.user?.id || !getTypingUsers) return
     
     const interval = setInterval(async () => {
       try {
@@ -547,7 +701,7 @@ function Messages() {
     }, 1000)
 
     return () => clearInterval(interval)
-  }, [selectedChannelId, session?.user?.id])
+  }, [selectedChannelId, session?.user?.id, getTypingUsers])
 
   React.useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -576,7 +730,7 @@ function Messages() {
 
   const handleSendMessage = async (e) => {
     e.preventDefault()
-    if (!newMessage.trim() || !selectedChannelId || !session) return
+    if (!newMessage.trim() || !selectedChannelId || !session || !sendMessage) return
 
     setSending(true)
     try {
