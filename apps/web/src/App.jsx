@@ -934,7 +934,12 @@ function ProjectDetails() {
           supabase.from('projects').select('*').eq('id', id).maybeSingle(),
           supabase.from('files').select('*').eq('project_id', id).order('modified_at', { ascending: false }),
           supabase.from('project_phases').select('*').eq('project_id', id).order('order', { ascending: true }),
-          supabase.from('tasks').select('*').eq('project_id', id).eq('completed', false).order('due_date', { ascending: true })
+          supabase
+            .from('tasks')
+            .select('*')
+            .eq('project_id', id)
+            .order('completed', { ascending: true })
+            .order('due_date', { ascending: true })
         ])
         
         if (projectResult.error) throw projectResult.error
@@ -972,6 +977,16 @@ function ProjectDetails() {
     return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
   }
 
+  const pendingTasks = React.useMemo(
+    () => tasks.filter(t => !t.completed),
+    [tasks]
+  )
+
+  const completedTasks = React.useMemo(
+    () => tasks.filter(t => t.completed),
+    [tasks]
+  )
+
   const handleCompleteTask = async (taskId) => {
     try {
       // Update task directly without using completeTask to avoid .single() issue
@@ -982,8 +997,9 @@ function ProjectDetails() {
       
       if (error) throw error
       
-      // Remove the task from the list since we only show incomplete tasks
-      setTasks(prev => prev.filter(t => t.id !== taskId))
+      setTasks(prev => prev.map(t => (
+        t.id === taskId ? { ...t, completed: true } : t
+      )))
     } catch (error) {
       console.error('Error completing task:', error)
       alert('Error completing task: ' + error.message)
@@ -1065,7 +1081,7 @@ function ProjectDetails() {
             <h3 className="text-2xl font-bold text-gray-800">Action Items</h3>
             <p className="text-sm text-gray-600 mt-1">Tasks and items that need attention</p>
           </div>
-          {tasks.length === 0 ? (
+          {pendingTasks.length === 0 ? (
             <div className="rounded-xl border border-gray-200 bg-white p-12 text-center">
               <svg className="w-16 h-16 text-gray-400 mx-auto mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
@@ -1075,7 +1091,7 @@ function ProjectDetails() {
             </div>
           ) : (
             <div className="space-y-3">
-              {tasks.map(t => (
+              {pendingTasks.map(t => (
                 <div key={t.id} className="rounded-xl border border-gray-200 bg-white p-5 hover:border-blue-500 transition-all hover:shadow-md">
                   <div className="flex items-start justify-between gap-4">
                     <div className="flex items-start gap-3 flex-1">
@@ -1107,6 +1123,59 @@ function ProjectDetails() {
               ))}
             </div>
           )}
+
+          {/* Completed tasks */}
+          <div className="mt-10">
+            <div className="flex items-center justify-between mb-3">
+              <div>
+                <h3 className="text-lg font-semibold text-gray-800">Completed Tasks</h3>
+                <p className="text-sm text-gray-500">Recently finished items</p>
+              </div>
+              <span className="text-sm text-gray-500">
+                {completedTasks.length} completed
+              </span>
+            </div>
+
+            {completedTasks.length === 0 ? (
+              <div className="rounded-xl border border-dashed border-gray-200 bg-gray-50 p-6 text-center text-sm text-gray-500">
+                No completed tasks yet.
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {completedTasks.map(task => (
+                  <div
+                    key={task.id}
+                    className="rounded-xl border border-gray-200 bg-gray-50 p-4 opacity-80"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex items-start gap-3">
+                        <div className="mt-1 w-4 h-4 rounded-full bg-green-100 flex items-center justify-center">
+                          <svg className="w-3 h-3 text-green-600" viewBox="0 0 20 20" fill="currentColor">
+                            <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                          </svg>
+                        </div>
+                        <div>
+                          <h4 className="font-medium text-gray-700 line-through">
+                            {task.text || 'Untitled Task'}
+                          </h4>
+                          {task.description && (
+                            <p className="text-sm text-gray-500 mt-1 line-through">
+                              {task.description}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                      {task.completed_at && (
+                        <div className="text-right text-xs text-gray-500">
+                          Completed {formatTaskDate(task.completed_at)}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Sidebar: Photos & Milestones */}
