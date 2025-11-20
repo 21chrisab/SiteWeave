@@ -974,7 +974,14 @@ function ProjectDetails() {
 
   const handleCompleteTask = async (taskId) => {
     try {
-      await completeTask(supabase, taskId)
+      // Update task directly without using completeTask to avoid .single() issue
+      const { error } = await supabase
+        .from('tasks')
+        .update({ completed: true })
+        .eq('id', taskId)
+      
+      if (error) throw error
+      
       // Remove the task from the list since we only show incomplete tasks
       setTasks(prev => prev.filter(t => t.id !== taskId))
     } catch (error) {

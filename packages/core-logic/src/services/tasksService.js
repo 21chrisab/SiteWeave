@@ -82,11 +82,13 @@ export async function updateTask(supabase, taskId, updates) {
     .from('tasks')
     .update(updates)
     .eq('id', taskId)
-    .select()
-    .single();
+    .select();
   
   if (error) throw error;
-  return data;
+  if (!data || data.length === 0) {
+    throw new Error('Task not found or update failed');
+  }
+  return data[0];
 }
 
 /**
