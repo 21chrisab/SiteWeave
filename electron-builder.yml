@@ -20,4 +20,5 @@ publish:
   provider: github
   owner: 21chrisab
   repo: SiteWeave
+electronVersion: 38.3.0
 
