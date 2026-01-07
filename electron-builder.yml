@@ -7,6 +7,12 @@ files:
   - filter:
       - dist-electron/**/*
       - dist/**/*
+      - '!**/node_modules/**'
+      - '!**/*.map'
+      - '!**/*.d.ts'
+      - '!**/win-unpacked/**'
+      - '!**/.DS_Store'
+      - '!**/Thumbs.db'
 win:
   target: nsis
   icon: build/icon.png
