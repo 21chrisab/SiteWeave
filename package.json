@@ -1,15 +1,18 @@
 {
   "name": "siteweave-web",
   "private": true,
-  "version": "0.1.0",
+  "version": "1.0.34",
+  "main": "dist-electron/main.cjs",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "build:win": "npm run build && electron-builder --win --publish never"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.0",
+    "expo-apple-authentication": "~8.0.7",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "react-router-dom": "^6.26.2"
@@ -17,10 +20,11 @@
   "devDependencies": {
     "@vitejs/plugin-react": "^4.3.1",
     "autoprefixer": "^10.4.20",
+    "electron": "^39.2.7",
     "postcss": "^8.4.47",
-    "tailwindcss": "^3.4.13",
-    "vite": "^5.4.6"
+    "tailwindcss": "^3.4.19",
+    "vite": "^5.4.6",
+    "vite-plugin-electron": "^0.29.0",
+    "vite-plugin-electron-renderer": "^0.14.6"
   }
 }
-
-
