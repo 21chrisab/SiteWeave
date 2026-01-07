@@ -76,3 +76,27 @@ export async function createCalendarEvent(supabase, eventData) {
   return data;
 }
 
+/**
+ * Fetch calendar events for a specific date
+ * @param {import('@supabase/supabase-js').SupabaseClient} supabase - Supabase client
+ * @param {Date} date - Date to fetch events for
+ * @returns {Promise<Array>} Array of calendar events for that date
+ */
+export async function fetchEventsByDate(supabase, date) {
+  const startOfDay = new Date(date);
+  startOfDay.setHours(0, 0, 0, 0);
+  
+  const endOfDay = new Date(date);
+  endOfDay.setHours(23, 59, 59, 999);
+  
+  const { data, error } = await supabase
+    .from('calendar_events')
+    .select('*')
+    .gte('start_time', startOfDay.toISOString())
+    .lte('start_time', endOfDay.toISOString())
+    .order('start_time', { ascending: true });
+  
+  if (error) throw error;
+  return data || [];
+}
+

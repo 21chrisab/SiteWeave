@@ -92,12 +92,23 @@ export async function fetchChannelMessages(supabase, channelId, userId = null) {
   
   if (!data || data.length === 0) return [];
   
+  // Filter out messages from blocked users if userId provided
+  let filteredData = data;
+  if (userId) {
+    const { getBlockedUsers } = await import('./moderationService.js');
+    const blockedUserIds = await getBlockedUsers(supabase, userId);
+    if (blockedUserIds.length > 0) {
+      const blockedSet = new Set(blockedUserIds);
+      filteredData = data.filter(msg => !blockedSet.has(msg.user_id));
+    }
+  }
+  
   // Fetch user info for all message authors
-  const userIds = [...new Set(data.map(m => m.user_id).filter(Boolean))];
+  const userIds = [...new Set(filteredData.map(m => m.user_id).filter(Boolean))];
   const userInfo = await fetchUserInfo(supabase, userIds);
   
   // Fetch reactions for all messages
-  const messageIds = data.map(m => m.id);
+  const messageIds = filteredData.map(m => m.id);
   const reactions = await fetchMessageReactions(supabase, messageIds);
   
   // Fetch read status if userId provided
@@ -118,7 +129,7 @@ export async function fetchChannelMessages(supabase, channelId, userId = null) {
   }
   
   // Attach user info, reactions and read status to messages
-  return data.map(message => ({
+  return filteredData.map(message => ({
     ...message,
     user: userInfo[message.user_id] || null,
     reactions: reactions[message.id] || [],

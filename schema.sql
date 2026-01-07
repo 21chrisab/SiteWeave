@@ -130,7 +130,8 @@ CREATE TABLE IF NOT EXISTS issue_steps (
 CREATE TABLE IF NOT EXISTS message_channels (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     project_id UUID NOT NULL,
-    name TEXT NOT NULL
+    name TEXT NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT now()
 );
 
 -- Messages Table
@@ -347,6 +348,19 @@ BEGIN
                      AND table_name = 'messages' 
                      AND column_name = 'inserted_at') THEN
         ALTER TABLE messages ADD COLUMN inserted_at TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT now();
+    END IF;
+END $$;
+
+-- Add created_at column to message_channels table (if it doesn't exist)
+DO $$ 
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
+                   WHERE table_schema = 'public'
+                     AND table_name = 'message_channels' 
+                     AND column_name = 'created_at') THEN
+        ALTER TABLE message_channels ADD COLUMN created_at TIMESTAMP WITH TIME ZONE DEFAULT now();
+        -- Update existing rows with current timestamp
+        UPDATE message_channels SET created_at = now() WHERE created_at IS NULL;
     END IF;
 END $$;
 
@@ -762,6 +776,16 @@ RETURNS TEXT AS $$
   SELECT email FROM auth.users WHERE id = auth.uid();
 $$ LANGUAGE sql SECURITY DEFINER;
 
+-- Helper function to check if current user is admin (bypasses RLS via SECURITY DEFINER)
+-- This is safe because it doesn't call get_user_role(), avoiding recursion
+CREATE OR REPLACE FUNCTION is_current_user_admin()
+RETURNS BOOLEAN AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM public.profiles 
+    WHERE id = auth.uid() AND role = 'Admin'
+  );
+$$ LANGUAGE sql SECURITY DEFINER;
+
 -- ============================================================================
 -- TRIGGERS
 -- ============================================================================
@@ -819,9 +843,6 @@ DROP POLICY IF EXISTS "Only system can create profiles" ON public.profiles;
 DROP POLICY IF EXISTS "Users can create their own profile" ON public.profiles;
 DROP POLICY IF EXISTS "Users can update their own profile, admins can update any" ON public.profiles;
 DROP POLICY IF EXISTS "Only admins can delete profiles" ON public.profiles;
-
--- Explicitly disable RLS on profiles to prevent infinite recursion
-ALTER TABLE profiles DISABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS "All authenticated users can view contacts" ON public.contacts;
 DROP POLICY IF EXISTS "Users can view their own contacts" ON public.contacts;
@@ -931,8 +952,7 @@ DROP POLICY IF EXISTS "Users can delete their sent invitations" ON public.invita
 
 -- Enable RLS on all tables
 ALTER TABLE projects ENABLE ROW LEVEL SECURITY;
--- DISABLED to prevent infinite recursion
--- ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
+ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE contacts ENABLE ROW LEVEL SECURITY;
 ALTER TABLE calendar_events ENABLE ROW LEVEL SECURITY;
 ALTER TABLE event_categories ENABLE ROW LEVEL SECURITY;
@@ -1009,29 +1029,31 @@ USING (
 -- PROFILES TABLE POLICIES
 -- ============================================================================
 
--- ALL PROFILES POLICIES DISABLED TO PREVENT INFINITE RECURSION
--- The profiles table is used by helper functions in other RLS policies,
--- so it cannot have RLS enabled without causing circular dependencies.
+-- Profiles SELECT policy: Users can see their own profile
+CREATE POLICY "Users can see their own profile"
+ON public.profiles FOR SELECT
+USING (id = auth.uid());
 
--- Profiles SELECT policy - DISABLED
--- CREATE POLICY "All authenticated users can see profiles"
--- ON public.profiles FOR SELECT
--- USING (auth.uid() IS NOT NULL);
+-- Profiles INSERT policy: Only allow trigger function or users creating their own profile
+-- The trigger function uses SECURITY DEFINER so it bypasses RLS
+CREATE POLICY "Users can create their own profile"
+ON public.profiles FOR INSERT
+WITH CHECK (id = auth.uid());
 
--- Profiles INSERT policy - DISABLED
--- CREATE POLICY "Users can create their own profile"
--- ON public.profiles FOR INSERT
--- WITH CHECK (id = auth.uid());
+-- Profiles UPDATE policy: Users can update their own profile, admins can update any
+-- Note: Admin check uses is_current_user_admin() which bypasses RLS, avoiding recursion
+CREATE POLICY "Users can update their own profile, admins can update any"
+ON public.profiles FOR UPDATE
+USING (
+  (id = auth.uid()) 
+  OR 
+  is_current_user_admin()
+);
 
--- Profiles UPDATE policy - DISABLED
--- CREATE POLICY "Users can update their own profile, admins can update any"
--- ON public.profiles FOR UPDATE
--- USING ((id = auth.uid()) OR (get_user_role() = 'Admin'));
-
--- Profiles DELETE policy - DISABLED
--- CREATE POLICY "Only admins can delete profiles"
--- ON public.profiles FOR DELETE
--- USING (get_user_role() = 'Admin');
+-- Profiles DELETE policy: Only admins can delete profiles
+CREATE POLICY "Only admins can delete profiles"
+ON public.profiles FOR DELETE
+USING (is_current_user_admin());
 
 -- ============================================================================
 -- CONTACTS TABLE POLICIES

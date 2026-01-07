@@ -7,29 +7,70 @@ const UpdateNotification = () => {
   const [isInstalling, setIsInstalling] = useState(false);
   const [downloadProgress, setDownloadProgress] = useState(null);
 
+  const checkForUpdates = async () => {
+    if (!window.electronAPI) {
+      console.log('Electron API not available, skipping update check');
+      return;
+    }
+    
+    try {
+      console.log('Checking for updates...');
+      const result = await window.electronAPI.checkForUpdates();
+      // Handle the new serializable response format
+      if (result) {
+        if (result.success) {
+          console.log('Update check completed successfully', result.updateInfo ? `(version: ${result.updateInfo.version})` : '(no update available)');
+        } else {
+          // Only log error if it's not a "no update available" error
+          const errorMsg = result.error || '';
+          if (!errorMsg.includes('latest.yml') && !errorMsg.includes('404') && !errorMsg.includes('No published versions')) {
+            console.error('Failed to check for updates:', errorMsg);
+          } else {
+            console.log('No update available (this is normal)');
+          }
+        }
+      }
+    } catch (error) {
+      // Only log error if it's not a "no update available" error
+      const errorMsg = error?.message || String(error);
+      if (!errorMsg.includes('latest.yml') && !errorMsg.includes('404') && !errorMsg.includes('No published versions')) {
+        console.error('Failed to check for updates:', error);
+      } else {
+        console.log('No update available (this is normal)');
+      }
+    }
+  }, []);
+
   useEffect(() => {
     if (!window.electronAPI) return;
 
     // Listen for update events
     window.electronAPI.onUpdateAvailable(() => {
+      console.log('Update available event received');
       setUpdateAvailable(true);
+      setUpdateDownloaded(false);
+      setUpdateError(null);
       setDownloadProgress(null); // Reset progress when new download starts
     });
 
     window.electronAPI.onUpdateDownloaded(() => {
+      console.log('Update downloaded event received');
       setUpdateDownloaded(true);
       setUpdateAvailable(false);
+      setUpdateError(null);
       setDownloadProgress(null); // Clear progress when download completes
     });
 
     window.electronAPI.onUpdateError((error) => {
       // Filter out 404/latest.yml errors - these are normal when release artifacts aren't ready yet
-      if (error && (error.includes('latest.yml') || error.includes('404'))) {
+      const errorMessage = error || '';
+      if (errorMessage.includes('latest.yml') || errorMessage.includes('404') || errorMessage.includes('No published versions')) {
         console.log('Update check skipped: Release artifacts not available yet');
         return;
       }
       // Only show non-404 errors in UI
-      setUpdateError(error);
+      console.error('Update error:', errorMessage);
+      setUpdateError(errorMessage);
       setUpdateAvailable(false);
       setUpdateDownloaded(false);
       setDownloadProgress(null);
@@ -42,27 +83,69 @@ const UpdateNotification = () => {
       });
     }
 
-    // Check for updates on mount
+    // Check for updates on mount (with a small delay to ensure window is ready)
+    const timeoutId = setTimeout(() => {
     checkForUpdates();
-  }, []);
+    }, 2000);
 
-  const checkForUpdates = async () => {
-    try {
-      const result = await window.electronAPI.checkForUpdates();
-      // Handle the new serializable response format
-      if (result && !result.success) {
-        // Only log error if it's not a "no update available" error
-        if (result.error && !result.error.includes('latest.yml') && !result.error.includes('404')) {
-          console.error('Failed to check for updates:', result.error);
-        }
+    // Cleanup function to remove listeners if component unmounts
+    return () => {
+      clearTimeout(timeoutId);
+    };
+  }, [checkForUpdates]);
+
+  useEffect(() => {
+    if (!window.electronAPI) return;
+
+    // Listen for update events
+    window.electronAPI.onUpdateAvailable(() => {
+      console.log('Update available event received');
+      setUpdateAvailable(true);
+      setUpdateDownloaded(false);
+      setUpdateError(null);
+      setDownloadProgress(null); // Reset progress when new download starts
+    });
+
+    window.electronAPI.onUpdateDownloaded(() => {
+      console.log('Update downloaded event received');
+      setUpdateDownloaded(true);
+      setUpdateAvailable(false);
+      setUpdateError(null);
+      setDownloadProgress(null); // Clear progress when download completes
+    });
+
+    window.electronAPI.onUpdateError((error) => {
+      // Filter out 404/latest.yml errors - these are normal when release artifacts aren't ready yet
+      const errorMessage = error || '';
+      if (errorMessage.includes('latest.yml') || errorMessage.includes('404') || errorMessage.includes('No published versions')) {
+        console.log('Update check skipped: Release artifacts not available yet');
+        return;
       }
-    } catch (error) {
-      // Only log error if it's not a "no update available" error
-      if (!error.message?.includes('latest.yml') && !error.message?.includes('404')) {
-        console.error('Failed to check for updates:', error);
-      }
+      // Only show non-404 errors in UI
+      console.error('Update error:', errorMessage);
+      setUpdateError(errorMessage);
+      setUpdateAvailable(false);
+      setUpdateDownloaded(false);
+      setDownloadProgress(null);
+    });
+
+    // Listen for download progress
+    if (window.electronAPI.onUpdateDownloadProgress) {
+      window.electronAPI.onUpdateDownloadProgress((progress) => {
+        setDownloadProgress(progress);
+      });
     }
-  };
+
+    // Check for updates on mount (with a small delay to ensure window is ready)
+    const timeoutId = setTimeout(() => {
+      checkForUpdates();
+    }, 2000);
+
+    // Cleanup function to remove listeners if component unmounts
+    return () => {
+      clearTimeout(timeoutId);
+    };
+  }, [checkForUpdates]);
 
   const installUpdate = async () => {
     setIsInstalling(true);

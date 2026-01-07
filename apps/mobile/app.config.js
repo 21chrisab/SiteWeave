@@ -9,7 +9,6 @@ module.exports = function(env) {
       orientation: "portrait",
       icon: "./assets/icon.png",
       userInterfaceStyle: "light",
-      newArchEnabled: true,
       scheme: "siteweave",
       splash: {
         image: "./assets/splash-icon.png",
@@ -18,14 +17,18 @@ module.exports = function(env) {
       },
       ios: {
         supportsTablet: true,
-        bundleIdentifier: "com.siteweave.mobile"
+        bundleIdentifier: "com.siteweave.mobile",
+        usesAppleSignIn: true,
+        infoPlist: {
+          ITSAppUsesNonExemptEncryption: false
+        }
       },
       android: {
         adaptiveIcon: {
           foregroundImage: "./assets/adaptive-icon.png",
           backgroundColor: "#ffffff"
         },
-        edgeToEdgeEnabled: true,
+        edgeToEdgeEnabled: false,
         package: "com.siteweave.mobile"
       },
       web: {
@@ -43,7 +46,7 @@ module.exports = function(env) {
           origin: false
         },
         eas: {
-          projectId: "siteweave-mobile"
+          projectId: "0e8aedb2-5084-4046-a750-5032e61afd9a"
         }
       }
     }

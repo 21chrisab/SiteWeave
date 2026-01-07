@@ -1,0 +1,60 @@
+# Exclude all node_modules (EAS will install these)
+**/node_modules/
+node_modules/
+
+# Exclude other apps
+apps/web/
+
+# Exclude build outputs
+dist/
+dist-electron/
+release/
+build/
+.expo/
+web-build/
+
+# Exclude large files
+*.exe
+*.blockmap
+*.asar
+*.dll
+*.pak
+*.log
+
+# Exclude documentation (but keep README if needed)
+*.md
+!README.md
+
+# Exclude lock files (EAS uses package.json)
+package-lock.json
+yarn.lock
+
+# Exclude other directories (but NOT packages/core-logic/src/ subdirectories)
+# Only exclude root directories, not subdirectories in packages/core-logic/
+/src/
+electron/
+/supabase/
+docs/
+scripts/
+
+# IMPORTANT: Include packages/core-logic for mobile app
+# Exclude node_modules within packages but keep ALL source code including src/ and all subdirectories
+packages/*/node_modules/
+# Explicitly ensure packages/core-logic/src/ and all its subdirectories are NOT excluded
+!packages/core-logic/src/
+!packages/core-logic/src/**
+
+# Exclude workspace root config files
+*.sql
+*.toml
+*.yml
+*.yaml
+vite.config.*
+tsconfig.json
+eslint.config.*
+tailwind.config.*
+postcss.config.*
+netlify.toml
+
+# Exclude ONLY the root package.json (keep apps/mobile/package.json and packages/core-logic/package.json)
+/package.json

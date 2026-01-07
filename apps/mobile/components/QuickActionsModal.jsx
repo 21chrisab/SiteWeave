@@ -1,89 +1,119 @@
-import { View, Text, StyleSheet, Modal, TouchableOpacity, TextInput } from 'react-native';
-import { useState } from 'react';
-import * as ImagePicker from 'expo-image-picker';
+import { View, Text, StyleSheet, Modal, TouchableOpacity, TextInput, Animated, Dimensions, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
+import { useState, useRef, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { uploadFile, createFieldIssue } from '@siteweave/core-logic';
+import { createFieldIssue, fetchUserProjectsWithProgress } from '@siteweave/core-logic';
+import { Ionicons } from '@expo/vector-icons';
+import PressableWithFade from './PressableWithFade';
+import { useHaptics } from '../hooks/useHaptics';
+
+const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 export default function QuickActionsModal({ visible, onClose }) {
   const { user, supabase } = useAuth();
-  const [activeAction, setActiveAction] = useState(null);
-  const [dailyLogText, setDailyLogText] = useState('');
+  const haptics = useHaptics();
   const [issueData, setIssueData] = useState({
     title: '',
     description: '',
     project_id: null,
   });
+  const [projects, setProjects] = useState([]);
+  const [showProjectPicker, setShowProjectPicker] = useState(false);
+  const [loading, setLoading] = useState(false);
+  
+  const backdropOpacity = useRef(new Animated.Value(0)).current;
+  const modalTranslateY = useRef(new Animated.Value(1)).current;
 
-  const handleDailyLog = async () => {
-    // TODO: Implement daily log submission
-    // This would create a message or activity log entry
-    alert('Daily log submitted!');
-    setDailyLogText('');
-    setActiveAction(null);
+  useEffect(() => {
+    if (visible && user && supabase) {
+      haptics.light();
+      loadProjects();
+      // Reset form when modal opens
+      setIssueData({ title: '', description: '', project_id: null });
+    }
+  }, [visible, user, supabase]);
+
+  const loadProjects = async () => {
+    if (!user || !supabase) return;
+    try {
+      const data = await fetchUserProjectsWithProgress(supabase, user.id);
+      setProjects(data || []);
+    } catch (error) {
+      console.error('Error loading projects:', error);
+      setProjects([]);
+    }
   };
+
+  const selectedProject = projects.find(p => p.id === issueData.project_id);
+
+  useEffect(() => {
+    if (visible) {
+      // Reset animation values immediately when visible
+      backdropOpacity.setValue(0);
+      modalTranslateY.setValue(1);
+      
+      // Use requestAnimationFrame to ensure values are set before animating
+      requestAnimationFrame(() => {
+        Animated.parallel([
+          Animated.timing(backdropOpacity, {
+            toValue: 0.7,
+            duration: 150,
+            useNativeDriver: true,
+          }),
+          Animated.timing(modalTranslateY, {
+            toValue: 0,
+            duration: 300,
+            useNativeDriver: true,
+          }),
+        ]).start();
+      });
+    } else {
+      Animated.parallel([
+        Animated.timing(backdropOpacity, {
+          toValue: 0,
+          duration: 250,
+          useNativeDriver: true,
+        }),
+        Animated.timing(modalTranslateY, {
+          toValue: 1,
+          duration: 250,
+          useNativeDriver: true,
+        }),
+      ]).start();
+    }
+  }, [visible]);
 
   const handleReportIssue = async () => {
     if (!issueData.title || !issueData.description) {
+      haptics.error();
       alert('Please fill in all fields');
       return;
     }
 
+    if (!issueData.project_id) {
+      haptics.error();
+      alert('Please select a project');
+      return;
+    }
+
     try {
-      // For now, we'll need a project_id - in a full implementation,
-      // you'd select from user's projects
+      haptics.medium();
+      setLoading(true);
       await createFieldIssue(supabase, {
         ...issueData,
         created_by_user_id: user.id,
         status: 'open',
         priority: 'Medium',
       });
+      haptics.success();
       alert('Issue reported successfully!');
       setIssueData({ title: '', description: '', project_id: null });
-      setActiveAction(null);
+      onClose();
     } catch (error) {
       console.error('Error reporting issue:', error);
+      haptics.error();
       alert('Error reporting issue');
-    }
-  };
-
-  const handleUploadPhoto = async () => {
-    try {
-      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (status !== 'granted') {
-        alert('Permission to access camera roll is required!');
-        return;
-      }
-
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        allowsEditing: true,
-        quality: 0.8,
-      });
-
-      if (!result.canceled && result.assets[0]) {
-        const asset = result.assets[0];
-        const fileName = `photos/${user.id}/${Date.now()}_${asset.fileName || 'photo.jpg'}`;
-        
-        // For React Native, we need to convert the local URI to a format Supabase can handle
-        // Create a FormData-like object or use the file directly
-        // Note: Supabase Storage in React Native may need special handling
-        try {
-          // Read the file as a blob
-          const response = await fetch(asset.uri);
-          const blob = await response.blob();
-          
-          await uploadFile(supabase, 'files', fileName, blob);
-          alert('Photo uploaded successfully!');
-          setActiveAction(null);
-        } catch (uploadError) {
-          console.error('Upload error:', uploadError);
-          // Fallback: Try using the URI directly if blob doesn't work
-          alert('Photo upload failed. Please try again.');
-        }
-      }
-    } catch (error) {
-      console.error('Error uploading photo:', error);
-      alert('Error uploading photo');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -91,118 +121,168 @@ export default function QuickActionsModal({ visible, onClose }) {
 
   return (
     <Modal
-      visible={visible}
-      transparent
-      animationType="slide"
+      visible={!!visible}
+      transparent={true}
+      animationType="none"
       onRequestClose={onClose}
     >
-      <View style={styles.overlay}>
-        <View style={styles.modal}>
-          {!activeAction ? (
-            <>
-              <Text style={styles.modalTitle}>Quick Actions</Text>
-              <TouchableOpacity
-                style={styles.actionButton}
-                onPress={() => setActiveAction('daily-log')}
-              >
-                <Text style={styles.actionButtonText}>📝 Submit Daily Log</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.actionButton}
-                onPress={() => setActiveAction('report-issue')}
-              >
-                <Text style={styles.actionButtonText}>⚠️ Report New Field Issue</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.actionButton}
-                onPress={handleUploadPhoto}
-              >
-                <Text style={styles.actionButtonText}>📷 Upload Photo</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.cancelButton}
-                onPress={onClose}
-              >
-                <Text style={styles.cancelButtonText}>Cancel</Text>
-              </TouchableOpacity>
-            </>
-          ) : activeAction === 'daily-log' ? (
-            <>
-              <Text style={styles.modalTitle}>Submit Daily Log</Text>
-              <TextInput
-                style={styles.textInput}
-                multiline
-                numberOfLines={6}
-                placeholder="Enter your daily log..."
-                value={dailyLogText}
-                onChangeText={setDailyLogText}
-              />
-              <View style={styles.buttonRow}>
-                <TouchableOpacity
-                  style={styles.submitButton}
-                  onPress={handleDailyLog}
-                >
-                  <Text style={styles.submitButtonText}>Submit</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={styles.backButton}
-                  onPress={() => setActiveAction(null)}
-                >
-                  <Text style={styles.backButtonText}>Back</Text>
-                </TouchableOpacity>
-              </View>
-            </>
-          ) : activeAction === 'report-issue' ? (
-            <>
+      <View style={styles.modalContainer}>
+        <Animated.View style={[styles.backdrop, { opacity: backdropOpacity }]} />
+        
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={styles.modalWrapper}
+          keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
+        >
+          <Animated.View 
+            style={[
+              styles.modal,
+              {
+                transform: [{ translateY: modalTranslateY.interpolate({
+                  inputRange: [0, 1],
+                  outputRange: [0, SCREEN_HEIGHT],
+                }) }],
+              }
+            ]}
+          >
+            <ScrollView 
+              style={styles.scrollView}
+              contentContainerStyle={styles.scrollContent}
+              showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+            >
               <Text style={styles.modalTitle}>Report Field Issue</Text>
+              
+              {/* Project Selection */}
+              <View style={styles.formGroup}>
+                <Text style={styles.label}>Project *</Text>
+                <PressableWithFade
+                  style={styles.projectPicker}
+                  onPress={() => {
+                    haptics.selection();
+                    setShowProjectPicker(!showProjectPicker);
+                  }}
+                  activeOpacity={0.7}
+                  hapticType="selection"
+                >
+                  <Text style={[styles.projectPickerText, !selectedProject && styles.placeholderText]}>
+                    {selectedProject ? selectedProject.name : 'Select a project'}
+                  </Text>
+                  <Ionicons 
+                    name={showProjectPicker ? 'chevron-up' : 'chevron-down'} 
+                    size={20} 
+                    color="#6B7280" 
+                  />
+                </PressableWithFade>
+                
+                {showProjectPicker && (
+                  <View style={styles.projectList}>
+                    {projects.length === 0 ? (
+                      <Text style={styles.emptyText}>No projects available</Text>
+                    ) : (
+                      projects.map((project) => (
+                        <PressableWithFade
+                          key={project.id}
+                          style={[
+                            styles.projectItem,
+                            issueData.project_id === project.id && styles.projectItemSelected
+                          ]}
+                          onPress={() => {
+                            haptics.selection();
+                            setIssueData({ ...issueData, project_id: project.id });
+                            setShowProjectPicker(false);
+                          }}
+                          activeOpacity={0.7}
+                          hapticType="selection"
+                        >
+                          <Text style={[
+                            styles.projectItemText,
+                            issueData.project_id === project.id && styles.projectItemTextSelected
+                          ]}>
+                            {project.name}
+                          </Text>
+                          {issueData.project_id === project.id && (
+                            <Ionicons name="checkmark" size={20} color="#3B82F6" />
+                          )}
+                        </PressableWithFade>
+                      ))
+                    )}
+                  </View>
+                )}
+              </View>
+
               <TextInput
                 style={styles.textInput}
                 placeholder="Issue Title"
                 value={issueData.title}
                 onChangeText={(text) => setIssueData({ ...issueData, title: text })}
+                editable={!loading}
               />
               <TextInput
                 style={[styles.textInput, styles.textArea]}
-                multiline
+                multiline={true}
                 numberOfLines={4}
                 placeholder="Issue Description"
                 value={issueData.description}
                 onChangeText={(text) => setIssueData({ ...issueData, description: text })}
+                editable={!loading}
               />
               <View style={styles.buttonRow}>
                 <TouchableOpacity
-                  style={styles.submitButton}
+                  style={[styles.submitButton, { marginRight: 6 }]}
                   onPress={handleReportIssue}
+                  disabled={loading}
                 >
-                  <Text style={styles.submitButtonText}>Report</Text>
+                  <Text style={styles.submitButtonText}>
+                    {loading ? 'Reporting...' : 'Report'}
+                  </Text>
                 </TouchableOpacity>
                 <TouchableOpacity
-                  style={styles.backButton}
-                  onPress={() => setActiveAction(null)}
+                  style={[styles.cancelButton, { marginLeft: 6 }]}
+                  onPress={() => {
+                    haptics.light();
+                    onClose();
+                  }}
+                  disabled={loading}
                 >
-                  <Text style={styles.backButtonText}>Back</Text>
+                  <Text style={styles.cancelButtonText}>Cancel</Text>
                 </TouchableOpacity>
               </View>
-            </>
-          ) : null}
-        </View>
+            </ScrollView>
+          </Animated.View>
+        </KeyboardAvoidingView>
       </View>
     </Modal>
   );
 }
 
 const styles = StyleSheet.create({
-  overlay: {
+  modalContainer: {
     flex: 1,
+    position: 'relative',
+  },
+  backdrop: {
+    ...StyleSheet.absoluteFillObject,
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
+  },
+  modalWrapper: {
+    flex: 1,
     justifyContent: 'flex-end',
   },
   modal: {
     backgroundColor: '#fff',
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
-    padding: 24,
     maxHeight: '80%',
+    minHeight: 200,
+    width: '100%',
+  },
+  scrollView: {
+    flexGrow: 1,
+  },
+  scrollContent: {
+    padding: 24,
+    paddingBottom: 32,
   },
   modalTitle: {
     fontSize: 24,
@@ -223,10 +303,13 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   cancelButton: {
+    flex: 1,
     backgroundColor: '#E5E7EB',
     padding: 16,
     borderRadius: 8,
-    marginTop: 8,
+    minHeight: 50,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   cancelButtonText: {
     color: '#111827',
@@ -249,12 +332,17 @@ const styles = StyleSheet.create({
   buttonRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
+    gap: 12,
+    marginTop: 8,
   },
   submitButton: {
     flex: 1,
     backgroundColor: '#3B82F6',
     padding: 16,
     borderRadius: 8,
+    minHeight: 50,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   submitButtonText: {
     color: '#fff',
@@ -273,6 +361,70 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     textAlign: 'center',
+  },
+  formGroup: {
+    marginBottom: 16,
+  },
+  label: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#111827',
+    marginBottom: 8,
+  },
+  projectPicker: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    borderRadius: 8,
+    padding: 12,
+    backgroundColor: '#fff',
+    minHeight: 44,
+  },
+  projectPickerText: {
+    fontSize: 16,
+    color: '#111827',
+    flex: 1,
+  },
+  placeholderText: {
+    color: '#9CA3AF',
+  },
+  projectList: {
+    marginTop: 8,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    borderRadius: 8,
+    backgroundColor: '#fff',
+    maxHeight: 200,
+    overflow: 'hidden',
+  },
+  projectItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F3F4F6',
+    minHeight: 44,
+  },
+  projectItemSelected: {
+    backgroundColor: '#EFF6FF',
+  },
+  projectItemText: {
+    fontSize: 16,
+    color: '#111827',
+    flex: 1,
+  },
+  projectItemTextSelected: {
+    color: '#3B82F6',
+    fontWeight: '600',
+  },
+  emptyText: {
+    padding: 12,
+    textAlign: 'center',
+    color: '#9CA3AF',
+    fontSize: 14,
   },
 });
 

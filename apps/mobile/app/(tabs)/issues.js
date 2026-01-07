@@ -2,9 +2,12 @@ import { View, Text, StyleSheet, FlatList, TouchableOpacity } from 'react-native
 import { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { fetchUserIncompleteTasks, completeTask } from '@siteweave/core-logic';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { useHaptics } from '../../hooks/useHaptics';
 
 export default function IssuesScreen() {
   const { user, supabase } = useAuth();
+  const haptics = useHaptics();
   const [issues, setIssues] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -27,26 +30,32 @@ export default function IssuesScreen() {
 
   const handleCompleteTask = async (taskId) => {
     try {
+      haptics.medium();
       await completeTask(supabase, taskId);
+      haptics.success();
       setIssues(issues.filter(issue => issue.id !== taskId));
     } catch (error) {
       console.error('Error completing task:', error);
+      haptics.error();
     }
   };
 
   if (loading) {
     return (
-      <View style={styles.container}>
-        <Text>Loading...</Text>
-      </View>
+      <SafeAreaView style={styles.safeArea} edges={['top']}>
+        <View style={styles.container}>
+          <Text>Loading...</Text>
+        </View>
+      </SafeAreaView>
     );
   }
 
   return (
-    <View style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.title}>Issues</Text>
-      </View>
+    <SafeAreaView style={styles.safeArea} edges={['top']}>
+      <View style={styles.container}>
+        <View style={styles.header}>
+          <Text style={styles.title}>Issues</Text>
+        </View>
       
       <FlatList
         data={issues}
@@ -78,12 +87,17 @@ export default function IssuesScreen() {
           </View>
         }
       />
-    </View>
+      </View>
+    </SafeAreaView>
   );
 }
 
 
 const styles = StyleSheet.create({
+  safeArea: {
+    flex: 1,
+    backgroundColor: '#F9FAFB',
+  },
   container: {
     flex: 1,
     backgroundColor: '#F9FAFB',

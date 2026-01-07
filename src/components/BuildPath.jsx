@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useAppContext, supabaseClient } from '../context/AppContext';
 import { useToast } from '../context/ToastContext';
 
@@ -29,6 +29,7 @@ function BuildPath({ project }) {
     const [dragOverPhase, setDragOverPhase] = useState(null);
     const [dragOverPosition, setDragOverPosition] = useState(null);
     const [editingProgressPhaseId, setEditingProgressPhaseId] = useState(null);
+    const handlePhaseUpdateRef = useRef(null);
 
     // Default phases for construction projects
     const defaultPhases = [
@@ -64,7 +65,7 @@ function BuildPath({ project }) {
     };
 
     const isAuthorized = () => {
-        return userRole === 'Admin' || userRole === 'PM';
+        return userRole === 'Admin';
     };
 
     const loadPhases = async () => {
@@ -113,7 +114,7 @@ function BuildPath({ project }) {
     };
 
 
-    const handlePhaseUpdate = async (phaseId, updates) => {
+    const handlePhaseUpdate = useCallback(async (phaseId, updates) => {
         setIsLoading(true);
         try {
             const { error } = await supabaseClient
@@ -133,7 +134,12 @@ function BuildPath({ project }) {
             addToast('Error updating phase: ' + error.message, 'error');
         }
         setIsLoading(false);
-    };
+    }, [addToast]);
+
+    // Keep ref updated with latest function
+    useEffect(() => {
+        handlePhaseUpdateRef.current = handlePhaseUpdate;
+    }, [handlePhaseUpdate]);
 
     // Handle input changes with local state (no immediate DB update)
     const handleInputChange = (phaseId, field, value) => {
@@ -147,7 +153,9 @@ function BuildPath({ project }) {
     const debouncedUpdate = React.useCallback(
         debounce(async (phaseId, field, value) => {
             const updates = { [field]: value };
-            await handlePhaseUpdate(phaseId, updates);
+            if (handlePhaseUpdateRef.current) {
+                await handlePhaseUpdateRef.current(phaseId, updates);
+            }
         }, 1000),
         []
     );
@@ -366,20 +374,22 @@ function BuildPath({ project }) {
         <div className="h-full flex flex-col">
             <div className="flex justify-between items-center mb-4">
                 <h3 className="font-bold text-lg">Progress Status</h3>
-                <div className="flex gap-2">
-                    <button
-                        onClick={() => setShowPhaseModal(true)}
-                        className="px-3 py-1 text-sm bg-blue-600 text-white rounded hover:bg-blue-700"
-                    >
-                        + Add Phase
-                    </button>
-                    <button
-                        onClick={() => setIsEditing(!isEditing)}
-                        className="px-3 py-1 text-sm bg-gray-600 text-white rounded hover:bg-gray-700"
-                    >
-                        {isEditing ? 'Done' : 'Edit'}
-                    </button>
-                </div>
+                {isAuthorized() && (
+                    <div className="flex gap-2">
+                        <button
+                            onClick={() => setShowPhaseModal(true)}
+                            className="px-3 py-1 text-sm bg-blue-600 text-white rounded hover:bg-blue-700"
+                        >
+                            + Add Phase
+                        </button>
+                        <button
+                            onClick={() => setIsEditing(!isEditing)}
+                            className="px-3 py-1 text-sm bg-gray-600 text-white rounded hover:bg-gray-700"
+                        >
+                            {isEditing ? 'Done' : 'Edit'}
+                        </button>
+                    </div>
+                )}
             </div>
 
             {/* Overall Progress Summary */}
@@ -394,7 +404,7 @@ function BuildPath({ project }) {
                         style={{ width: `${calculateOverallProgress()}%` }}
                     ></div>
                 </div>
-                {isAuthorized() && (
+                {userRole === 'Admin' && (
                     <div className="text-xs text-gray-600">
                         {formatCurrency(calculateSpentAmount())} of {formatCurrency(calculateTotalBudget())} spent
                     </div>
@@ -426,7 +436,7 @@ function BuildPath({ project }) {
                                 </svg>
                                 <h4 className="font-semibold text-sm">{phase.name}</h4>
                             </div>
-                            {isEditing && (
+                            {isEditing && isAuthorized() && (
                                 <div className="flex gap-1">
                                     <button
                                         onClick={() => {
@@ -451,7 +461,7 @@ function BuildPath({ project }) {
                         <div className="mb-2">
                             <div className="flex justify-between items-center mb-1">
                                 <span className="text-xs text-gray-600">Progress</span>
-                                {editingProgressPhaseId === phase.id ? (
+                                {editingProgressPhaseId === phase.id && isAuthorized() ? (
                                     <div className="flex items-center gap-1">
                                         <input
                                             type="number"
@@ -489,14 +499,16 @@ function BuildPath({ project }) {
                                     </div>
                                 ) : (
                                     <span 
-                                        className="text-xs font-semibold cursor-pointer hover:text-blue-600 transition-colors flex items-center gap-1"
-                                        onClick={() => setEditingProgressPhaseId(phase.id)}
-                                        title="Click to edit"
+                                        className={`text-xs font-semibold flex items-center gap-1 ${isAuthorized() ? 'cursor-pointer hover:text-blue-600 transition-colors' : ''}`}
+                                        onClick={isAuthorized() ? () => setEditingProgressPhaseId(phase.id) : undefined}
+                                        title={isAuthorized() ? "Click to edit" : undefined}
                                     >
                                         {editingValues[`${phase.id}_progress`] !== undefined ? editingValues[`${phase.id}_progress`] : phase.progress}%
-                                        <svg className="w-3 h-3 opacity-60" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                                        </svg>
+                                        {isAuthorized() && (
+                                            <svg className="w-3 h-3 opacity-60" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                                            </svg>
+                                        )}
                                     </span>
                                 )}
                             </div>
@@ -508,8 +520,8 @@ function BuildPath({ project }) {
                             </div>
                         </div>
 
-                        {/* Budget Input - Only show when editing and user is authorized */}
-                        {isEditing && isAuthorized() && (
+                        {/* Budget Input - Only show when editing and user is Admin */}
+                        {isEditing && userRole === 'Admin' && (
                             <div className="mt-3">
                                 <label className="text-xs text-gray-600 block mb-1">Budget</label>
                                 <div className="flex items-center gap-2">

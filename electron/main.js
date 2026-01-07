@@ -435,9 +435,10 @@ autoUpdater.on('update-downloaded', () => {
 
 autoUpdater.on('error', (error) => {
   // Only log and send error if it's not a "no update available" error
-  if (!error.message.includes('latest.yml') && !error.message.includes('404')) {
+  const errorMessage = error?.message || String(error);
+  if (!errorMessage.includes('latest.yml') && !errorMessage.includes('404') && !errorMessage.includes('No published versions')) {
     console.error('Auto-updater error:', error);
-    mainWindow?.webContents.send('update-error', error.message);
+    mainWindow?.webContents.send('update-error', errorMessage);
   }
 });
 

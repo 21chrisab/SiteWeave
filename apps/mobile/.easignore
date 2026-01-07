@@ -1,0 +1,101 @@
+# Dependencies - EAS will install these
+node_modules/
+**/node_modules/
+
+# Build outputs
+.expo/
+dist/
+web-build/
+build/
+*.log
+
+# Documentation and migration files
+*.md
+!README.md
+migrate-*.ps1
+migrate-*.sh
+*_MIGRATION.md
+*_SUMMARY.md
+CHANGES_APPLIED.md
+DOWNGRADE_SUMMARY.md
+FIX_*.md
+
+# Lock files (EAS uses package.json)
+package-lock.json
+yarn.lock
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+*.pem
+
+# Git - CRITICAL: Exclude .git directory (can be huge in monorepos)
+.git/
+**/.git/
+.gitignore
+
+# Environment files
+.env*.local
+.env
+
+# TypeScript
+*.tsbuildinfo
+
+# Native build folders
+ios/
+android/
+
+# Webpack config (not needed for mobile)
+webpack.config.js
+
+# Context files
+_ctx.web.js
+
+# Cache
+.cache/
+.npm/
+.eslintcache
+
+# Exclude everything from parent directories (monorepo)
+../apps/web/
+../src/
+../electron/
+../supabase/
+../docs/
+../scripts/
+../dist/
+../dist-electron/
+../release/
+../build/
+../node_modules/
+
+# IMPORTANT: Include packages/core-logic (needed by mobile app)
+# The workspace root .easignore handles this, but we ensure it's not excluded here
+# Note: ../packages/ must be accessible for metro.config.js path resolution
+
+# Large files
+*.exe
+*.blockmap
+*.asar
+*.dll
+*.pak
+
+# Workspace root files
+../*.md
+../*.sql
+../*.toml
+../*.yml
+../*.yaml
+../vite.config.*
+../tsconfig.json
+../eslint.config.*
+../tailwind.config.*
+../postcss.config.*
+../netlify.toml

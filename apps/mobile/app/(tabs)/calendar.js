@@ -1,21 +1,51 @@
-import { View, Text, StyleSheet, FlatList } from 'react-native';
+import { View, Text, StyleSheet, FlatList, ScrollView } from 'react-native';
 import { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
-import { fetchTodayEvents } from '@siteweave/core-logic';
+import { fetchEventsByDate, fetchCalendarEvents } from '@siteweave/core-logic';
+import DatePickerStrip from '../../components/DatePickerStrip';
+import PressableWithFade from '../../components/PressableWithFade';
+import EventModal from '../../components/EventModal';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
+import { useHaptics } from '../../hooks/useHaptics';
 
 export default function CalendarScreen() {
   const { supabase } = useAuth();
+  const insets = useSafeAreaInsets();
+  const haptics = useHaptics();
+  const [selectedDate, setSelectedDate] = useState(new Date());
   const [events, setEvents] = useState([]);
+  const [allEvents, setAllEvents] = useState([]);
+  const [eventsByDate, setEventsByDate] = useState({});
   const [loading, setLoading] = useState(true);
+  const [showAddModal, setShowAddModal] = useState(false);
 
   useEffect(() => {
-    loadEvents();
+    loadAllEvents();
   }, []);
 
-  const loadEvents = async () => {
+  useEffect(() => {
+    if (selectedDate) {
+      loadEventsForDate();
+    }
+  }, [selectedDate, allEvents]);
+
+  const loadAllEvents = async () => {
     try {
-      const data = await fetchTodayEvents(supabase);
-      setEvents(data);
+      setLoading(true);
+      const data = await fetchCalendarEvents(supabase);
+      setAllEvents(data || []);
+
+      // Group events by date
+      const grouped = {};
+      (data || []).forEach(event => {
+        const dateStr = new Date(event.start_time).toISOString().split('T')[0];
+        if (!grouped[dateStr]) {
+          grouped[dateStr] = [];
+        }
+        grouped[dateStr].push(event);
+      });
+      setEventsByDate(grouped);
     } catch (error) {
       console.error('Error loading events:', error);
     } finally {
@@ -23,99 +53,176 @@ export default function CalendarScreen() {
     }
   };
 
-  if (loading) {
+  const handleEventCreated = () => {
+    loadAllEvents();
+  };
+
+  const loadEventsForDate = async () => {
+    try {
+      const dateStr = selectedDate.toISOString().split('T')[0];
+      const dayEvents = eventsByDate[dateStr] || [];
+      setEvents(dayEvents);
+    } catch (error) {
+      console.error('Error loading events for date:', error);
+    }
+  };
+
+  const getEventColor = (event) => {
+    // Use category or default color
+    if (event.color) return event.color;
+    if (event.category === 'meeting') return '#3B82F6';
+    if (event.category === 'progress-review') return '#EF4444';
+    if (event.category === 'site-visit') return '#10B981';
+    return '#6B7280';
+  };
+
+  const formatTime = (dateString) => {
+    if (!dateString) return '';
+    const date = new Date(dateString);
+    return date.toLocaleTimeString('en-US', {
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true,
+    });
+  };
+
+  const getTimeGap = (prevEvent, currentEvent) => {
+    if (!prevEvent || !currentEvent) return null;
+    const prevEnd = new Date(prevEvent.end_time || prevEvent.start_time);
+    const currentStart = new Date(currentEvent.start_time);
+    const gapMinutes = (currentStart - prevEnd) / (1000 * 60);
+    return gapMinutes > 0 ? gapMinutes : null;
+  };
+
+  const renderEvent = ({ item, index }) => {
+    const prevEvent = index > 0 ? events[index - 1] : null;
+    const gapMinutes = getTimeGap(prevEvent, item);
+    const eventColor = getEventColor(item);
+
     return (
-      <View style={styles.container}>
-        <Text>Loading...</Text>
-      </View>
-    );
-  }
-
-  return (
-    <View style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.title}>Today's Schedule</Text>
-        <Text style={styles.date}>{new Date().toLocaleDateString('en-US', { 
-          weekday: 'long', 
-          year: 'numeric', 
-          month: 'long', 
-          day: 'numeric' 
-        })}</Text>
-      </View>
-
-      <FlatList
-        data={events}
-        keyExtractor={(item) => item.id}
-        renderItem={({ item }) => (
-          <View style={styles.eventCard}>
-            <View style={styles.eventTimeContainer}>
-              <Text style={styles.eventTime}>
-                {new Date(item.start_time).toLocaleTimeString('en-US', { 
-                  hour: 'numeric', 
-                  minute: '2-digit',
-                  hour12: true 
-                })}
-              </Text>
+      <View>
+        {gapMinutes && gapMinutes > 15 && (
+          <View style={styles.gapContainer}>
+            <View style={styles.gapLine} />
+            <Text style={styles.gapText}>
+              {Math.floor(gapMinutes / 60)}h {gapMinutes % 60}m free
+            </Text>
+            <View style={styles.gapLine} />
+          </View>
+        )}
+        <View style={styles.eventCard}>
+          <View style={[styles.eventColorBar, { backgroundColor: eventColor }]} />
+          <View style={styles.eventContent}>
+            <View style={styles.eventHeader}>
+              <Text style={styles.eventTime}>{formatTime(item.start_time)}</Text>
               {item.end_time && (
-                <Text style={styles.eventTimeEnd}>
-                  - {new Date(item.end_time).toLocaleTimeString('en-US', { 
-                    hour: 'numeric', 
-                    minute: '2-digit',
-                    hour12: true 
-                  })}
-                </Text>
+                <Text style={styles.eventTimeEnd}> - {formatTime(item.end_time)}</Text>
               )}
             </View>
             <Text style={styles.eventTitle}>{item.title}</Text>
             {item.location && (
-              <Text style={styles.eventLocation}>📍 {item.location}</Text>
+              <View style={styles.eventDetail}>
+                <Ionicons name="location-outline" size={16} color="#4B5563" />
+                <Text style={styles.eventDetailText}>{item.location}</Text>
+              </View>
             )}
             {item.description && (
-              <Text style={styles.eventDescription}>{item.description}</Text>
+              <Text style={styles.eventDescription} numberOfLines={2}>
+                {item.description}
+              </Text>
+            )}
+            {item.category && (
+              <View style={styles.eventCategory}>
+                <Text style={[styles.eventCategoryText, { color: eventColor }]}>
+                  {item.category}
+                </Text>
+              </View>
             )}
           </View>
-        )}
-        ListEmptyComponent={
-          <View style={styles.emptyContainer}>
-            <Text style={styles.emptyText}>No events scheduled for today.</Text>
-          </View>
-        }
+        </View>
+      </View>
+    );
+  };
+
+  return (
+    <View style={[styles.safeArea, { paddingTop: insets.top }]}>
+      <View style={styles.container}>
+        {/* Date Picker Strip */}
+        <DatePickerStrip
+          selectedDate={selectedDate}
+          onDateSelect={setSelectedDate}
+          eventsByDate={eventsByDate}
+        />
+
+        {/* Timeline */}
+        <FlatList
+          data={events}
+          keyExtractor={(item) => item.id}
+          renderItem={renderEvent}
+          contentContainerStyle={styles.timelineContent}
+          ListEmptyComponent={
+            <View style={styles.emptyContainer}>
+              <Ionicons name="calendar-outline" size={48} color="#9CA3AF" />
+              <Text style={styles.emptyText}>No events scheduled for this day.</Text>
+            </View>
+          }
+        />
+      </View>
+
+      {/* FAB */}
+      <PressableWithFade
+        style={styles.fab}
+        onPress={() => {
+          haptics.medium();
+          setShowAddModal(true);
+        }}
+        activeOpacity={0.8}
+        hapticType="medium"
+      >
+        <Ionicons name="add" size={28} color="#fff" />
+      </PressableWithFade>
+
+      {/* Event Creation Modal */}
+      <EventModal
+        visible={showAddModal}
+        onClose={() => setShowAddModal(false)}
+        selectedDate={selectedDate}
+        onEventCreated={handleEventCreated}
       />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
+  safeArea: {
+    flex: 1,
+    backgroundColor: '#F9FAFB',
+  },
   container: {
     flex: 1,
     backgroundColor: '#F9FAFB',
   },
-  header: {
-    padding: 20,
-    backgroundColor: '#fff',
-    borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
-  },
-  title: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    color: '#111827',
-    marginBottom: 4,
-  },
-  date: {
-    fontSize: 16,
-    color: '#6B7280',
+  timelineContent: {
+    padding: 16,
   },
   eventCard: {
+    flexDirection: 'row',
     backgroundColor: '#fff',
-    padding: 16,
-    marginHorizontal: 16,
-    marginTop: 12,
-    borderRadius: 8,
+    borderRadius: 12,
+    marginBottom: 12,
     borderWidth: 1,
     borderColor: '#E5E7EB',
+    overflow: 'hidden',
+    minHeight: 44,
   },
-  eventTimeContainer: {
+  eventColorBar: {
+    width: 4,
+  },
+  eventContent: {
+    flex: 1,
+    padding: 16,
+  },
+  eventHeader: {
     flexDirection: 'row',
     marginBottom: 8,
   },
@@ -135,14 +242,48 @@ const styles = StyleSheet.create({
     color: '#111827',
     marginBottom: 8,
   },
-  eventLocation: {
+  eventDetail: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 8,
+  },
+  eventDetailText: {
     fontSize: 14,
-    color: '#6B7280',
-    marginBottom: 4,
+    color: '#4B5563',
   },
   eventDescription: {
     fontSize: 14,
+    color: '#4B5563',
+    lineHeight: 20,
+    marginBottom: 8,
+  },
+  eventCategory: {
+    alignSelf: 'flex-start',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+    backgroundColor: '#F3F4F6',
+  },
+  eventCategoryText: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  gapContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginVertical: 8,
+    gap: 8,
+  },
+  gapLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: '#E5E7EB',
+  },
+  gapText: {
+    fontSize: 12,
     color: '#6B7280',
+    fontStyle: 'italic',
   },
   emptyContainer: {
     flex: 1,
@@ -152,7 +293,23 @@ const styles = StyleSheet.create({
   },
   emptyText: {
     fontSize: 16,
-    color: '#9CA3AF',
+    color: '#4B5563',
+    marginTop: 16,
+  },
+  fab: {
+    position: 'absolute',
+    right: 20,
+    bottom: 20,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: '#3B82F6',
+    justifyContent: 'center',
+    alignItems: 'center',
+    elevation: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
   },
 });
-

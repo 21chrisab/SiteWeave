@@ -1,33 +1,133 @@
-import { View, Text, StyleSheet, ScrollView, RefreshControl, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, RefreshControl, FlatList } from 'react-native';
 import { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
-import { fetchUserIncompleteTasks, fetchTodayEvents, fetchActivityLog } from '@siteweave/core-logic';
+import { 
+  fetchUserIncompleteTasks, 
+  fetchTodayEvents, 
+  fetchActiveProjectsCount,
+  fetchCompletedTasksCount,
+  fetchOverdueTasksCount,
+  fetchUserProjectsWithProgress
+} from '@siteweave/core-logic';
 import QuickActionsModal from '../../components/QuickActionsModal';
+import KPICarousel from '../../components/KPICarousel';
+import MyDayItemModal from '../../components/MyDayItemModal';
+import ProjectCardCompact from '../../components/ProjectCardCompact';
+import ProfileDrawer from '../../components/ProfileDrawer';
+import PressableWithFade from '../../components/PressableWithFade';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
+import { useHaptics } from '../../hooks/useHaptics';
 
 export default function HomeScreen() {
   const { user, supabase } = useAuth();
+  const insets = useSafeAreaInsets();
+  const haptics = useHaptics();
   const [tasks, setTasks] = useState([]);
   const [events, setEvents] = useState([]);
-  const [activity, setActivity] = useState([]);
+  const [projects, setProjects] = useState([]);
+  const [kpis, setKpis] = useState({ activeProjects: 0, completedTasks: 0, overdueTasks: 0 });
+  const [myDayItems, setMyDayItems] = useState([]);
   const [refreshing, setRefreshing] = useState(false);
   const [showQuickActions, setShowQuickActions] = useState(false);
+  const [selectedItem, setSelectedItem] = useState(null);
+  const [showItemModal, setShowItemModal] = useState(false);
+  const [showProfileDrawer, setShowProfileDrawer] = useState(false);
 
   const loadData = async () => {
     if (!user || !supabase) return;
     
     try {
-      const [tasksData, eventsData, activityData] = await Promise.all([
+      const [tasksData, eventsData, projectsData, activeCount, completedCount, overdueCount] = await Promise.all([
         fetchUserIncompleteTasks(supabase, user.id),
         fetchTodayEvents(supabase),
-        fetchActivityLog(supabase, 5)
+        fetchUserProjectsWithProgress(supabase, user.id),
+        fetchActiveProjectsCount(supabase, user.id),
+        fetchCompletedTasksCount(supabase, user.id),
+        fetchOverdueTasksCount(supabase, user.id),
       ]);
       
       setTasks(tasksData);
       setEvents(eventsData);
-      setActivity(activityData);
+      setProjects(projectsData);
+      setKpis({
+        activeProjects: activeCount,
+        completedTasks: completedCount,
+        overdueTasks: overdueCount,
+      });
+
+      // Combine and prioritize My Day items (top 3)
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      
+      // Prioritize tasks: due today first, then by priority
+      const prioritizedTasks = tasksData
+        .map(task => ({
+          ...task,
+          type: 'task',
+          priorityScore: getTaskPriorityScore(task, today),
+        }))
+        .sort((a, b) => b.priorityScore - a.priorityScore);
+
+      // Prioritize events: by start time
+      const prioritizedEvents = eventsData
+        .map(event => ({
+          ...event,
+          type: 'event',
+          priorityScore: new Date(event.start_time).getTime(),
+        }))
+        .sort((a, b) => a.priorityScore - b.priorityScore);
+
+      // Combine and take top 3
+      const combined = [...prioritizedTasks, ...prioritizedEvents]
+        .sort((a, b) => {
+          // Events happening soon get higher priority
+          if (a.type === 'event' && b.type === 'task') {
+            const eventTime = new Date(a.start_time || a.priorityScore);
+            const now = new Date();
+            // If event is within next 2 hours, prioritize it
+            if (eventTime.getTime() - now.getTime() < 2 * 60 * 60 * 1000) {
+              return -1;
+            }
+          }
+          return a.priorityScore - b.priorityScore;
+        })
+        .slice(0, 3);
+
+      setMyDayItems(combined);
     } catch (error) {
       console.error('Error loading data:', error);
     }
+  };
+
+  const getTaskPriorityScore = (task, today) => {
+    let score = 0;
+    
+    // Due today gets high priority
+    if (task.due_date) {
+      const dueDate = new Date(task.due_date);
+      dueDate.setHours(0, 0, 0, 0);
+      if (dueDate.getTime() === today.getTime()) {
+        score += 1000;
+      } else if (dueDate.getTime() < today.getTime()) {
+        score += 2000; // Overdue gets highest
+      }
+    }
+
+    // Priority adds to score
+    switch (task.priority?.toLowerCase()) {
+      case 'high':
+        score += 100;
+        break;
+      case 'medium':
+        score += 50;
+        break;
+      case 'low':
+        score += 10;
+        break;
+    }
+
+    return score;
   };
 
   useEffect(() => {
@@ -40,94 +140,201 @@ export default function HomeScreen() {
     setRefreshing(false);
   };
 
+  const handleItemPress = (item) => {
+    haptics.light();
+    setSelectedItem(item);
+    setShowItemModal(true);
+  };
+
+  const handleItemComplete = () => {
+    loadData(); // Refresh data after completion
+  };
+
+  const getUserName = () => {
+    if (user?.user_metadata?.full_name) {
+      return user.user_metadata.full_name.split(' ')[0]; // First name only
+    }
+    if (user?.email) {
+      return user.email.split('@')[0];
+    }
+    return 'there';
+  };
+
+  const renderMyDayItem = ({ item }) => {
+    const isTask = item.type === 'task';
+    const isEvent = item.type === 'event';
+
+    return (
+      <PressableWithFade
+        style={styles.myDayItem}
+        onPress={() => handleItemPress(item)}
+        activeOpacity={0.7}
+        hapticType="light"
+      >
+        <View style={styles.myDayItemContent}>
+          <View style={styles.myDayItemLeft}>
+            {isTask && (
+              <Ionicons name="checkbox-outline" size={24} color="#3B82F6" />
+            )}
+            {isEvent && (
+              <Ionicons name="calendar-outline" size={24} color="#10B981" />
+            )}
+            <View style={styles.myDayItemText}>
+              <Text style={styles.myDayItemTitle} numberOfLines={1}>
+                {item.text || item.title}
+              </Text>
+              {isTask && item.due_date && (
+                <Text style={styles.myDayItemSubtitle}>
+                  Due: {new Date(item.due_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                </Text>
+              )}
+              {isEvent && item.start_time && (
+                <Text style={styles.myDayItemSubtitle}>
+                  {new Date(item.start_time).toLocaleTimeString('en-US', { 
+                    hour: 'numeric', 
+                    minute: '2-digit',
+                    hour12: true 
+                  })}
+                </Text>
+              )}
+            </View>
+          </View>
+          <Ionicons name="chevron-forward" size={20} color="#4B5563" />
+        </View>
+      </PressableWithFade>
+    );
+  };
+
+  const renderProject = ({ item }) => (
+    <ProjectCardCompact project={item} />
+  );
+
   return (
-    <>
+    <View style={[styles.safeArea, { paddingTop: insets.top }]}>
       <ScrollView
         style={styles.container}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+        refreshControl={<RefreshControl refreshing={!!refreshing} onRefresh={onRefresh} />}
+        showsVerticalScrollIndicator={false}
       >
+        {/* Header */}
         <View style={styles.header}>
-          <Text style={styles.title}>My Day</Text>
+          <View style={styles.headerContent}>
+            <Text style={styles.greeting}>Hello, {getUserName()}</Text>
+            <View style={styles.headerButtons}>
+              <PressableWithFade 
+                style={styles.notificationButton}
+                onPress={() => {
+                  haptics.light();
+                  /* TODO: Open notifications */
+                }}
+                activeOpacity={0.7}
+                hapticType="light"
+              >
+                <Ionicons name="notifications-outline" size={24} color="#111827" />
+              </PressableWithFade>
+              <PressableWithFade 
+                style={styles.profileButton}
+                onPress={() => {
+                  haptics.light();
+                  setShowProfileDrawer(true);
+                }}
+                activeOpacity={0.7}
+                hapticType="light"
+              >
+                <View style={styles.profileAvatar}>
+                  <Text style={styles.profileAvatarText}>
+                    {getUserName().charAt(0).toUpperCase()}
+                  </Text>
+                </View>
+              </PressableWithFade>
+            </View>
+          </View>
         </View>
 
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>TO-DO ({tasks.length})</Text>
-        {tasks.length > 0 ? (
-          tasks.map(task => (
-            <View key={task.id} style={styles.taskItem}>
-              <Text style={styles.taskText}>{task.text}</Text>
-            </View>
-          ))
-        ) : (
-          <Text style={styles.emptyText}>No tasks assigned to you.</Text>
-        )}
-      </View>
+        {/* Section A: KPIs Carousel */}
+        <View style={styles.kpiSection}>
+          <KPICarousel
+            activeProjects={kpis.activeProjects}
+            completedTasks={kpis.completedTasks}
+            overdueTasks={kpis.overdueTasks}
+          />
+        </View>
 
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>RECENT ACTIVITY</Text>
-        {activity.length > 0 ? (
-          activity.map(item => (
-            <View key={item.id} style={styles.activityItem}>
-              <Text style={styles.activityText}>
-                <Text style={styles.activityUser}>{item.user_name}</Text> {item.action}
-              </Text>
-              <Text style={styles.activityTime}>{formatTimeAgo(item.created_at)}</Text>
+        {/* Section B: My Day */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>MY DAY</Text>
+          {myDayItems.length > 0 ? (
+            <View>
+              {myDayItems.map((item, index) => (
+                <View key={`${item.type}-${item.id || index}`}>
+                  {renderMyDayItem({ item })}
+                </View>
+              ))}
             </View>
-          ))
-        ) : (
-          <Text style={styles.emptyText}>No recent activity.</Text>
-        )}
-      </View>
+          ) : (
+            <Text style={styles.emptyText}>No items for today.</Text>
+          )}
+        </View>
 
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>TODAY'S CALENDAR ({events.length})</Text>
-        {events.length > 0 ? (
-          events.map(event => (
-            <View key={event.id} style={styles.eventItem}>
-              <Text style={styles.eventTitle}>{event.title}</Text>
-              <Text style={styles.eventTime}>
-                {new Date(event.start_time).toLocaleTimeString('en-US', { 
-                  hour: 'numeric', 
-                  minute: '2-digit',
-                  hour12: true 
-                })} • {event.location || 'No location'}
-              </Text>
-            </View>
-          ))
-        ) : (
-          <Text style={styles.emptyText}>No events scheduled today.</Text>
-        )}
-      </View>
+        {/* Section C: Projects List */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>PROJECTS ({projects.length})</Text>
+          {projects.length > 0 ? (
+            <FlatList
+              data={projects}
+              renderItem={renderProject}
+              keyExtractor={(item) => item.id}
+              scrollEnabled={false}
+              ListEmptyComponent={
+                <Text style={styles.emptyText}>No projects found.</Text>
+              }
+            />
+          ) : (
+            <Text style={styles.emptyText}>No projects assigned to you.</Text>
+          )}
+        </View>
       </ScrollView>
-      <TouchableOpacity
+
+      {/* FAB */}
+      <PressableWithFade
         style={styles.fab}
-        onPress={() => setShowQuickActions(true)}
+        onPress={() => {
+          haptics.medium();
+          setShowQuickActions(true);
+        }}
+        activeOpacity={0.8}
+        hapticType="medium"
       >
         <Text style={styles.fabText}>+</Text>
-      </TouchableOpacity>
+      </PressableWithFade>
+
+      {/* Modals */}
       <QuickActionsModal
         visible={showQuickActions}
         onClose={() => setShowQuickActions(false)}
       />
-    </>
+      <MyDayItemModal
+        visible={showItemModal}
+        item={selectedItem}
+        onClose={() => {
+          setShowItemModal(false);
+          setSelectedItem(null);
+        }}
+        onComplete={handleItemComplete}
+      />
+      <ProfileDrawer
+        visible={showProfileDrawer}
+        onClose={() => setShowProfileDrawer(false)}
+      />
+    </View>
   );
 }
 
-function formatTimeAgo(dateString) {
-  const now = new Date();
-  const activityDate = new Date(dateString);
-  const diffInMinutes = Math.floor((now - activityDate) / (1000 * 60));
-  
-  if (diffInMinutes < 60) {
-    return `${diffInMinutes}m ago`;
-  } else if (diffInMinutes < 1440) {
-    return `${Math.floor(diffInMinutes / 60)}h ago`;
-  } else {
-    return `${Math.floor(diffInMinutes / 1440)}d ago`;
-  }
-}
-
 const styles = StyleSheet.create({
+  safeArea: {
+    flex: 1,
+    backgroundColor: '#F9FAFB',
+  },
   container: {
     flex: 1,
     backgroundColor: '#F9FAFB',
@@ -137,11 +344,53 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff',
     borderBottomWidth: 1,
     borderBottomColor: '#E5E7EB',
+    minHeight: 44,
   },
-  title: {
+  headerContent: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  greeting: {
     fontSize: 28,
     fontWeight: 'bold',
     color: '#111827',
+  },
+  headerButtons: {
+    flexDirection: 'row',
+    gap: 8,
+    alignItems: 'center',
+  },
+  notificationButton: {
+    padding: 8,
+    minWidth: 44,
+    minHeight: 44,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  profileButton: {
+    padding: 4,
+    minWidth: 44,
+    minHeight: 44,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  profileAvatar: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#3B82F6',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  profileAvatarText: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: '#fff',
+  },
+  kpiSection: {
+    backgroundColor: '#F9FAFB',
+    paddingVertical: 12,
   },
   section: {
     padding: 20,
@@ -151,54 +400,44 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#6B7280',
+    color: '#4B5563',
     marginBottom: 12,
     textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
-  taskItem: {
-    paddingVertical: 12,
+  myDayItem: {
+    paddingVertical: 16,
     borderBottomWidth: 1,
     borderBottomColor: '#F3F4F6',
+    minHeight: 44,
   },
-  taskText: {
-    fontSize: 16,
-    color: '#111827',
+  myDayItemContent: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
   },
-  activityItem: {
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F3F4F6',
+  myDayItemLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+    gap: 12,
   },
-  activityText: {
-    fontSize: 14,
-    color: '#111827',
-    marginBottom: 4,
+  myDayItemText: {
+    flex: 1,
   },
-  activityUser: {
-    fontWeight: '600',
-  },
-  activityTime: {
-    fontSize: 12,
-    color: '#9CA3AF',
-  },
-  eventItem: {
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F3F4F6',
-  },
-  eventTitle: {
+  myDayItemTitle: {
     fontSize: 16,
     fontWeight: '600',
     color: '#111827',
     marginBottom: 4,
   },
-  eventTime: {
+  myDayItemSubtitle: {
     fontSize: 14,
-    color: '#6B7280',
+    color: '#4B5563',
   },
   emptyText: {
     fontSize: 14,
-    color: '#9CA3AF',
+    color: '#4B5563',
     textAlign: 'center',
     paddingVertical: 20,
   },
@@ -224,4 +463,3 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
 });
-

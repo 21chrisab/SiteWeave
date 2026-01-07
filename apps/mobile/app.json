@@ -6,7 +6,6 @@
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
-    "newArchEnabled": true,
     "scheme": "siteweave",
     "splash": {
       "image": "./assets/splash-icon.png",
@@ -14,15 +13,19 @@
       "backgroundColor": "#ffffff"
     },
     "ios": {
-      "supportsTablet": true,
-      "bundleIdentifier": "com.siteweave.mobile"
+      "supportsTablet": false,
+      "bundleIdentifier": "com.siteweave.mobile",
+      "usesAppleSignIn": true,
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
-      "edgeToEdgeEnabled": true,
+      "edgeToEdgeEnabled": false,
       "package": "com.siteweave.mobile"
     },
     "web": {
@@ -36,7 +39,7 @@
         "origin": false
       },
       "eas": {
-        "projectId": "siteweave-mobile"
+        "projectId": "0e8aedb2-5084-4046-a750-5032e61afd9a"
       }
     }
   }

@@ -116,3 +116,62 @@ export async function deleteTask(supabase, taskId) {
   if (error) throw error;
 }
 
+/**
+ * Fetch completed tasks count for a user
+ * Uses RLS policies to automatically filter tasks based on user role
+ * @param {import('@supabase/supabase-js').SupabaseClient} supabase - Supabase client
+ * @param {string} userId - User ID (not used but kept for API consistency)
+ * @returns {Promise<number>} Count of completed tasks
+ */
+export async function fetchCompletedTasksCount(supabase, userId) {
+  // Use RLS policies - they automatically filter based on user permissions
+  const { count, error } = await supabase
+    .from('tasks')
+    .select('*', { count: 'exact', head: true })
+    .eq('completed', true);
+  
+  if (error) throw error;
+  return count || 0;
+}
+
+/**
+ * Fetch overdue tasks count for a user
+ * Uses RLS policies to automatically filter tasks based on user role
+ * @param {import('@supabase/supabase-js').SupabaseClient} supabase - Supabase client
+ * @param {string} userId - User ID (not used but kept for API consistency)
+ * @returns {Promise<number>} Count of overdue incomplete tasks
+ */
+export async function fetchOverdueTasksCount(supabase, userId) {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const todayStr = today.toISOString().split('T')[0];
+  
+  // Use RLS policies - they automatically filter based on user permissions
+  const { count, error } = await supabase
+    .from('tasks')
+    .select('*', { count: 'exact', head: true })
+    .eq('completed', false)
+    .lt('due_date', todayStr);
+  
+  if (error) throw error;
+  return count || 0;
+}
+
+/**
+ * Fetch tasks for a specific project
+ * @param {import('@supabase/supabase-js').SupabaseClient} supabase - Supabase client
+ * @param {string} projectId - Project ID
+ * @returns {Promise<Array>} Array of tasks
+ */
+export async function fetchTasksByProject(supabase, projectId) {
+  const { data, error } = await supabase
+    .from('tasks')
+    .select('*')
+    .eq('project_id', projectId)
+    .order('due_date', { ascending: true, nullsFirst: false })
+    .order('created_at', { ascending: false });
+  
+  if (error) throw error;
+  return data || [];
+}
+
