@@ -3,15 +3,16 @@
   "private": true,
   "version": "1.0.34",
   "main": "dist-electron/main.cjs",
-  "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:electron": "vite --config vite.config.mjs",
     "build": "vite build",
     "preview": "vite preview",
     "build:win": "npm run build && electron-builder --win --publish never"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.0",
+    "electron-updater": "^6.7.3",
     "react": "^19.2.3",
     "react-dom": "^19.2.3",
     "react-router-dom": "^6.26.2"

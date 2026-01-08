@@ -9,15 +9,17 @@ function generateInvitationToken() {
 }
 
 /**
- * Send an invitation to join a project and optionally assign to a task
+ * Send an invitation to join an organization
  * @param {string} email - Email address to invite
- * @param {string} projectId - Project UUID
+ * @param {string} organizationId - Organization ID
+ * @param {string} roleId - Role ID to assign (optional)
+ * @param {string} invitedByUserId - User ID of inviter
+ * @param {string} projectId - Optional project ID (for project-specific context)
  * @param {number} issueId - Optional issue ID
  * @param {number} stepId - Optional step ID
- * @param {string} invitedByUserId - User ID of inviter
  * @returns {Promise<{success: boolean, invitationId?: string, error?: string}>}
  */
-export async function sendInvitation(email, projectId, issueId = null, stepId = null, invitedByUserId) {
+export async function sendInvitation(email, organizationId, roleId = null, invitedByUserId, projectId = null, issueId = null, stepId = null) {
     try {
         // Validate email
         if (!email || !email.includes('@')) {
@@ -40,19 +42,19 @@ export async function sendInvitation(email, projectId, issueId = null, stepId = 
             };
         }
 
-        // Check if there's already a pending invitation
+        // Check if there's already a pending invitation for this organization
         const { data: existingInvitation } = await supabaseClient
             .from('invitations')
             .select('*')
             .eq('email', email.toLowerCase())
-            .eq('project_id', projectId)
+            .eq('organization_id', organizationId)
             .eq('status', 'pending')
-            .single();
+            .maybeSingle();
 
         if (existingInvitation) {
             return { 
                 success: false, 
-                error: 'An invitation has already been sent to this email for this project.' 
+                error: 'An invitation has already been sent to this email for this organization.' 
             };
         }
 
@@ -64,6 +66,7 @@ export async function sendInvitation(email, projectId, issueId = null, stepId = 
             .from('invitations')
             .insert({
                 email: email.toLowerCase(),
+                organization_id: organizationId,
                 project_id: projectId,
                 issue_id: issueId,
                 step_id: stepId,
@@ -79,12 +82,23 @@ export async function sendInvitation(email, projectId, issueId = null, stepId = 
             return { success: false, error: invitationError.message };
         }
 
-        // Get project details for email
-        const { data: project } = await supabaseClient
-            .from('projects')
-            .select('name, address')
-            .eq('id', projectId)
+        // Get organization details
+        const { data: organization } = await supabaseClient
+            .from('organizations')
+            .select('name')
+            .eq('id', organizationId)
             .single();
+
+        // Get project details for email (if project-specific)
+        let project = null;
+        if (projectId) {
+            const { data: projectData } = await supabaseClient
+                .from('projects')
+                .select('name, address')
+                .eq('id', projectId)
+                .single();
+            project = projectData;
+        }
 
         // Get inviter details
         const { data: inviter } = await supabaseClient
@@ -95,9 +109,10 @@ export async function sendInvitation(email, projectId, issueId = null, stepId = 
 
         const inviterName = inviter?.contacts?.name || 'A team member';
 
-        // Construct invitation URL
+        // Construct invitation URLs (web and mobile deep link)
         const appUrl = window.location.origin;
-        const invitationUrl = `${appUrl}/invite/${invitationToken}`;
+        const webInvitationUrl = `${appUrl}/invite/${invitationToken}`;
+        const mobileInvitationUrl = `siteweave://invite/${invitationToken}`;
 
         // Send invitation email
         let emailSent = false;
@@ -108,8 +123,10 @@ export async function sendInvitation(email, projectId, issueId = null, stepId = 
                 body: {
                     to: email,
                     inviterName: inviterName,
-                    projectName: project?.name || 'a project',
-                    invitationUrl: invitationUrl,
+                    organizationName: organization?.name || 'an organization',
+                    projectName: project?.name || null,
+                    webInvitationUrl: webInvitationUrl,
+                    mobileInvitationUrl: mobileInvitationUrl,
                     issueId: issueId,
                     stepId: stepId
                 }
@@ -184,31 +201,53 @@ export async function acceptInvitation(invitationToken, userId) {
             };
         }
 
+        // Get organization and role info
+        const { data: organization } = await supabaseClient
+            .from('organizations')
+            .select('id, name')
+            .eq('id', invitation.organization_id)
+            .single();
+
+        if (!organization) {
+            return { success: false, error: 'Organization not found' };
+        }
+
+        // Get default role for organization (if no role specified in invitation)
+        // For now, we'll need to get a default role or create one
+        // This should be handled by the invitation creation process
+
         // Create or update contact record for this user
         let contactId;
         
         const { data: existingProfile } = await supabaseClient
             .from('profiles')
-            .select('contact_id')
+            .select('contact_id, organization_id')
             .eq('id', userId)
             .single();
+
+        // Check if user already belongs to an organization
+        if (existingProfile?.organization_id && existingProfile.organization_id !== invitation.organization_id) {
+            return { 
+                success: false, 
+                error: 'User already belongs to a different organization' 
+            };
+        }
 
         if (existingProfile?.contact_id) {
             contactId = existingProfile.contact_id;
         } else {
-            // Check if a contact already exists with this email (from invite_or_add_member)
+            // Check if a contact already exists with this email in this organization
             const { data: existingContact } = await supabaseClient
                 .from('contacts')
                 .select('id')
                 .ilike('email', userEmail)
+                .eq('organization_id', invitation.organization_id)
                 .maybeSingle();
             
             if (existingContact) {
-                // Use existing contact
                 contactId = existingContact.id;
-                console.log('Found existing contact for email, linking to profile:', contactId);
             } else {
-                // Create new contact
+                // Create new contact in the organization
                 const { data: newContact, error: contactError } = await supabaseClient
                     .from('contacts')
                     .insert({
@@ -216,8 +255,7 @@ export async function acceptInvitation(invitationToken, userId) {
                         role: 'Team Member',
                         type: 'Team',
                         email: userEmail,
-                        company: 'SiteWeave',
-                        trade: 'Internal',
+                        organization_id: invitation.organization_id,
                         status: 'Available',
                         created_by_user_id: userId
                     })
@@ -239,17 +277,34 @@ export async function acceptInvitation(invitationToken, userId) {
                 .eq('id', userId);
         }
 
-        // Add user to project via project_contacts
-        const { error: projectContactError } = await supabaseClient
-            .from('project_contacts')
-            .insert({
-                project_id: invitation.project_id,
-                contact_id: contactId
-            });
+        // Assign user to organization and role
+        const { error: profileError } = await supabaseClient
+            .from('profiles')
+            .update({
+                organization_id: invitation.organization_id,
+                // role_id will be set by Organization Admin or use default
+            })
+            .eq('id', userId);
 
-        if (projectContactError && !projectContactError.message.includes('duplicate')) {
-            console.error('Error adding to project:', projectContactError);
-            return { success: false, error: 'Failed to add to project' };
+        if (profileError) {
+            console.error('Error updating profile:', profileError);
+            return { success: false, error: 'Failed to assign user to organization' };
+        }
+
+        // If there's a specific project, add user to project via project_contacts
+        if (invitation.project_id) {
+            const { error: projectContactError } = await supabaseClient
+                .from('project_contacts')
+                .insert({
+                    project_id: invitation.project_id,
+                    contact_id: contactId,
+                    organization_id: invitation.organization_id
+                });
+
+            if (projectContactError && !projectContactError.message.includes('duplicate')) {
+                console.error('Error adding to project:', projectContactError);
+                // Don't fail the invitation if project contact fails
+            }
         }
 
         // If there's a specific step, update it to assign to this user
@@ -274,6 +329,7 @@ export async function acceptInvitation(invitationToken, userId) {
 
         return { 
             success: true, 
+            organizationId: invitation.organization_id,
             projectId: invitation.project_id,
             issueId: invitation.issue_id
         };
@@ -285,16 +341,16 @@ export async function acceptInvitation(invitationToken, userId) {
 }
 
 /**
- * Get pending invitations for a project
- * @param {string} projectId - Project UUID
+ * Get pending invitations for an organization
+ * @param {string} organizationId - Organization ID
  * @returns {Promise<{success: boolean, invitations?: array, error?: string}>}
  */
-export async function getProjectInvitations(projectId) {
+export async function getOrganizationInvitations(organizationId) {
     try {
         const { data, error } = await supabaseClient
             .from('invitations')
             .select('*')
-            .eq('project_id', projectId)
+            .eq('organization_id', organizationId)
             .order('created_at', { ascending: false });
 
         if (error) {
@@ -303,7 +359,7 @@ export async function getProjectInvitations(projectId) {
 
         return { success: true, invitations: data };
     } catch (error) {
-        console.error('Error in getProjectInvitations:', error);
+        console.error('Error in getOrganizationInvitations:', error);
         return { success: false, error: error.message };
     }
 }
@@ -365,9 +421,17 @@ export async function resendInvitation(invitationId) {
             .eq('id', invitation.invited_by_user_id)
             .single();
 
+        // Get organization details
+        const { data: organization } = await supabaseClient
+            .from('organizations')
+            .select('name')
+            .eq('id', invitation.organization_id)
+            .single();
+
         const inviterName = inviter?.contacts?.name || 'A team member';
         const appUrl = window.location.origin;
-        const invitationUrl = `${appUrl}/invite/${invitation.invitation_token}`;
+        const webInvitationUrl = `${appUrl}/invite/${invitation.invitation_token}`;
+        const mobileInvitationUrl = `siteweave://invite/${invitation.invitation_token}`;
 
         // Resend email
         let emailSent = false;
@@ -378,8 +442,10 @@ export async function resendInvitation(invitationId) {
                 body: {
                     to: invitation.email,
                     inviterName: inviterName,
-                    projectName: project?.name || 'a project',
-                    invitationUrl: invitationUrl,
+                    organizationName: organization?.name || 'an organization',
+                    projectName: project?.name || null,
+                    webInvitationUrl: webInvitationUrl,
+                    mobileInvitationUrl: mobileInvitationUrl,
                     issueId: invitation.issue_id,
                     stepId: invitation.step_id
                 }

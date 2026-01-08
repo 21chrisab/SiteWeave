@@ -1,11 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import { useAppContext } from '../context/AppContext';
+import { supabaseClient } from '../context/AppContext';
+import { duplicateProject } from '../utils/projectDuplicationService';
+import { useToast } from '../context/ToastContext';
 import LoadingSpinner from './LoadingSpinner';
 import DateDropdown from './DateDropdown';
 import Avatar from './Avatar';
 
 function ProjectModal({ onClose, onSave, isLoading = false, project = null }) {
     const { state } = useAppContext();
+    const { addToast } = useToast();
     const [name, setName] = useState('');
     const [address, setAddress] = useState('');
     const [project_type, setProjectType] = useState('Residential');
@@ -15,6 +19,10 @@ function ProjectModal({ onClose, onSave, isLoading = false, project = null }) {
     const [selectedContacts, setSelectedContacts] = useState([]);
     const [emailInput, setEmailInput] = useState('');
     const [emailAddresses, setEmailAddresses] = useState([]);
+    const [showDuplicateDialog, setShowDuplicateDialog] = useState(false);
+    const [duplicateName, setDuplicateName] = useState('');
+    const [duplicateStartDate, setDuplicateStartDate] = useState('');
+    const [isDuplicating, setIsDuplicating] = useState(false);
 
     const isEditMode = !!project;
     
@@ -105,10 +113,113 @@ function ProjectModal({ onClose, onSave, isLoading = false, project = null }) {
         );
     };
 
+    const handleDuplicateProject = async () => {
+        if (!duplicateName || !duplicateStartDate) {
+            addToast('Please provide a name and start date for the duplicated project', 'error');
+            return;
+        }
+
+        if (!state.currentOrganization?.id) {
+            addToast('Organization context is missing', 'error');
+            return;
+        }
+
+        setIsDuplicating(true);
+        try {
+            const result = await duplicateProject(
+                supabaseClient,
+                project.id,
+                duplicateName,
+                state.currentOrganization.id,
+                duplicateStartDate
+            );
+
+            if (result.success) {
+                addToast('Project duplicated successfully!', 'success');
+                setShowDuplicateDialog(false);
+                onClose();
+                // Refresh the page or trigger data reload
+                window.location.reload();
+            } else {
+                addToast(result.error || 'Failed to duplicate project', 'error');
+            }
+        } catch (error) {
+            console.error('Error duplicating project:', error);
+            addToast('Failed to duplicate project', 'error');
+        } finally {
+            setIsDuplicating(false);
+        }
+    };
+
+    if (showDuplicateDialog) {
+        return (
+            <div className="fixed inset-0 backdrop-blur-[2px] bg-white/20 flex items-center justify-center z-50">
+                <div className="bg-white rounded-lg shadow-2xl p-8 w-full max-w-md">
+                    <h2 className="text-2xl font-bold mb-6">Duplicate Project</h2>
+                    <div className="mb-4">
+                        <label className="block text-sm font-semibold mb-1 text-gray-600">New Project Name</label>
+                        <input 
+                            type="text" 
+                            value={duplicateName} 
+                            onChange={e => setDuplicateName(e.target.value)} 
+                            className="w-full p-2 border rounded-lg" 
+                            placeholder={`${project.name} - Copy`}
+                            required 
+                        />
+                    </div>
+                    <DateDropdown 
+                        value={duplicateStartDate} 
+                        onChange={setDuplicateStartDate} 
+                        label="New Start Date"
+                        className="mb-6"
+                        required
+                    />
+                    <p className="text-sm text-gray-600 mb-6">
+                        This will create a copy of the project structure (phases, tasks) with dates adjusted based on the new start date. 
+                        Transactional data (comments, files, activity logs) will not be copied.
+                    </p>
+                    <div className="flex gap-3">
+                        <button
+                            type="button"
+                            onClick={() => setShowDuplicateDialog(false)}
+                            className="flex-1 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
+                            disabled={isDuplicating}
+                        >
+                            Cancel
+                        </button>
+                        <button
+                            type="button"
+                            onClick={handleDuplicateProject}
+                            className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+                            disabled={isDuplicating}
+                        >
+                            {isDuplicating ? 'Duplicating...' : 'Duplicate'}
+                        </button>
+                    </div>
+                </div>
+            </div>
+        );
+    }
+
     return (
         <div className="fixed inset-0 backdrop-blur-[2px] bg-white/20 flex items-center justify-center z-50">
             <div className="bg-white rounded-lg shadow-2xl p-8 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
-                <h2 className="text-2xl font-bold mb-6">{isEditMode ? 'Edit Project' : 'Create New Project'}</h2>
+                <div className="flex items-center justify-between mb-6">
+                    <h2 className="text-2xl font-bold">{isEditMode ? 'Edit Project' : 'Create New Project'}</h2>
+                    {isEditMode && (
+                        <button
+                            type="button"
+                            onClick={() => {
+                                setDuplicateName(`${project.name} - Copy`);
+                                setDuplicateStartDate('');
+                                setShowDuplicateDialog(true);
+                            }}
+                            className="px-4 py-2 text-sm bg-purple-100 text-purple-700 rounded-lg hover:bg-purple-200"
+                        >
+                            Duplicate Project
+                        </button>
+                    )}
+                </div>
                 <form onSubmit={handleSubmit}>
                     <div className="mb-4">
                         <label className="block text-sm font-semibold mb-1 text-gray-600">Project Name</label>

@@ -2,6 +2,11 @@ import React from 'react'
 import { Link, Route, Routes, useNavigate, useParams, useLocation } from 'react-router-dom'
 import { supabase } from './supabaseClient'
 import LoadingSpinner from './components/LoadingSpinner'
+import InviteAcceptPage from './components/InviteAcceptPage'
+import TeamDirectory from './components/TeamDirectory'
+import SetupWizard from './components/SetupWizard'
+import TeamManagementModal from './components/TeamManagementModal'
+import PermissionGuard from './components/PermissionGuard'
 
 function UseSession() {
   const [session, setSession] = React.useState(null)
@@ -1164,6 +1169,8 @@ export default function App() {
   const { session, loading } = UseSession()
   const location = useLocation()
   const navigate = useNavigate()
+  const [showSetupWizard, setShowSetupWizard] = React.useState(false)
+  const [showTeamModal, setShowTeamModal] = React.useState(false)
   
   // Handle OAuth callback
   React.useEffect(() => {
@@ -1175,6 +1182,31 @@ export default function App() {
     }
     handleAuthCallback()
   }, [navigate])
+
+  // Check if user needs to see setup wizard (first login)
+  React.useEffect(() => {
+    const checkSetupWizard = async () => {
+      if (!session?.user) return
+
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('organization_id, roles(name)')
+        .eq('id', session.user.id)
+        .single()
+
+      // Show setup wizard if user is an Org Admin and hasn't completed setup
+      if (profile?.roles?.name === 'Org Admin') {
+        const setupComplete = localStorage.getItem(`setup_complete_${session.user.id}`)
+        if (!setupComplete) {
+          setShowSetupWizard(true)
+        }
+      }
+    }
+
+    if (session) {
+      checkSetupWizard()
+    }
+  }, [session])
   
   if (loading) {
     return (
@@ -1185,6 +1217,13 @@ export default function App() {
   }
 
   const isActive = (path) => location.pathname === path || location.pathname.startsWith(path + '/')
+
+  const handleSetupComplete = () => {
+    if (session?.user) {
+      localStorage.setItem(`setup_complete_${session.user.id}`, 'true')
+    }
+    setShowSetupWizard(false)
+  }
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -1200,7 +1239,7 @@ export default function App() {
                   <Link
                     to="/"
                     className={`px-3 py-2 text-sm font-medium rounded-lg transition-colors ${
-                      isActive('/') && !isActive('/messages') && !isActive('/projects')
+                      isActive('/') && !isActive('/messages') && !isActive('/projects') && !isActive('/team')
                         ? 'bg-blue-50 text-blue-700'
                         : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
                     }`}
@@ -1217,6 +1256,24 @@ export default function App() {
                   >
                     Messages
                   </Link>
+                  <Link
+                    to="/team"
+                    className={`px-3 py-2 text-sm font-medium rounded-lg transition-colors ${
+                      isActive('/team')
+                        ? 'bg-blue-50 text-blue-700'
+                        : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
+                    }`}
+                  >
+                    Team
+                  </Link>
+                  <PermissionGuard permission="can_manage_team">
+                    <button
+                      onClick={() => setShowTeamModal(true)}
+                      className="px-3 py-2 text-sm font-medium text-gray-600 hover:bg-gray-100 hover:text-gray-900 rounded-lg transition-colors"
+                    >
+                      Manage Team
+                    </button>
+                  </PermissionGuard>
                   <span className="text-sm text-gray-600">
                     {session.user.email}
                   </span>
@@ -1242,10 +1299,28 @@ export default function App() {
       
       <Routes>
         <Route path="/login" element={<Login />} />
+        <Route path="/invite/:token" element={<InviteAcceptPage />} />
         <Route path="/" element={session ? <Home /> : <Login />} />
         <Route path="/messages" element={session ? <Messages /> : <Login />} />
         <Route path="/projects/:id" element={session ? <ProjectDetails /> : <Login />} />
+        <Route path="/team" element={session ? <TeamDirectory /> : <Login />} />
       </Routes>
+
+      {/* Setup Wizard - Shows on first login for Org Admins */}
+      {session && (
+        <SetupWizard 
+          show={showSetupWizard} 
+          onComplete={handleSetupComplete}
+        />
+      )}
+
+      {/* Team Management Modal */}
+      {session && (
+        <TeamManagementModal 
+          show={showTeamModal} 
+          onClose={() => setShowTeamModal(false)}
+        />
+      )}
     </div>
   )
 }

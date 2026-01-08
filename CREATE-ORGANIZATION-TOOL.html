@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Create Organization - SiteWeave</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+
+    .container {
+      background: white;
+      border-radius: 12px;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+      max-width: 600px;
+      width: 100%;
+      padding: 40px;
+    }
+
+    h1 {
+      color: #1a202c;
+      margin-bottom: 10px;
+      font-size: 28px;
+    }
+
+    .subtitle {
+      color: #718096;
+      margin-bottom: 30px;
+      font-size: 14px;
+    }
+
+    .config-section {
+      background: #f7fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      padding: 20px;
+      margin-bottom: 30px;
+    }
+
+    .config-section h3 {
+      color: #2d3748;
+      margin-bottom: 15px;
+      font-size: 16px;
+    }
+
+    label {
+      display: block;
+      color: #4a5568;
+      margin-bottom: 8px;
+      font-weight: 500;
+      font-size: 14px;
+    }
+
+    input {
+      width: 100%;
+      padding: 12px 16px;
+      margin-bottom: 20px;
+      font-size: 16px;
+      border: 2px solid #e2e8f0;
+      border-radius: 8px;
+      transition: border-color 0.2s;
+    }
+
+    input:focus {
+      outline: none;
+      border-color: #667eea;
+    }
+
+    input::placeholder {
+      color: #a0aec0;
+    }
+
+    button {
+      width: 100%;
+      padding: 14px;
+      font-size: 16px;
+      font-weight: 600;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: transform 0.2s, box-shadow 0.2s;
+    }
+
+    button:hover:not(:disabled) {
+      transform: translateY(-2px);
+      box-shadow: 0 10px 20px rgba(102, 126, 234, 0.4);
+    }
+
+    button:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+
+    .result {
+      margin-top: 30px;
+      padding: 20px;
+      border-radius: 8px;
+      animation: slideIn 0.3s ease;
+    }
+
+    @keyframes slideIn {
+      from {
+        opacity: 0;
+        transform: translateY(-10px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    .result.success {
+      background: #f0fdf4;
+      border: 2px solid #86efac;
+    }
+
+    .result.error {
+      background: #fef2f2;
+      border: 2px solid #fca5a5;
+    }
+
+    .result h3 {
+      margin-bottom: 15px;
+      font-size: 18px;
+    }
+
+    .result.success h3 {
+      color: #166534;
+    }
+
+    .result.error h3 {
+      color: #991b1b;
+    }
+
+    .setup-link {
+      background: white;
+      padding: 15px;
+      margin: 15px 0;
+      border-radius: 6px;
+      word-break: break-all;
+      font-family: 'Courier New', monospace;
+      font-size: 14px;
+      border: 1px solid #d1d5db;
+    }
+
+    .copy-btn {
+      background: #10b981;
+      margin-top: 10px;
+    }
+
+    .copy-btn:hover {
+      background: #059669;
+    }
+
+    .info-text {
+      color: #6b7280;
+      font-size: 14px;
+      line-height: 1.6;
+    }
+
+    .loading {
+      display: inline-block;
+      width: 20px;
+      height: 20px;
+      border: 3px solid rgba(255, 255, 255, 0.3);
+      border-radius: 50%;
+      border-top-color: white;
+      animation: spin 0.8s linear infinite;
+      margin-right: 8px;
+      vertical-align: middle;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    .small-text {
+      font-size: 12px;
+      color: #9ca3af;
+      margin-top: 5px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🏗️ Create New Organization</h1>
+    <p class="subtitle">SiteWeave Client Onboarding Tool</p>
+
+    <!-- Configuration Section -->
+    <div class="config-section">
+      <h3>⚙️ Configuration (First Time Setup)</h3>
+      <label for="supabaseUrl">Supabase URL</label>
+      <input 
+        type="text" 
+        id="supabaseUrl" 
+        placeholder="https://xxxxx.supabase.co"
+        value=""
+      >
+      
+      <label for="supabaseKey">Your Auth Token</label>
+      <input 
+        type="password" 
+        id="supabaseKey" 
+        placeholder="Your Supabase auth token (logged in user)"
+      >
+      <p class="small-text">💡 You must be logged in as a super admin. Get this from browser's localStorage.</p>
+    </div>
+
+    <!-- Client Information -->
+    <form id="createOrg">
+      <label for="companyName">Company Name *</label>
+      <input 
+        type="text" 
+        id="companyName" 
+        placeholder="e.g., Miller Construction" 
+        required
+      >
+
+      <label for="ownerName">Owner Name *</label>
+      <input 
+        type="text" 
+        id="ownerName" 
+        placeholder="e.g., John Miller" 
+        required
+      >
+
+      <label for="ownerEmail">Owner Email *</label>
+      <input 
+        type="email" 
+        id="ownerEmail" 
+        placeholder="e.g., john@miller.com" 
+        required
+      >
+
+      <label for="adminPassword">Admin Password *</label>
+      <input 
+        type="password" 
+        id="adminPassword" 
+        placeholder="Min 8 characters" 
+        required
+        minLength="8"
+      >
+      <p class="small-text">This will be the admin's initial password. They can change it after logging in.</p>
+
+      <button type="submit" id="submitBtn">
+        Create Organization
+      </button>
+    </form>
+
+    <div id="result" style="display:none;"></div>
+  </div>
+
+  <script>
+    // Save/load config from localStorage
+    const supabaseUrlInput = document.getElementById('supabaseUrl');
+    const supabaseKeyInput = document.getElementById('supabaseKey');
+    
+    supabaseUrlInput.value = localStorage.getItem('siteweave-supabase-url') || '';
+    supabaseKeyInput.value = localStorage.getItem('siteweave-auth-token') || '';
+
+    supabaseUrlInput.addEventListener('change', (e) => {
+      localStorage.setItem('siteweave-supabase-url', e.target.value);
+    });
+
+    supabaseKeyInput.addEventListener('change', (e) => {
+      localStorage.setItem('siteweave-auth-token', e.target.value);
+    });
+
+    document.getElementById('createOrg').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      
+      const supabaseUrl = supabaseUrlInput.value.trim();
+      const authToken = supabaseKeyInput.value.trim();
+      const companyName = document.getElementById('companyName').value.trim();
+      const ownerName = document.getElementById('ownerName').value.trim();
+      const ownerEmail = document.getElementById('ownerEmail').value.trim();
+      const adminPassword = document.getElementById('adminPassword').value.trim();
+
+      if (!supabaseUrl || !authToken) {
+        showResult('error', 'Please configure your Supabase URL and Auth Token first.');
+        return;
+      }
+
+      const submitBtn = document.getElementById('submitBtn');
+      const originalText = submitBtn.innerHTML;
+      submitBtn.disabled = true;
+      submitBtn.innerHTML = '<span class="loading"></span> Creating...';
+
+      try {
+        const response = await fetch(`${supabaseUrl}/functions/v1/create-org-admin`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${authToken}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            orgName: companyName,
+            orgSlug: companyName.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
+            adminEmail: ownerEmail,
+            adminPassword: adminPassword,
+            adminName: ownerName
+          })
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+          showResult('success', `
+            <h3>✅ Success!</h3>
+            <p class="info-text"><strong>${data.organization.name}</strong> has been created successfully!</p>
+            <p class="info-text"><strong>Admin Account:</strong></p>
+            <div class="setup-link">
+              Email: ${data.admin.email}<br/>
+              Password: (the one you entered)
+            </div>
+            <p class="info-text" style="margin-top: 15px;">
+              <strong>Organization ID:</strong> ${data.organization.id}<br/>
+              <strong>Slug:</strong> ${data.organization.slug}<br/>
+              <strong>Admin User ID:</strong> ${data.admin.id}
+            </p>
+            <p class="info-text" style="margin-top: 15px; color: #059669; font-weight: 600;">
+              The admin can now log in with the email and password you provided. They will see the Setup Wizard on first login.
+            </p>
+          `);
+          
+          // Clear form
+          document.getElementById('companyName').value = '';
+          document.getElementById('ownerName').value = '';
+          document.getElementById('ownerEmail').value = '';
+          document.getElementById('adminPassword').value = '';
+        } else {
+          showResult('error', `
+            <h3>❌ Error</h3>
+            <p class="info-text">${data.error || 'Failed to create organization'}</p>
+          `);
+        }
+      } catch (error) {
+        showResult('error', `
+          <h3>❌ Error</h3>
+          <p class="info-text">Network error: ${error.message}</p>
+          <p class="info-text" style="margin-top: 10px;">
+            Make sure:
+            <ul style="margin-left: 20px; margin-top: 5px;">
+              <li>Your Supabase URL is correct</li>
+              <li>The edge function is deployed</li>
+              <li>You're logged in as a super admin</li>
+            </ul>
+          </p>
+        `);
+      } finally {
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = originalText;
+      }
+    });
+
+    function showResult(type, html) {
+      const resultDiv = document.getElementById('result');
+      resultDiv.className = `result ${type}`;
+      resultDiv.innerHTML = html;
+      resultDiv.style.display = 'block';
+      resultDiv.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+
+    function copyToClipboard(text) {
+      navigator.clipboard.writeText(text).then(() => {
+        const btn = event.target;
+        const originalText = btn.innerHTML;
+        btn.innerHTML = '✅ Copied!';
+        setTimeout(() => {
+          btn.innerHTML = originalText;
+        }, 2000);
+      });
+    }
+  </script>
+</body>
+</html>

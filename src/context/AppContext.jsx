@@ -26,6 +26,8 @@ const initialState = {
   projects: [], contacts: [], tasks: [], files: [], calendarEvents: [], messageChannels: [], messages: [], activityLog: [],
   user: null, // Changed from hardcoded user to null for proper auth
   userPreferences: null, // Add user preferences for onboarding
+  currentOrganization: null, // Current organization context
+  userRole: null, // User's role with permissions
 };
 
 function appReducer(state, action) {
@@ -100,6 +102,8 @@ function appReducer(state, action) {
     };
     case 'SET_USER_PREFERENCES': return { ...state, userPreferences: action.payload };
     case 'UPDATE_USER_PREFERENCES': return { ...state, userPreferences: { ...state.userPreferences, ...action.payload } };
+    case 'SET_ORGANIZATION': return { ...state, currentOrganization: action.payload };
+    case 'SET_USER_ROLE': return { ...state, userRole: action.payload };
     default: return state;
   }
 }
@@ -299,14 +303,15 @@ export const AppProvider = ({ children }) => {
               } else {
                 // Create contact for new user
                 const { data: newContact, error: contactError } = await supabaseClient
-                  .from('contacts')
-                  .insert({
+                .from('contacts')
+                .insert({
                     name: state.user.user_metadata?.full_name || state.user.email.split('@')[0] || 'User',
                     email: state.user.email,
                     type: 'Team',
                     role: 'Team Member',
                     status: 'Available',
-                    created_by_user_id: state.user.id
+                    created_by_user_id: state.user.id,
+                    organization_id: finalProfile?.organization_id || null
                   })
                   .select('id')
                   .single();
@@ -324,8 +329,9 @@ export const AppProvider = ({ children }) => {
               .from('profiles')
               .upsert({
                 id: state.user.id,
-                role: 'Team',
-                contact_id: contactIdToLink
+                role_id: null, // Will be assigned when user joins organization
+                contact_id: contactIdToLink,
+                organization_id: null // Will be assigned via invitation
               }, {
                 onConflict: 'id'
               });
@@ -380,7 +386,8 @@ export const AppProvider = ({ children }) => {
                   type: finalProfile.role === 'Client' ? 'Client' : 'Team',
                   role: finalProfile.role === 'PM' ? 'PM' : finalProfile.role === 'Admin' ? 'Admin' : 'Team Member',
                   status: 'Available',
-                  created_by_user_id: state.user.id
+                  created_by_user_id: state.user.id,
+                  organization_id: finalProfile?.organization_id || null
                 })
                 .select('id')
                 .single();
@@ -407,11 +414,38 @@ export const AppProvider = ({ children }) => {
             contactId = finalProfile.contact_id;
           }
           
-          // Fetch projects - RLS policy handles filtering automatically
+          // Load organization and user role
+          const { data: profileWithOrg } = await supabaseClient
+            .from('profiles')
+            .select(`
+              organization_id,
+              role_id,
+              roles (
+                id,
+                name,
+                permissions,
+                is_system_role
+              )
+            `)
+            .eq('id', state.user.id)
+            .single();
+
+          let organization = null;
+          if (profileWithOrg?.organization_id) {
+            const { data: orgData } = await supabaseClient
+              .from('organizations')
+              .select('*')
+              .eq('id', profileWithOrg.organization_id)
+              .single();
+            organization = orgData;
+            dispatch({ type: 'SET_ORGANIZATION', payload: orgData });
+            dispatch({ type: 'SET_USER_ROLE', payload: profileWithOrg.roles });
+          }
+
+          // Fetch projects - RLS policy handles filtering automatically by organization_id
           // The RLS policy allows:
-          // - Admins: all projects
-          // - PMs: projects where project_manager_id = auth.uid()
-          // - Team: projects where created_by_user_id = auth.uid() OR in project_contacts
+          // - Organization members: projects in their organization
+          // - Project collaborators: specific projects they're invited to
           const [{ data: projects }, { data: contacts, error: contactsError }, { data: tasks }, { data: files }, {data: calendarEvents}, {data: messageChannels}, {data: messages}, { data: userPreferences, error: userPrefsError }, { data: activityLog }] = await Promise.all([
             supabaseClient.from('projects').select('*'),
             supabaseClient.from('contacts').select('*'),

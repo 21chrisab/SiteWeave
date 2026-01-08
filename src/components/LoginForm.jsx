@@ -8,7 +8,6 @@ function LoginForm() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [isSignUp, setIsSignUp] = useState(false);
 
   const handleLogin = async (e) => {
     e.preventDefault();
@@ -23,23 +22,6 @@ function LoginForm() {
       addToast('Login failed: ' + error.message, 'error');
     } else {
       addToast('Login successful!', 'success');
-    }
-    setIsLoading(false);
-  };
-
-  const handleSignUp = async (e) => {
-    e.preventDefault();
-    setIsLoading(true);
-
-    const { error } = await supabaseClient.auth.signUp({
-      email,
-      password,
-    });
-
-    if (error) {
-      addToast('Sign up failed: ' + error.message, 'error');
-    } else {
-      addToast('Check your email for verification link!', 'success');
     }
     setIsLoading(false);
   };
@@ -92,20 +74,14 @@ function LoginForm() {
       <div className="max-w-md w-full space-y-8">
         <div>
           <h2 className="text-center text-3xl font-extrabold text-gray-900">
-            {isSignUp ? 'Create your account' : 'Sign in to SiteWeave'}
+            Sign in to SiteWeave
           </h2>
           <p className="mt-2 text-center text-sm text-gray-600">
-            {isSignUp ? 'Already have an account?' : "Don't have an account?"}{' '}
-            <button
-              onClick={() => setIsSignUp(!isSignUp)}
-              className="font-medium text-blue-600 hover:text-blue-500"
-            >
-              {isSignUp ? 'Sign in' : 'Sign up'}
-            </button>
+            Access your organization account
           </p>
         </div>
         
-        <form className="mt-8 space-y-6" onSubmit={isSignUp ? handleSignUp : handleLogin}>
+        <form className="mt-8 space-y-6" onSubmit={handleLogin}>
           <div className="space-y-4">
             <div>
               <label htmlFor="email" className="sr-only">
@@ -150,7 +126,7 @@ function LoginForm() {
               {isLoading ? (
                 <LoadingSpinner size="sm" text="" />
               ) : (
-                isSignUp ? 'Create Account' : 'Sign In'
+                'Sign In'
               )}
             </button>
           </div>

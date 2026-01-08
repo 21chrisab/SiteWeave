@@ -2,6 +2,7 @@ import { defineConfig, loadEnv } from 'vite'
 import react from '@vitejs/plugin-react'
 import electron from 'vite-plugin-electron'
 import renderer from 'vite-plugin-electron-renderer'
+import path from 'path'
 
 // https://vite.dev/config/
 export default defineConfig(({ mode }) => {
@@ -10,6 +11,11 @@ export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '')
   
   return {
+    resolve: {
+      alias: {
+        '@siteweave/core-logic': path.resolve(__dirname, 'packages/core-logic/src')
+      }
+    },
     plugins: [
       react(),
       electron([
@@ -25,8 +31,11 @@ export default defineConfig(({ mode }) => {
             build: {
               rollupOptions: {
                 output: {
+                  // FORCE CommonJS format to match .cjs extension
+                  format: 'cjs',
                   entryFileNames: 'main.cjs'
-                }
+                },
+                external: ['electron', 'electron-updater', 'http', 'url', 'path', 'https', 'net', 'fs', 'child_process']
               }
             }
           }
