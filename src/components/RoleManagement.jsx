@@ -75,17 +75,22 @@ function RoleManagement() {
     if (!editingRole || !roleForm.name) return;
 
     try {
-      await updateRole(supabaseClient, editingRole.id, {
+      const result = await updateRole(supabaseClient, editingRole.id, {
         name: roleForm.name,
         permissions: roleForm.permissions
       });
-      addToast('Role updated successfully', 'success');
-      setEditingRole(null);
-      setRoleForm({ name: '', permissions: { ...DEFAULT_PERMISSIONS } });
-      loadRoles();
+      
+      if (result.success) {
+        addToast('Role updated successfully', 'success');
+        setEditingRole(null);
+        setRoleForm({ name: '', permissions: { ...DEFAULT_PERMISSIONS } });
+        loadRoles();
+      } else {
+        addToast(result.error || 'Failed to update role', 'error');
+      }
     } catch (error) {
       console.error('Error updating role:', error);
-      addToast('Failed to update role', 'error');
+      addToast(error.message || 'Failed to update role', 'error');
     }
   };
 
