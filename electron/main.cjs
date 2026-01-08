@@ -1,8 +1,31 @@
 const { app, BrowserWindow, Menu, shell, protocol, ipcMain } = require('electron');
-const { autoUpdater } = require('electron-updater');
 const path = require('path');
 const { createServer } = require('http');
 const { parse } = require('url');
+
+// Try to load electron-updater (may not be available in dev or if not installed)
+let autoUpdater = null;
+try {
+  autoUpdater = require('electron-updater').autoUpdater;
+} catch (error) {
+  console.warn('electron-updater not available:', error.message);
+  // Create a mock autoUpdater for dev mode
+  autoUpdater = {
+    checkForUpdatesAndNotify: () => {
+      console.log('Update check skipped (dev mode or electron-updater not available)');
+      return Promise.resolve(null);
+    },
+    checkForUpdates: () => {
+      console.log('Update check skipped (dev mode or electron-updater not available)');
+      return Promise.resolve(null);
+    },
+    quitAndInstall: () => {
+      console.log('Update install skipped (dev mode)');
+    },
+    on: () => {},
+    updateInfo: null
+  };
+}
 
 // Prevent multiple instances
 const gotTheLock = app.requestSingleInstanceLock();

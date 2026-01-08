@@ -13,6 +13,8 @@ files:
       - '!**/win-unpacked/**'
       - '!**/.DS_Store'
       - '!**/Thumbs.db'
+  # Include electron-updater in the package
+  - 'node_modules/electron-updater/**/*'
 win:
   target: nsis
   icon: build/icon.png

@@ -35,7 +35,7 @@ export default defineConfig(({ mode }) => {
                   format: 'cjs',
                   entryFileNames: 'main.cjs'
                 },
-                external: ['electron', 'electron-updater', 'http', 'url', 'path', 'https', 'net', 'fs', 'child_process']
+                external: ['electron', 'http', 'url', 'path', 'https', 'net', 'fs', 'child_process']
               }
             }
           }
