@@ -7,7 +7,7 @@ import Sidebar from './components/Sidebar'
 import LoginForm from './components/LoginForm'
 import InviteAcceptPage from './components/InviteAcceptPage'
 import SetupWizardModal from './components/SetupWizardModal'
-import TeamManagementModal from './components/TeamManagementModal'
+import DirectoryManagementModal from './components/DirectoryManagementModal'
 import PermissionGuard from './components/PermissionGuard'
 import ForcePasswordReset from './components/ForcePasswordReset'
 import { LazyViewWrapper, DashboardView, ProjectDetailsView, CalendarView, MessagesView, ContactsView, TeamView, SettingsView } from './components/LazyViews'
@@ -203,8 +203,8 @@ function App() {
         />
       )}
 
-      {/* Team Management Modal */}
-      <TeamManagementModal 
+      {/* Directory Management Modal */}
+      <DirectoryManagementModal 
         show={showTeamModal} 
         onClose={() => setShowTeamModal(false)} 
       />

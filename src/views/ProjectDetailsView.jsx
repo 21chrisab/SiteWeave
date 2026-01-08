@@ -73,8 +73,8 @@ function ProjectDetailsView() {
     const project = state.projects.find(p => p.id === state.selectedProjectId);
     const allTasks = state.tasks.filter(t => t.project_id === state.selectedProjectId);
     
-    // Get all project members (any contact linked to this project)
-    const teamMembers = state.contacts.filter(contact => 
+    // Get all project crew members (any contact linked to this project)
+    const crewMembers = state.contacts.filter(contact => 
         contact.project_contacts && contact.project_contacts.some(pc => pc.project_id === project?.id)
     );
     
@@ -520,10 +520,10 @@ function ProjectDetailsView() {
                         <option value="On Hold">On Hold</option>
                         <option value="Completed">Completed</option>
                     </select>
-                    {teamMembers.length > 0 && (
+                    {crewMembers.length > 0 && (
                         <div className="flex items-center gap-2">
                             <div className="flex -space-x-2">
-                                {teamMembers.slice(0, 5).map(member => (
+                                {crewMembers.slice(0, 5).map(member => (
                                     member.avatar_url ? (
                                         <img key={member.id} src={member.avatar_url} title={member.name} className="w-8 h-8 rounded-full" />
                                     ) : (
@@ -531,9 +531,9 @@ function ProjectDetailsView() {
                                     )
                                 ))}
                             </div>
-                            {teamMembers.length > 5 && (
+                            {crewMembers.length > 5 && (
                                 <div className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center text-xs font-semibold text-gray-600 -ml-2">
-                                    +{teamMembers.length - 5}
+                                    +{crewMembers.length - 5}
                                 </div>
                             )}
                         </div>
@@ -541,8 +541,9 @@ function ProjectDetailsView() {
                     <button 
                         onClick={() => setShowShare(true)}
                         className="px-4 py-2 text-sm font-semibold text-white bg-blue-600 rounded-lg shadow-sm hover:bg-blue-700 transition-colors"
+                        title="Assign crew members from organization directory or invite guests"
                     >
-                        + Add Team Member
+                        + Manage Crew
                     </button>
                 </div>
             </header>

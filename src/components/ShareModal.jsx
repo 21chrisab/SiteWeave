@@ -166,17 +166,17 @@ function ShareModal({ projectId, onClose }) {
     <div className="fixed inset-0 z-50 flex items-center justify-center backdrop-blur-[2px] bg-white/20">
       <div className="w-full max-w-3xl rounded-xl bg-white p-6 shadow-xl max-h-[90vh] overflow-y-auto">
         <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-xl font-semibold text-gray-900">Add Team Members</h2>
+          <h2 className="text-xl font-semibold text-gray-900">Manage Project Crew</h2>
           <button onClick={onClose} className="text-gray-500 hover:text-gray-700">✕</button>
         </div>
 
         <form onSubmit={onSubmit}>
-          {/* Current Team Section */}
+          {/* Current Crew Section */}
           {projectMembers.length > 0 && (
             <div className="mb-6">
               <div className="flex items-center justify-between mb-3">
                 <label className="text-sm font-semibold text-gray-700">
-                  Current Team Members ({projectMembers.length})
+                  Current Crew ({projectMembers.length})
                 </label>
               </div>
               <div className="flex flex-wrap gap-3">
@@ -209,11 +209,11 @@ function ShareModal({ projectId, onClose }) {
             </div>
           )}
 
-          {/* Contact Picker Section */}
+          {/* Assign from Directory Section */}
           {availableContacts.length > 0 && (
             <div className="mb-6">
               <div className="flex items-center justify-between mb-3">
-                <label className="text-sm font-medium text-gray-700">Select from Existing Contacts</label>
+                <label className="text-sm font-medium text-gray-700">Assign from Directory</label>
                 <button 
                   type="button"
                   onClick={() => setShowContactPicker(!showContactPicker)}
@@ -222,6 +222,7 @@ function ShareModal({ projectId, onClose }) {
                   {showContactPicker ? 'Hide' : 'Show'} ({availableContacts.length})
                 </button>
               </div>
+              <p className="text-xs text-gray-500 mb-2">Select existing organization members to add to this project</p>
               
               {showContactPicker && (
                 <div className="max-h-60 overflow-y-auto border border-gray-200 rounded-lg">
@@ -253,11 +254,12 @@ function ShareModal({ projectId, onClose }) {
             </div>
           )}
 
-          {/* Email Input Section */}
+          {/* Invite Guest/Sub Section */}
           <div className="mb-4">
             <label className="mb-2 block text-sm font-medium text-gray-700">
-              Or enter email addresses to invite new people
+              Invite Guest/Sub
             </label>
+            <p className="text-xs text-gray-500 mb-2">Invite external users (subcontractors, guests) to this project only</p>
             <div className="flex gap-2">
               <input
                 value={input}

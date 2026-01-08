@@ -9,11 +9,11 @@ import Modal from './Modal';
 import LoadingSpinner from './LoadingSpinner';
 
 /**
- * Team Management Modal
- * Secure frontend component for managing organization's team
+ * Directory Management Modal
+ * Secure frontend component for managing organization's member directory
  * Requires can_manage_team permission
  */
-function TeamManagementModal({ show, onClose }) {
+function DirectoryManagementModal({ show, onClose }) {
   const { state } = useAppContext();
   const currentOrganization = state.currentOrganization;
   const user = state.user;
@@ -58,8 +58,8 @@ function TeamManagementModal({ show, onClose }) {
       setUsers(usersData);
       setRoles(rolesData);
     } catch (error) {
-      console.error('Error loading team data:', error);
-      addToast('Failed to load team members', 'error');
+      console.error('Error loading directory data:', error);
+      addToast('Failed to load organization members', 'error');
     } finally {
       setLoading(false);
     }
@@ -253,7 +253,12 @@ function TeamManagementModal({ show, onClose }) {
 
   return (
     <PermissionGuard permission="can_manage_team">
-      <Modal show={show} onClose={onClose} title="Manage Team" size="large">
+      <Modal show={show} onClose={onClose} title="Manage Organization Directory" size="large">
+        <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+          <p className="text-sm text-blue-800">
+            <strong>Organization Directory:</strong> Add or remove employees from your company account.
+          </p>
+        </div>
         {loading ? (
           <LoadingSpinner />
         ) : (
@@ -351,14 +356,14 @@ function TeamManagementModal({ show, onClose }) {
               )}
             </div>
 
-            {/* Team Members List */}
+            {/* Organization Members List */}
             <div className="bg-white border border-gray-200 rounded-lg">
               <div className="p-4 border-b border-gray-200">
-                <h3 className="font-semibold">Team Members ({users.length})</h3>
+                <h3 className="font-semibold">Organization Members ({users.length})</h3>
               </div>
               <div className="divide-y divide-gray-200">
                 {users.length === 0 ? (
-                  <div className="p-6 text-center text-gray-500">No team members yet</div>
+                  <div className="p-6 text-center text-gray-500">No organization members yet</div>
                 ) : (
                   users.map(member => (
                     <div key={member.id} className="p-4 flex items-center justify-between hover:bg-gray-50">
@@ -446,4 +451,4 @@ function TeamManagementModal({ show, onClose }) {
   );
 }
 
-export default TeamManagementModal;
+export default DirectoryManagementModal;
