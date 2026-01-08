@@ -283,25 +283,6 @@ export const AppProvider = ({ children }) => {
             console.error('Profile error:', profileError);
           }
           
-          // Check must_change_password separately (column may not exist in older schemas)
-          let mustChangePassword = false;
-          if (profile) {
-            try {
-              const { data: profileCheck } = await supabaseClient
-                .from('profiles')
-                .select('must_change_password')
-                .eq('id', state.user.id)
-                .single();
-              mustChangePassword = profileCheck?.must_change_password || false;
-            } catch (error) {
-              // Column doesn't exist yet, default to false
-              if (error.code !== '42703') { // Only log if it's not a missing column error
-                console.warn('Error checking must_change_password:', error);
-              }
-              mustChangePassword = false;
-            }
-          }
-          
           let finalProfile = profile;
           let contactId = profile?.contact_id;
           
