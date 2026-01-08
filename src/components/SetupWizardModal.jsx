@@ -3,6 +3,7 @@ import { useAppContext } from '../context/AppContext';
 import { supabaseClient } from '../context/AppContext';
 import { useToast } from '../context/ToastContext';
 import { getRoles, createRole, updateRole } from '../utils/roleManagementService';
+import { getAllRolePresets } from '../utils/rolePresets';
 import Modal from './Modal';
 import LoadingSpinner from './LoadingSpinner';
 import Icon from './Icon';
@@ -102,16 +103,29 @@ function SetupWizardModal({ show, onComplete }) {
 
   // Wizard state
   const [currentRoleIndex, setCurrentRoleIndex] = useState(0);
-  const [roles, setRoles] = useState([]); // Array of {roleName, permissions, members}
+  const [roles, setRoles] = useState([]); // Array of {roleName, permissions, members, isCustom, description}
   const [loading, setLoading] = useState(false);
   const [isFinishing, setIsFinishing] = useState(false);
+  const [showRolePresetDropdown, setShowRolePresetDropdown] = useState(false);
+  const [editingRoleName, setEditingRoleName] = useState(false);
+  const [tempRoleName, setTempRoleName] = useState('');
+
+  // Get all roles (standard + custom)
+  const allRoles = roles.length > 0 ? roles : STANDARD_ROLES.map(t => ({
+    roleName: t.name,
+    permissions: { ...t.defaultPermissions },
+    members: [],
+    isCustom: false,
+    description: t.description
+  }));
 
   // Current role configuration
-  const currentRoleTemplate = STANDARD_ROLES[currentRoleIndex];
-  const currentRoleConfig = roles[currentRoleIndex] || {
-    roleName: currentRoleTemplate.name,
-    permissions: { ...currentRoleTemplate.defaultPermissions },
-    members: []
+  const currentRoleConfig = allRoles[currentRoleIndex] || {
+    roleName: 'New Role',
+    permissions: {},
+    members: [],
+    isCustom: true,
+    description: ''
   };
 
   // UI state
@@ -131,34 +145,87 @@ function SetupWizardModal({ show, onComplete }) {
       const initialRoles = STANDARD_ROLES.map(template => ({
         roleName: template.name,
         permissions: { ...template.defaultPermissions },
-        members: []
+        members: [],
+        isCustom: false,
+        description: template.description
       }));
       setRoles(initialRoles);
     }
   }, [show, currentOrganization?.id]);
 
-  // Update current role config when switching roles
+  // Initialize temp role name when editing
   useEffect(() => {
-    if (roles.length > 0 && !roles[currentRoleIndex]) {
-      const template = STANDARD_ROLES[currentRoleIndex];
-      const newRole = {
-        roleName: template.name,
-        permissions: { ...template.defaultPermissions },
-        members: []
-      };
-      const updatedRoles = [...roles];
-      updatedRoles[currentRoleIndex] = newRole;
-      setRoles(updatedRoles);
+    if (editingRoleName) {
+      setTempRoleName(currentRoleConfig.roleName);
     }
-  }, [currentRoleIndex, roles]);
+  }, [editingRoleName, currentRoleConfig.roleName]);
+
+  // Handle adding role from preset
+  const handleAddRoleFromPreset = (preset) => {
+    const newRole = {
+      roleName: preset.defaultName,
+      permissions: { ...preset.defaultPermissions },
+      members: [],
+      isCustom: true,
+      description: preset.description
+    };
+    const updatedRoles = [...roles];
+    updatedRoles.push(newRole);
+    setRoles(updatedRoles);
+    setCurrentRoleIndex(updatedRoles.length - 1);
+    setShowRolePresetDropdown(false);
+    setShowPermissions(false);
+    addToast(`Added "${preset.defaultName}" role`, 'success');
+  };
+
+  // Handle duplicating a role
+  const handleDuplicateRole = (roleIndex) => {
+    const roleToDuplicate = roles[roleIndex];
+    const duplicatedRole = {
+      roleName: `${roleToDuplicate.roleName} (Copy)`,
+      permissions: { ...roleToDuplicate.permissions },
+      members: [],
+      isCustom: true,
+      description: roleToDuplicate.description || ''
+    };
+    const updatedRoles = [...roles];
+    updatedRoles.push(duplicatedRole);
+    setRoles(updatedRoles);
+    setCurrentRoleIndex(updatedRoles.length - 1);
+    setShowPermissions(false);
+    addToast(`Duplicated "${roleToDuplicate.roleName}" role`, 'success');
+  };
+
+  // Handle renaming a role
+  const handleRenameRole = () => {
+    if (!tempRoleName.trim()) {
+      addToast('Role name cannot be empty', 'error');
+      return;
+    }
+    const updatedRoles = [...roles];
+    updatedRoles[currentRoleIndex] = {
+      ...updatedRoles[currentRoleIndex],
+      roleName: tempRoleName.trim()
+    };
+    setRoles(updatedRoles);
+    setEditingRoleName(false);
+    addToast('Role renamed successfully', 'success');
+  };
 
   const handlePermissionChange = (permissionKey, value) => {
     const updatedRoles = [...roles];
     if (!updatedRoles[currentRoleIndex]) {
+      const template = STANDARD_ROLES[currentRoleIndex] || {
+        name: 'New Role',
+        defaultPermissions: {},
+        description: ''
+      };
       updatedRoles[currentRoleIndex] = {
-        roleName: currentRoleTemplate.name,
-        permissions: { ...currentRoleTemplate.defaultPermissions },
-        members: []
+        roleName: template.name,
+        permissions: { ...template.defaultPermissions },
+        members: [],
+        isCustom: false,
+        description: template.description
       };
     }
     updatedRoles[currentRoleIndex].permissions[permissionKey] = value;
@@ -268,10 +335,17 @@ function SetupWizardModal({ show, onComplete }) {
 
       const updatedRoles = [...roles];
       if (!updatedRoles[currentRoleIndex]) {
+        const template = STANDARD_ROLES[currentRoleIndex] || {
+          name: 'New Role',
+          defaultPermissions: {},
+          description: ''
+        };
         updatedRoles[currentRoleIndex] = {
-          roleName: currentRoleTemplate.name,
-          permissions: { ...currentRoleTemplate.defaultPermissions },
-          members: []
+          roleName: template.name,
+          permissions: { ...template.defaultPermissions },
+          members: [],
+          isCustom: false,
+          description: template.description
         };
       }
       updatedRoles[currentRoleIndex].members.push(newMember);
@@ -301,10 +375,17 @@ function SetupWizardModal({ show, onComplete }) {
 
       const updatedRoles = [...roles];
       if (!updatedRoles[currentRoleIndex]) {
+        const template = STANDARD_ROLES[currentRoleIndex] || {
+          name: 'New Role',
+          defaultPermissions: {},
+          description: ''
+        };
         updatedRoles[currentRoleIndex] = {
-          roleName: currentRoleTemplate.name,
-          permissions: { ...currentRoleTemplate.defaultPermissions },
-          members: []
+          roleName: template.name,
+          permissions: { ...template.defaultPermissions },
+          members: [],
+          isCustom: false,
+          description: template.description
         };
       }
       updatedRoles[currentRoleIndex].members.push(newMember);
@@ -326,9 +407,10 @@ function SetupWizardModal({ show, onComplete }) {
   };
 
   const handleNext = () => {
-    if (currentRoleIndex < STANDARD_ROLES.length - 1) {
+    if (currentRoleIndex < allRoles.length - 1) {
       setCurrentRoleIndex(currentRoleIndex + 1);
       setShowPermissions(false);
+      setEditingRoleName(false);
     }
   };
 
@@ -336,6 +418,7 @@ function SetupWizardModal({ show, onComplete }) {
     if (currentRoleIndex > 0) {
       setCurrentRoleIndex(currentRoleIndex - 1);
       setShowPermissions(false);
+      setEditingRoleName(false);
     }
   };
 
@@ -475,34 +558,91 @@ function SetupWizardModal({ show, onComplete }) {
     }
   };
 
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    if (showRolePresetDropdown) {
+      const handleClickOutside = (e) => {
+        if (!e.target.closest('.role-preset-dropdown')) {
+          setShowRolePresetDropdown(false);
+        }
+      };
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => document.removeEventListener('mousedown', handleClickOutside);
+    }
+  }, [showRolePresetDropdown]);
+
   if (!show) return null;
 
-  const canGoNext = currentRoleIndex < STANDARD_ROLES.length - 1;
+  const canGoNext = currentRoleIndex < allRoles.length - 1;
   const canGoBack = currentRoleIndex > 0;
-  const isLastRole = currentRoleIndex === STANDARD_ROLES.length - 1;
+  const isLastRole = currentRoleIndex === allRoles.length - 1;
 
   return (
     <Modal show={show} onClose={() => {}} title="Welcome! Set Up Your Organization" size="xlarge">
       <div className="flex flex-col h-full max-h-[80vh]">
         {/* Progress Indicator */}
-        <div className="flex items-center justify-center space-x-2 mb-6 pb-4 border-b">
-          {STANDARD_ROLES.map((role, idx) => (
-            <React.Fragment key={role.name}>
+        <div className="flex items-center justify-center space-x-2 mb-6 pb-4 border-b overflow-x-auto">
+          {allRoles.map((role, idx) => (
+            <React.Fragment key={`${role.roleName}-${idx}`}>
               <div className={`flex items-center ${idx <= currentRoleIndex ? 'text-blue-600' : 'text-gray-400'}`}>
-                <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium ${
+                <div className={`relative group w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium ${
                   idx < currentRoleIndex ? 'bg-blue-600 text-white' :
                   idx === currentRoleIndex ? 'bg-blue-100 text-blue-700 border-2 border-blue-600' :
                   'bg-gray-100 text-gray-400'
                 }`}>
                   {idx < currentRoleIndex ? '✓' : idx + 1}
+                  {/* Duplicate button on hover */}
+                  {role.isCustom && idx !== currentRoleIndex && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDuplicateRole(idx);
+                      }}
+                      className="absolute -top-1 -right-1 w-4 h-4 bg-purple-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-xs"
+                      title="Duplicate role"
+                    >
+                      <Icon path="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" className="w-3 h-3" />
+                    </button>
+                  )}
                 </div>
-                <span className="ml-2 text-sm font-medium hidden sm:inline">{role.name}</span>
+                <span className="ml-2 text-sm font-medium hidden sm:inline">{role.roleName}</span>
               </div>
-              {idx < STANDARD_ROLES.length - 1 && (
+              {idx < allRoles.length - 1 && (
                 <div className={`w-8 h-0.5 ${idx < currentRoleIndex ? 'bg-blue-600' : 'bg-gray-200'}`}></div>
               )}
             </React.Fragment>
           ))}
+          {/* Add Role Button */}
+          <div className="relative ml-2 role-preset-dropdown">
+            <button
+              onClick={() => setShowRolePresetDropdown(!showRolePresetDropdown)}
+              className="w-8 h-8 rounded-full bg-green-100 text-green-700 border-2 border-green-300 flex items-center justify-center hover:bg-green-200 transition-colors"
+              title="Add Role from Library"
+            >
+              <Icon path="M12 4v16m8-8H4" className="w-5 h-5" />
+            </button>
+            {/* Role Preset Dropdown */}
+            {showRolePresetDropdown && (
+              <div className="absolute top-full left-0 mt-2 w-64 bg-white rounded-lg shadow-xl border border-gray-200 z-50 max-h-96 overflow-y-auto">
+                <div className="p-2 border-b border-gray-200">
+                  <h4 className="text-sm font-semibold text-gray-900">Role Library</h4>
+                  <p className="text-xs text-gray-500 mt-1">Select a preset to add</p>
+                </div>
+                <div className="p-2">
+                  {getAllRolePresets().map(preset => (
+                    <button
+                      key={preset.id}
+                      onClick={() => handleAddRoleFromPreset(preset)}
+                      className="w-full text-left p-3 rounded-lg hover:bg-blue-50 transition-colors mb-1"
+                    >
+                      <div className="font-medium text-sm text-gray-900">{preset.defaultName}</div>
+                      <div className="text-xs text-gray-500 mt-1">{preset.description}</div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Split View */}
@@ -510,8 +650,68 @@ function SetupWizardModal({ show, onComplete }) {
           {/* Left Column: Role Configuration */}
           <div className="flex flex-col space-y-4 overflow-y-auto pr-2">
             <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-lg p-6 border border-blue-200">
-              <h3 className="text-xl font-bold text-gray-900 mb-2">{currentRoleConfig.roleName}</h3>
-              <p className="text-sm text-gray-600 mb-4">{currentRoleTemplate.description}</p>
+              <div className="flex items-start justify-between mb-2">
+                {editingRoleName ? (
+                  <div className="flex-1 flex items-center space-x-2">
+                    <input
+                      type="text"
+                      value={tempRoleName}
+                      onChange={(e) => setTempRoleName(e.target.value)}
+                      onKeyPress={(e) => {
+                        if (e.key === 'Enter') {
+                          handleRenameRole();
+                        } else if (e.key === 'Escape') {
+                          setEditingRoleName(false);
+                        }
+                      }}
+                      className="flex-1 text-xl font-bold text-gray-900 bg-transparent border-b-2 border-blue-500 focus:outline-none"
+                      autoFocus
+                    />
+                    <button
+                      onClick={handleRenameRole}
+                      className="p-1 text-green-600 hover:bg-green-50 rounded"
+                      title="Save"
+                    >
+                      <Icon path="M5 13l4 4L19 7" className="w-5 h-5" />
+                    </button>
+                    <button
+                      onClick={() => setEditingRoleName(false)}
+                      className="p-1 text-gray-400 hover:bg-gray-50 rounded"
+                      title="Cancel"
+                    >
+                      <Icon path="M6 18L18 6M6 6l12 12" className="w-5 h-5" />
+                    </button>
+                  </div>
+                ) : (
+                  <>
+                    <h3 className="text-xl font-bold text-gray-900 flex-1">{currentRoleConfig.roleName}</h3>
+                    <button
+                      onClick={() => setEditingRoleName(true)}
+                      className="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded"
+                      title="Rename role"
+                    >
+                      <Icon path="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" className="w-4 h-4" />
+                    </button>
+                  </>
+                )}
+              </div>
+              <p className="text-sm text-gray-600 mb-4">{currentRoleConfig.description || 'Configure permissions for this role'}</p>
+              <div className="flex items-center space-x-2 mb-2">
+                {currentRoleConfig.isCustom && (
+                  <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
+                    Custom Role
+                  </span>
+                )}
+                {/* Duplicate button for current role */}
+                <button
+                  onClick={() => handleDuplicateRole(currentRoleIndex)}
+                  className="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-gray-100 text-gray-700 hover:bg-gray-200 transition-colors"
+                  title="Duplicate this role"
+                >
+                  <Icon path="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" className="w-3 h-3 mr-1" />
+                  Duplicate
+                </button>
+              </div>
               
               {/* Critical Permissions - Always Visible */}
               <div className="space-y-2 mt-4 pt-4 border-t border-blue-200">
