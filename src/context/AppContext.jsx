@@ -422,7 +422,6 @@ export const AppProvider = ({ children }) => {
             .select(`
               organization_id,
               role_id,
-              must_change_password,
               roles (
                 id,
                 name,
@@ -432,6 +431,21 @@ export const AppProvider = ({ children }) => {
             `)
             .eq('id', state.user.id)
             .single();
+          
+          // Check must_change_password separately (column may not exist in older schemas)
+          let mustChangePassword = false;
+          try {
+            const { data: profileCheck } = await supabaseClient
+              .from('profiles')
+              .select('must_change_password')
+              .eq('id', state.user.id)
+              .single();
+            mustChangePassword = profileCheck?.must_change_password || false;
+          } catch (error) {
+            // Column doesn't exist yet, default to false
+            console.warn('must_change_password column not found, defaulting to false:', error);
+            mustChangePassword = false;
+          }
 
           let organization = null;
           if (profileWithOrg?.organization_id) {
@@ -446,7 +460,7 @@ export const AppProvider = ({ children }) => {
           }
           
           // Check if user must change password
-          if (profileWithOrg?.must_change_password) {
+          if (mustChangePassword) {
             dispatch({ type: 'SET_MUST_CHANGE_PASSWORD', payload: true });
           }
 

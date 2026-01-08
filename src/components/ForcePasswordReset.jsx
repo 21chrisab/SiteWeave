@@ -76,16 +76,24 @@ function ForcePasswordReset({ show, onComplete }) {
         return;
       }
 
-      // Clear must_change_password flag in profiles table
-      const { error: profileError } = await supabaseClient
-        .from('profiles')
-        .update({ must_change_password: false })
-        .eq('id', state.user.id);
+      // Clear must_change_password flag in profiles table (if column exists)
+      try {
+        const { error: profileError } = await supabaseClient
+          .from('profiles')
+          .update({ must_change_password: false })
+          .eq('id', state.user.id);
 
-      if (profileError) {
-        console.error('Error updating profile:', profileError);
-        // Don't fail the whole operation if profile update fails
-        // The password was changed successfully
+        if (profileError) {
+          // Column might not exist yet, log but don't fail
+          if (profileError.code === '42703') {
+            console.warn('must_change_password column does not exist yet. Please run migration script.');
+          } else {
+            console.error('Error updating profile:', profileError);
+          }
+        }
+      } catch (error) {
+        // Column doesn't exist, that's okay - password was changed successfully
+        console.warn('Could not update must_change_password flag:', error);
       }
 
       addToast('Password changed successfully!', 'success');
