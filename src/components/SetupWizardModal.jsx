@@ -182,11 +182,17 @@ function SetupWizardModal({ show, onComplete }) {
     return Math.floor(1000 + Math.random() * 9000).toString();
   };
 
-  // Update preview credentials when name changes
+  // Update preview credentials when name changes (use ref to avoid regenerating PIN)
+  const previewPinRef = React.useRef(null);
+  
   useEffect(() => {
     if (inputMode === 'managed' && managedInput.fullName) {
       const username = managedInput.username || generateUsername(managedInput.fullName, currentOrganization?.slug);
-      const pin = managedInput.password || generatePIN();
+      // Only generate new PIN if password field is empty and we don't have a preview PIN yet
+      const pin = managedInput.password || previewPinRef.current || generatePIN();
+      if (!previewPinRef.current && !managedInput.password) {
+        previewPinRef.current = pin;
+      }
       setPreviewCredentials({
         fullName: managedInput.fullName,
         username: username,
@@ -194,6 +200,7 @@ function SetupWizardModal({ show, onComplete }) {
       });
     } else {
       setPreviewCredentials(null);
+      previewPinRef.current = null; // Reset when switching modes
     }
   }, [managedInput.fullName, managedInput.username, managedInput.password, inputMode, currentOrganization?.slug]);
 
