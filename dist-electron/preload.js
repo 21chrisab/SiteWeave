@@ -1,122 +1,133 @@
-const { contextBridge: n, ipcRenderer: o } = require("electron");
+"use strict";
+const { contextBridge, ipcRenderer } = require("electron");
 console.log("Preload script loading...");
 try {
-  n.exposeInMainWorld("electronAPI", {
+  contextBridge.exposeInMainWorld("electronAPI", {
     // OAuth callbacks
-    onOAuthCallback: (r) => {
+    onOAuthCallback: (callback) => {
       try {
-        o.on("oauth-callback", (e, t) => r(t));
-      } catch (e) {
-        console.error("Error setting up OAuth callback:", e);
+        ipcRenderer.on("oauth-callback", (event, data) => callback(data));
+      } catch (error) {
+        console.error("Error setting up OAuth callback:", error);
       }
     },
     // Update notifications
-    onUpdateAvailable: (r) => {
+    onUpdateAvailable: (callback) => {
       try {
-        o.on("update-available", r);
-      } catch (e) {
-        console.error("Error setting up update available callback:", e);
+        ipcRenderer.on("update-available", callback);
+      } catch (error) {
+        console.error("Error setting up update available callback:", error);
       }
     },
-    onUpdateDownloaded: (r) => {
+    onUpdateDownloaded: (callback) => {
       try {
-        o.on("update-downloaded", r);
-      } catch (e) {
-        console.error("Error setting up update downloaded callback:", e);
+        ipcRenderer.on("update-downloaded", callback);
+      } catch (error) {
+        console.error("Error setting up update downloaded callback:", error);
       }
     },
-    onUpdateError: (r) => {
+    onUpdateError: (callback) => {
       try {
-        o.on("update-error", (e, t) => r(t));
-      } catch (e) {
-        console.error("Error setting up update error callback:", e);
+        ipcRenderer.on("update-error", (event, error) => callback(error));
+      } catch (error) {
+        console.error("Error setting up update error callback:", error);
       }
     },
-    onUpdateDownloadProgress: (r) => {
+    onUpdateDownloadProgress: (callback) => {
       try {
-        o.on("update-download-progress", (e, t) => r(t));
-      } catch (e) {
-        console.error("Error setting up update download progress callback:", e);
+        ipcRenderer.on("update-download-progress", (event, progress) => callback(progress));
+      } catch (error) {
+        console.error("Error setting up update download progress callback:", error);
       }
     },
     // Menu actions
-    onMenuAction: (r) => {
+    onMenuAction: (callback) => {
       try {
-        o.on("menu-new-project", r), o.on("menu-about", r);
-      } catch (e) {
-        console.error("Error setting up menu action callback:", e);
+        ipcRenderer.on("menu-new-project", callback);
+        ipcRenderer.on("menu-about", callback);
+      } catch (error) {
+        console.error("Error setting up menu action callback:", error);
       }
     },
     // App info
     getAppVersion: () => {
       try {
-        return o.invoke("get-app-version");
-      } catch (r) {
-        return console.error("Error getting app version:", r), "1.0.0";
+        return ipcRenderer.invoke("get-app-version");
+      } catch (error) {
+        console.error("Error getting app version:", error);
+        return "1.0.0";
       }
     },
     // Update actions
     installUpdate: () => {
       try {
-        return o.invoke("install-update");
-      } catch (r) {
-        return console.error("Error installing update:", r), Promise.resolve();
+        return ipcRenderer.invoke("install-update");
+      } catch (error) {
+        console.error("Error installing update:", error);
+        return Promise.resolve();
       }
     },
     checkForUpdates: () => {
       try {
-        return o.invoke("check-for-updates");
-      } catch (r) {
-        return console.error("Error checking for updates:", r), Promise.resolve();
+        return ipcRenderer.invoke("check-for-updates");
+      } catch (error) {
+        console.error("Error checking for updates:", error);
+        return Promise.resolve();
       }
     },
     // OAuth server control
     startOAuthServer: () => {
       try {
-        return o.invoke("start-oauth-server");
-      } catch (r) {
-        return console.error("Error starting OAuth server:", r), Promise.resolve();
+        return ipcRenderer.invoke("start-oauth-server");
+      } catch (error) {
+        console.error("Error starting OAuth server:", error);
+        return Promise.resolve();
       }
     },
     stopOAuthServer: () => {
       try {
-        return o.invoke("stop-oauth-server");
-      } catch (r) {
-        return console.error("Error stopping OAuth server:", r), Promise.resolve();
+        return ipcRenderer.invoke("stop-oauth-server");
+      } catch (error) {
+        console.error("Error stopping OAuth server:", error);
+        return Promise.resolve();
       }
     },
     // External links
-    openExternal: (r) => {
+    openExternal: (url) => {
       try {
-        window.open(r, "_blank");
-      } catch (e) {
-        console.error("Error opening external link:", e);
+        window.open(url, "_blank");
+      } catch (error) {
+        console.error("Error opening external link:", error);
       }
     },
     // OAuth callback sender
-    sendOAuthCallback: (r) => {
+    sendOAuthCallback: (data) => {
       try {
-        return o.invoke("send-oauth-callback", r);
-      } catch (e) {
-        return console.error("Error sending OAuth callback:", e), Promise.resolve();
+        return ipcRenderer.invoke("send-oauth-callback", data);
+      } catch (error) {
+        console.error("Error sending OAuth callback:", error);
+        return Promise.resolve();
       }
     },
     // Exchange OAuth token from main process (avoids CORS/origin issues)
-    exchangeOAuthToken: (r) => {
+    exchangeOAuthToken: (params) => {
       try {
-        return o.invoke("exchange-oauth-token", r);
-      } catch (e) {
-        return console.error("Error exchanging OAuth token:", e), Promise.reject(e);
+        return ipcRenderer.invoke("exchange-oauth-token", params);
+      } catch (error) {
+        console.error("Error exchanging OAuth token:", error);
+        return Promise.reject(error);
       }
     },
     // Platform detection
     platform: process.platform,
     // Environment
-    isElectron: !0
-  }), console.log("Preload script loaded successfully");
-} catch (r) {
-  console.error("Error in preload script:", r), n.exposeInMainWorld("electronAPI", {
-    isElectron: !0,
+    isElectron: true
+  });
+  console.log("Preload script loaded successfully");
+} catch (error) {
+  console.error("Error in preload script:", error);
+  contextBridge.exposeInMainWorld("electronAPI", {
+    isElectron: true,
     platform: process.platform,
     onOAuthCallback: () => {
     },
@@ -135,7 +146,7 @@ try {
     checkForUpdates: () => Promise.resolve(),
     startOAuthServer: () => Promise.resolve(),
     stopOAuthServer: () => Promise.resolve(),
-    openExternal: (e) => window.open(e, "_blank"),
+    openExternal: (url) => window.open(url, "_blank"),
     sendOAuthCallback: () => Promise.resolve(),
     exchangeOAuthToken: () => Promise.reject(new Error("exchangeOAuthToken not available in fallback"))
   });

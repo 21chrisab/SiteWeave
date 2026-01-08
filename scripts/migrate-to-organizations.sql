@@ -70,6 +70,7 @@ ALTER TABLE invitations ADD COLUMN IF NOT EXISTS organization_id UUID;
 ALTER TABLE profiles ADD COLUMN IF NOT EXISTS role_id UUID;
 ALTER TABLE profiles ADD COLUMN IF NOT EXISTS organization_id UUID;
 ALTER TABLE profiles ADD COLUMN IF NOT EXISTS is_super_admin BOOLEAN DEFAULT false;
+ALTER TABLE profiles ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN DEFAULT false;
 
 -- Drop old role constraint
 ALTER TABLE profiles DROP CONSTRAINT IF EXISTS profiles_role_check;

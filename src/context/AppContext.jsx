@@ -28,6 +28,7 @@ const initialState = {
   userPreferences: null, // Add user preferences for onboarding
   currentOrganization: null, // Current organization context
   userRole: null, // User's role with permissions
+  mustChangePassword: false, // Flag to force password reset for managed accounts
 };
 
 function appReducer(state, action) {
@@ -104,6 +105,7 @@ function appReducer(state, action) {
     case 'UPDATE_USER_PREFERENCES': return { ...state, userPreferences: { ...state.userPreferences, ...action.payload } };
     case 'SET_ORGANIZATION': return { ...state, currentOrganization: action.payload };
     case 'SET_USER_ROLE': return { ...state, userRole: action.payload };
+    case 'SET_MUST_CHANGE_PASSWORD': return { ...state, mustChangePassword: action.payload };
     default: return state;
   }
 }
@@ -269,10 +271,10 @@ export const AppProvider = ({ children }) => {
       // Only fetch data if user is authenticated
       async function fetchInitialData() {
         try {
-          // First, check if user has a profile
+          // First, check if user has a profile (include must_change_password)
           const { data: profile, error: profileError } = await supabaseClient
             .from('profiles')
-            .select('*')
+            .select('*, must_change_password')
             .eq('id', state.user.id)
             .maybeSingle();
           
@@ -420,6 +422,7 @@ export const AppProvider = ({ children }) => {
             .select(`
               organization_id,
               role_id,
+              must_change_password,
               roles (
                 id,
                 name,
@@ -440,6 +443,11 @@ export const AppProvider = ({ children }) => {
             organization = orgData;
             dispatch({ type: 'SET_ORGANIZATION', payload: orgData });
             dispatch({ type: 'SET_USER_ROLE', payload: profileWithOrg.roles });
+          }
+          
+          // Check if user must change password
+          if (profileWithOrg?.must_change_password) {
+            dispatch({ type: 'SET_MUST_CHANGE_PASSWORD', payload: true });
           }
 
           // Fetch projects - RLS policy handles filtering automatically by organization_id

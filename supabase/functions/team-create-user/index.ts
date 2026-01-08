@@ -84,7 +84,8 @@ serve(async (req) => {
         id: authData.user.id,
         organization_id: organizationId,
         role_id: roleId || null,
-        contact_id: contact?.id || null
+        contact_id: contact?.id || null,
+        must_change_password: true // Managed accounts must change password on first login
       }, {
         onConflict: 'id'
       })

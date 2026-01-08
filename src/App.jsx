@@ -9,6 +9,7 @@ import InviteAcceptPage from './components/InviteAcceptPage'
 import SetupWizardModal from './components/SetupWizardModal'
 import TeamManagementModal from './components/TeamManagementModal'
 import PermissionGuard from './components/PermissionGuard'
+import ForcePasswordReset from './components/ForcePasswordReset'
 import { LazyViewWrapper, DashboardView, ProjectDetailsView, CalendarView, MessagesView, ContactsView, TeamView, SettingsView } from './components/LazyViews'
 
 function App() {
@@ -17,6 +18,7 @@ function App() {
   const navigate = useNavigate()
   const [showSetupWizard, setShowSetupWizard] = React.useState(false)
   const [showTeamModal, setShowTeamModal] = React.useState(false)
+  const [showPasswordReset, setShowPasswordReset] = React.useState(false)
 
   // Handle OAuth callback
   React.useEffect(() => {
@@ -29,10 +31,17 @@ function App() {
     handleAuthCallback()
   }, [navigate])
 
+  // Check if user must change password (managed accounts)
+  React.useEffect(() => {
+    if (state.user && state.mustChangePassword) {
+      setShowPasswordReset(true)
+    }
+  }, [state.user, state.mustChangePassword])
+
   // Check if user needs to see setup wizard (first login for Org Admins)
   React.useEffect(() => {
     const checkSetupWizard = async () => {
-      if (!state.user || !state.currentOrganization) return
+      if (!state.user || !state.currentOrganization || state.mustChangePassword) return // Don't show setup wizard if password reset is needed
 
       // Show setup wizard if user is an Org Admin and hasn't completed setup
       if (state.userRole?.name === 'Org Admin' || state.userRole?.permissions?.can_manage_team) {
@@ -43,10 +52,10 @@ function App() {
       }
     }
 
-    if (state.user && state.userRole) {
+    if (state.user && state.userRole && !state.mustChangePassword) {
       checkSetupWizard()
     }
-  }, [state.user, state.userRole, state.currentOrganization])
+  }, [state.user, state.userRole, state.currentOrganization, state.mustChangePassword])
 
   // Handle invite route
   React.useEffect(() => {
@@ -158,6 +167,24 @@ function App() {
     setShowSetupWizard(false)
   }
 
+  const handlePasswordResetComplete = () => {
+    setShowPasswordReset(false)
+    dispatch({ type: 'SET_MUST_CHANGE_PASSWORD', payload: false })
+    // Refresh profile to get updated must_change_password flag
+    if (state.user) {
+      supabaseClient
+        .from('profiles')
+        .select('must_change_password')
+        .eq('id', state.user.id)
+        .single()
+        .then(({ data }) => {
+          if (data && !data.must_change_password) {
+            dispatch({ type: 'SET_MUST_CHANGE_PASSWORD', payload: false })
+          }
+        })
+    }
+  }
+
   return (
     <div className="flex h-screen bg-gray-50 overflow-hidden">
       {/* Sidebar */}
@@ -181,6 +208,14 @@ function App() {
         show={showTeamModal} 
         onClose={() => setShowTeamModal(false)} 
       />
+
+      {/* Force Password Reset - Shows when must_change_password is true */}
+      {showPasswordReset && (
+        <ForcePasswordReset
+          show={showPasswordReset}
+          onComplete={handlePasswordResetComplete}
+        />
+      )}
     </div>
   )
 }

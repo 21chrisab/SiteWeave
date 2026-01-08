@@ -650,20 +650,25 @@ function SetupWizardModal({ show, onComplete }) {
                     onChange={(e) => setManagedInput({ ...managedInput, username: e.target.value })}
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
                   />
-                  <div className="flex space-x-2">
-                    <input
-                      type="text"
-                      placeholder="PIN (auto-generated if empty)"
-                      value={managedInput.password}
-                      onChange={(e) => setManagedInput({ ...managedInput, password: e.target.value })}
-                      className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
-                    />
-                    <button
-                      onClick={handleAddMember}
-                      className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors"
-                    >
-                      Add
-                    </button>
+                  <div className="space-y-2">
+                    <div className="flex space-x-2">
+                      <input
+                        type="text"
+                        placeholder="Temporary Access Code (auto-generated if empty)"
+                        value={managedInput.password}
+                        onChange={(e) => setManagedInput({ ...managedInput, password: e.target.value })}
+                        className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
+                      />
+                      <button
+                        onClick={handleAddMember}
+                        className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors"
+                      >
+                        Add
+                      </button>
+                    </div>
+                    <p className="text-xs text-gray-500">
+                      User will be forced to change this on first login.
+                    </p>
                   </div>
 
                   {/* Credential Card Preview */}
