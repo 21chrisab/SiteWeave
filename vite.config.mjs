@@ -11,11 +11,13 @@ export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '')
   
   return {
+    root: process.cwd(),
     resolve: {
       alias: {
         '@siteweave/core-logic': path.resolve(__dirname, 'packages/core-logic/src')
       }
     },
+    publicDir: 'public',
     plugins: [
       react(),
       electron([
@@ -57,6 +59,10 @@ export default defineConfig(({ mode }) => {
       emptyOutDir: true,
       minify: 'terser',
       sourcemap: false,
+      rollupOptions: {
+        input: path.resolve(__dirname, 'index.html'),
+        external: []
+      },
       terserOptions: {
         compress: {
           drop_console: true,
