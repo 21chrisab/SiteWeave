@@ -7,6 +7,7 @@ export const ProjectDetailsView = lazy(() => import('../views/ProjectDetailsView
 export const CalendarView = lazy(() => import('../views/CalendarView'));
 export const MessagesView = lazy(() => import('../views/MessagesView'));
 export const ContactsView = lazy(() => import('../views/ContactsView'));
+export const TeamView = lazy(() => import('../views/TeamView'));
 export const SettingsView = lazy(() => import('../views/SettingsView'));
 
 // Loading wrapper component
