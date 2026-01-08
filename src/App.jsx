@@ -6,7 +6,7 @@ import LoadingSpinner from './components/LoadingSpinner'
 import Sidebar from './components/Sidebar'
 import LoginForm from './components/LoginForm'
 import InviteAcceptPage from './components/InviteAcceptPage'
-import SetupWizard from './components/SetupWizard'
+import SetupWizardModal from './components/SetupWizardModal'
 import TeamManagementModal from './components/TeamManagementModal'
 import PermissionGuard from './components/PermissionGuard'
 import { LazyViewWrapper, DashboardView, ProjectDetailsView, CalendarView, MessagesView, ContactsView, TeamView, SettingsView } from './components/LazyViews'
@@ -170,7 +170,7 @@ function App() {
 
       {/* Setup Wizard - Shows on first login for Org Admins */}
       {showSetupWizard && (
-        <SetupWizard 
+        <SetupWizardModal 
           show={showSetupWizard} 
           onComplete={handleSetupComplete}
         />

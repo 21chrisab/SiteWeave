@@ -10,7 +10,8 @@ function Modal({ show, onClose, title, children, size = 'default' }) {
   const sizeClasses = {
     default: 'max-w-md',
     large: 'max-w-2xl',
-    xl: 'max-w-4xl'
+    xl: 'max-w-4xl',
+    xlarge: 'max-w-6xl'
   };
 
   return (
