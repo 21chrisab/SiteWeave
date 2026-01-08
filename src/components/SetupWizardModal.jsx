@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { useAppContext } from '../context/AppContext';
 import { supabaseClient } from '../context/AppContext';
 import { useToast } from '../context/ToastContext';
@@ -109,6 +110,8 @@ function SetupWizardModal({ show, onComplete }) {
   const [showRolePresetDropdown, setShowRolePresetDropdown] = useState(false);
   const [editingRoleName, setEditingRoleName] = useState(false);
   const [tempRoleName, setTempRoleName] = useState('');
+  const addRoleButtonRef = useRef(null);
+  const [dropdownPosition, setDropdownPosition] = useState({ top: 0, left: 0 });
 
   // Get all roles (standard + custom)
   const allRoles = roles.length > 0 ? roles : STANDARD_ROLES.map(t => ({
@@ -558,11 +561,35 @@ function SetupWizardModal({ show, onComplete }) {
     }
   };
 
+  // Update dropdown position when button position changes
+  useEffect(() => {
+    if (showRolePresetDropdown && addRoleButtonRef.current) {
+      const updatePosition = () => {
+        const rect = addRoleButtonRef.current.getBoundingClientRect();
+        setDropdownPosition({
+          top: rect.bottom + 8, // 8px = mt-2 equivalent
+          left: rect.left
+        });
+      };
+      updatePosition();
+      window.addEventListener('scroll', updatePosition, true);
+      window.addEventListener('resize', updatePosition);
+      return () => {
+        window.removeEventListener('scroll', updatePosition, true);
+        window.removeEventListener('resize', updatePosition);
+      };
+    }
+  }, [showRolePresetDropdown]);
+
   // Close dropdown when clicking outside
   useEffect(() => {
     if (showRolePresetDropdown) {
       const handleClickOutside = (e) => {
-        if (!e.target.closest('.role-preset-dropdown')) {
+        if (
+          addRoleButtonRef.current &&
+          !addRoleButtonRef.current.contains(e.target) &&
+          !e.target.closest('.role-preset-dropdown-portal')
+        ) {
           setShowRolePresetDropdown(false);
         }
       };
@@ -580,40 +607,44 @@ function SetupWizardModal({ show, onComplete }) {
   return (
     <Modal show={show} onClose={() => {}} title="Welcome! Set Up Your Organization" size="xlarge">
       <div className="flex flex-col h-full max-h-[80vh]">
-        {/* Progress Indicator */}
-        <div className="flex items-center justify-center space-x-2 mb-6 pb-4 border-b overflow-x-auto">
-          {allRoles.map((role, idx) => (
-            <React.Fragment key={`${role.roleName}-${idx}`}>
-              <div className={`flex items-center ${idx <= currentRoleIndex ? 'text-blue-600' : 'text-gray-400'}`}>
-                <div className={`relative group w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium ${
-                  idx < currentRoleIndex ? 'bg-blue-600 text-white' :
-                  idx === currentRoleIndex ? 'bg-blue-100 text-blue-700 border-2 border-blue-600' :
-                  'bg-gray-100 text-gray-400'
-                }`}>
-                  {idx < currentRoleIndex ? '✓' : idx + 1}
-                  {/* Duplicate button on hover */}
-                  {role.isCustom && idx !== currentRoleIndex && (
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleDuplicateRole(idx);
-                      }}
-                      className="absolute -top-1 -right-1 w-4 h-4 bg-purple-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-xs"
-                      title="Duplicate role"
-                    >
-                      <Icon path="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" className="w-3 h-3" />
-                    </button>
-                  )}
+        {/* Progress Indicator - Refactored with pinned button */}
+        <div className="flex items-center justify-between mb-6 pb-4 border-b">
+          {/* Left: Scrollable Role Tabs */}
+          <div className="flex-1 flex items-center space-x-2 overflow-x-auto pr-4">
+            {allRoles.map((role, idx) => (
+              <React.Fragment key={`${role.roleName}-${idx}`}>
+                <div className={`flex items-center flex-shrink-0 ${idx <= currentRoleIndex ? 'text-blue-600' : 'text-gray-400'}`}>
+                  <div className={`relative group w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium ${
+                    idx < currentRoleIndex ? 'bg-blue-600 text-white' :
+                    idx === currentRoleIndex ? 'bg-blue-100 text-blue-700 border-2 border-blue-600' :
+                    'bg-gray-100 text-gray-400'
+                  }`}>
+                    {idx < currentRoleIndex ? '✓' : idx + 1}
+                    {/* Duplicate button on hover */}
+                    {role.isCustom && idx !== currentRoleIndex && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDuplicateRole(idx);
+                        }}
+                        className="absolute -top-1 -right-1 w-4 h-4 bg-purple-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-xs"
+                        title="Duplicate role"
+                      >
+                        <Icon path="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" className="w-3 h-3" />
+                      </button>
+                    )}
+                  </div>
+                  <span className="ml-2 text-sm font-medium hidden sm:inline">{role.roleName}</span>
                 </div>
-                <span className="ml-2 text-sm font-medium hidden sm:inline">{role.roleName}</span>
-              </div>
-              {idx < allRoles.length - 1 && (
-                <div className={`w-8 h-0.5 ${idx < currentRoleIndex ? 'bg-blue-600' : 'bg-gray-200'}`}></div>
-              )}
-            </React.Fragment>
-          ))}
-          {/* Add Role Button */}
-          <div className="relative ml-2 role-preset-dropdown">
+                {idx < allRoles.length - 1 && (
+                  <div className={`w-8 h-0.5 flex-shrink-0 ${idx < currentRoleIndex ? 'bg-blue-600' : 'bg-gray-200'}`}></div>
+                )}
+              </React.Fragment>
+            ))}
+          </div>
+          
+          {/* Right: Pinned Add Role Button */}
+          <div className="flex-shrink-0" ref={addRoleButtonRef}>
             <button
               onClick={() => setShowRolePresetDropdown(!showRolePresetDropdown)}
               className="w-8 h-8 rounded-full bg-green-100 text-green-700 border-2 border-green-300 flex items-center justify-center hover:bg-green-200 transition-colors"
@@ -621,29 +652,37 @@ function SetupWizardModal({ show, onComplete }) {
             >
               <Icon path="M12 4v16m8-8H4" className="w-5 h-5" />
             </button>
-            {/* Role Preset Dropdown */}
-            {showRolePresetDropdown && (
-              <div className="absolute top-full left-0 mt-2 w-64 bg-white rounded-lg shadow-xl border border-gray-200 z-50 max-h-96 overflow-y-auto">
-                <div className="p-2 border-b border-gray-200">
-                  <h4 className="text-sm font-semibold text-gray-900">Role Library</h4>
-                  <p className="text-xs text-gray-500 mt-1">Select a preset to add</p>
-                </div>
-                <div className="p-2">
-                  {getAllRolePresets().map(preset => (
-                    <button
-                      key={preset.id}
-                      onClick={() => handleAddRoleFromPreset(preset)}
-                      className="w-full text-left p-3 rounded-lg hover:bg-blue-50 transition-colors mb-1"
-                    >
-                      <div className="font-medium text-sm text-gray-900">{preset.defaultName}</div>
-                      <div className="text-xs text-gray-500 mt-1">{preset.description}</div>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
           </div>
         </div>
+
+        {/* Role Preset Dropdown - Rendered via Portal */}
+        {showRolePresetDropdown && typeof document !== 'undefined' && createPortal(
+          <div
+            className="role-preset-dropdown-portal fixed bg-white rounded-lg shadow-xl border border-gray-200 z-[9999] w-64 max-h-[300px] overflow-y-auto"
+            style={{
+              top: `${dropdownPosition.top}px`,
+              left: `${dropdownPosition.left}px`
+            }}
+          >
+            <div className="p-2 border-b border-gray-200 sticky top-0 bg-white">
+              <h4 className="text-sm font-semibold text-gray-900">Role Library</h4>
+              <p className="text-xs text-gray-500 mt-1">Select a preset to add</p>
+            </div>
+            <div className="p-2">
+              {getAllRolePresets().map(preset => (
+                <button
+                  key={preset.id}
+                  onClick={() => handleAddRoleFromPreset(preset)}
+                  className="w-full text-left p-3 rounded-lg hover:bg-blue-50 transition-colors mb-1"
+                >
+                  <div className="font-medium text-sm text-gray-900">{preset.defaultName}</div>
+                  <div className="text-xs text-gray-500 mt-1">{preset.description}</div>
+                </button>
+              ))}
+            </div>
+          </div>,
+          document.body
+        )}
 
         {/* Split View */}
         <div className="flex-1 grid grid-cols-1 lg:grid-cols-2 gap-6 overflow-hidden">
