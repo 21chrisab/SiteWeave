@@ -71,6 +71,13 @@ const STANDARD_ROLES = [
   }
 ];
 
+// Critical permissions (shown on role card)
+const CRITICAL_PERMISSIONS = [
+  { key: 'can_view_financials', label: 'View Financials', icon: 'M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z' },
+  { key: 'can_delete_projects', label: 'Delete Projects', icon: 'M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16' },
+  { key: 'can_manage_team', label: 'Manage Team', icon: 'M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z' }
+];
+
 // All available permissions
 const ALL_PERMISSIONS = [
   { key: 'can_manage_team', label: 'Manage Team', description: 'Invite and manage team members' },
@@ -116,6 +123,7 @@ function SetupWizardModal({ show, onComplete }) {
     username: '',
     password: ''
   });
+  const [previewCredentials, setPreviewCredentials] = useState(null);
 
   // Initialize roles from templates
   useEffect(() => {
@@ -157,9 +165,87 @@ function SetupWizardModal({ show, onComplete }) {
     setRoles(updatedRoles);
   };
 
+  // Generate username from full name
+  const generateUsername = (fullName, orgSlug) => {
+    if (!fullName) return '';
+    const slug = fullName
+      .toLowerCase()
+      .replace(/[^a-z0-9\s]/g, '')
+      .split(' ')
+      .filter(Boolean)
+      .join('.');
+    return slug || 'user';
+  };
+
+  // Generate PIN
+  const generatePIN = () => {
+    return Math.floor(1000 + Math.random() * 9000).toString();
+  };
+
+  // Update preview credentials when name changes
+  useEffect(() => {
+    if (inputMode === 'managed' && managedInput.fullName) {
+      const username = managedInput.username || generateUsername(managedInput.fullName, currentOrganization?.slug);
+      const pin = managedInput.password || generatePIN();
+      setPreviewCredentials({
+        fullName: managedInput.fullName,
+        username: username,
+        pin: pin
+      });
+    } else {
+      setPreviewCredentials(null);
+    }
+  }, [managedInput.fullName, managedInput.username, managedInput.password, inputMode, currentOrganization?.slug]);
+
+  const handleBulkEmailAdd = (emailText) => {
+    const emails = emailText
+      .split(',')
+      .map(e => e.trim())
+      .filter(e => e.includes('@'));
+    
+    if (emails.length === 0) {
+      addToast('No valid email addresses found', 'error');
+      return;
+    }
+
+    const updatedRoles = [...roles];
+    if (!updatedRoles[currentRoleIndex]) {
+      updatedRoles[currentRoleIndex] = {
+        roleName: currentRoleTemplate.name,
+        permissions: { ...currentRoleTemplate.defaultPermissions },
+        members: []
+      };
+    }
+
+    const newMembers = emails.map(email => ({
+      id: `temp-${Date.now()}-${Math.random()}`,
+      type: 'invite',
+      email: email.toLowerCase(),
+      fullName: '',
+      username: '',
+      password: ''
+    }));
+
+    updatedRoles[currentRoleIndex].members.push(...newMembers);
+    setRoles(updatedRoles);
+    setEmailInput('');
+    addToast(`${emails.length} email${emails.length > 1 ? 's' : ''} added to list`, 'success');
+  };
+
   const handleAddMember = () => {
     if (inputMode === 'email') {
-      if (!emailInput || !emailInput.includes('@')) {
+      if (!emailInput) {
+        addToast('Please enter an email address', 'error');
+        return;
+      }
+
+      // Check if it's a bulk entry (contains commas)
+      if (emailInput.includes(',')) {
+        handleBulkEmailAdd(emailInput);
+        return;
+      }
+
+      if (!emailInput.includes('@')) {
         addToast('Please enter a valid email address', 'error');
         return;
       }
@@ -192,15 +278,16 @@ function SetupWizardModal({ show, onComplete }) {
         return;
       }
 
-      // Generate a simple PIN (4-6 digits) if password is empty
-      const pin = managedInput.password || Math.floor(1000 + Math.random() * 9000).toString();
+      // Generate a simple PIN (4 digits) if password is empty
+      const pin = managedInput.password || generatePIN();
+      const username = managedInput.username || generateUsername(managedInput.fullName, currentOrganization?.slug);
 
       const newMember = {
         id: `temp-${Date.now()}`,
         type: 'managed',
         email: '',
         fullName: managedInput.fullName.trim(),
-        username: managedInput.username.trim().toLowerCase(),
+        username: username.trim().toLowerCase(),
         password: pin,
         pin: pin
       };
@@ -216,6 +303,7 @@ function SetupWizardModal({ show, onComplete }) {
       updatedRoles[currentRoleIndex].members.push(newMember);
       setRoles(updatedRoles);
       setManagedInput({ fullName: '', username: '', password: '' });
+      setPreviewCredentials(null);
       addToast('Managed account added to list', 'success');
     }
   };
@@ -416,16 +504,35 @@ function SetupWizardModal({ show, onComplete }) {
           <div className="flex flex-col space-y-4 overflow-y-auto pr-2">
             <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-lg p-6 border border-blue-200">
               <h3 className="text-xl font-bold text-gray-900 mb-2">{currentRoleConfig.roleName}</h3>
-              <p className="text-sm text-gray-600">{currentRoleTemplate.description}</p>
+              <p className="text-sm text-gray-600 mb-4">{currentRoleTemplate.description}</p>
+              
+              {/* Critical Permissions - Always Visible */}
+              <div className="space-y-2 mt-4 pt-4 border-t border-blue-200">
+                <div className="text-xs font-semibold text-gray-700 uppercase tracking-wide mb-2">
+                  Critical Permissions
+                </div>
+                {CRITICAL_PERMISSIONS.map(perm => {
+                  const isAllowed = currentRoleConfig.permissions[perm.key] || false;
+                  return (
+                    <div key={perm.key} className="flex items-center space-x-2 text-sm">
+                      <Icon path={perm.icon} className={`w-4 h-4 ${isAllowed ? 'text-green-600' : 'text-red-500'}`} />
+                      <span className="flex-1 text-gray-700">{perm.label}:</span>
+                      <span className={`font-medium ${isAllowed ? 'text-green-600' : 'text-red-500'}`}>
+                        {isAllowed ? 'Allowed' : 'Forbidden'}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
 
-            {/* Permissions Accordion */}
+            {/* Advanced Permissions Accordion */}
             <div className="bg-white rounded-lg border border-gray-200">
               <button
                 onClick={() => setShowPermissions(!showPermissions)}
                 className="w-full flex items-center justify-between p-4 text-left hover:bg-gray-50 transition-colors"
               >
-                <span className="font-semibold text-gray-900">Customize Permissions</span>
+                <span className="font-semibold text-gray-900">Advanced Permissions</span>
                 <Icon 
                   path={showPermissions ? "M5 15l7-7 7 7" : "M19 9l-7 7-7-7"} 
                   className="w-5 h-5 text-gray-500"
@@ -494,34 +601,44 @@ function SetupWizardModal({ show, onComplete }) {
             {/* Input Form */}
             <div className="bg-white rounded-lg border border-gray-200 p-4 space-y-3">
               {inputMode === 'email' ? (
-                <div className="flex space-x-2">
-                  <input
-                    type="email"
-                    placeholder="email@example.com"
+                <div className="space-y-2">
+                  <textarea
+                    placeholder="email@example.com or paste multiple emails (comma-separated)"
                     value={emailInput}
                     onChange={(e) => setEmailInput(e.target.value)}
-                    onKeyPress={(e) => e.key === 'Enter' && handleAddMember()}
-                    className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
+                    onKeyPress={(e) => {
+                      if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault();
+                        handleAddMember();
+                      }
+                    }}
+                    rows={3}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500 text-sm resize-none"
                   />
-                  <button
-                    onClick={handleAddMember}
-                    className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
-                  >
-                    Add
-                  </button>
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-gray-500">
+                      {emailInput.includes(',') ? 'Bulk entry detected' : 'Single or bulk entry supported'}
+                    </span>
+                    <button
+                      onClick={handleAddMember}
+                      className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors text-sm font-medium"
+                    >
+                      Add {emailInput.includes(',') ? 'All' : 'Member'}
+                    </button>
+                  </div>
                 </div>
               ) : (
                 <div className="space-y-3">
                   <input
                     type="text"
-                    placeholder="Full Name"
+                    placeholder="Full Name (e.g., Burger Bun)"
                     value={managedInput.fullName}
                     onChange={(e) => setManagedInput({ ...managedInput, fullName: e.target.value })}
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
                   />
                   <input
                     type="text"
-                    placeholder="Username (e.g., josh.millerco)"
+                    placeholder="Username (auto-generated if empty)"
                     value={managedInput.username}
                     onChange={(e) => setManagedInput({ ...managedInput, username: e.target.value })}
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
@@ -529,7 +646,7 @@ function SetupWizardModal({ show, onComplete }) {
                   <div className="flex space-x-2">
                     <input
                       type="text"
-                      placeholder="PIN/Password (optional, auto-generated if empty)"
+                      placeholder="PIN (auto-generated if empty)"
                       value={managedInput.password}
                       onChange={(e) => setManagedInput({ ...managedInput, password: e.target.value })}
                       className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
@@ -541,6 +658,36 @@ function SetupWizardModal({ show, onComplete }) {
                       Add
                     </button>
                   </div>
+
+                  {/* Credential Card Preview */}
+                  {previewCredentials && managedInput.fullName && (
+                    <div className="mt-3 p-4 bg-gradient-to-br from-gray-50 to-gray-100 rounded-lg border-2 border-gray-300 shadow-sm">
+                      <div className="flex items-center justify-between mb-3">
+                        <div className="flex items-center space-x-2">
+                          <div className="w-10 h-10 bg-blue-600 rounded-full flex items-center justify-center text-white font-bold text-lg">
+                            {previewCredentials.fullName.charAt(0).toUpperCase()}
+                          </div>
+                          <div>
+                            <div className="font-bold text-gray-900">{previewCredentials.fullName}</div>
+                            <div className="text-xs text-gray-500">Digital ID Badge</div>
+                          </div>
+                        </div>
+                        <div className="w-12 h-12 bg-white rounded border-2 border-gray-300 flex items-center justify-center">
+                          <Icon path="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" className="w-6 h-6 text-blue-600" />
+                        </div>
+                      </div>
+                      <div className="space-y-2 text-sm">
+                        <div className="flex items-center justify-between py-2 border-b border-gray-300">
+                          <span className="text-gray-600">Username:</span>
+                          <span className="font-mono font-semibold text-gray-900">{previewCredentials.username}</span>
+                        </div>
+                        <div className="flex items-center justify-between py-2">
+                          <span className="text-gray-600">PIN:</span>
+                          <span className="font-mono font-bold text-lg text-gray-900">{previewCredentials.pin}</span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -559,29 +706,78 @@ function SetupWizardModal({ show, onComplete }) {
                   </div>
                 ) : (
                   currentRoleConfig.members.map(member => (
-                    <div key={member.id} className="p-4 flex items-center justify-between hover:bg-gray-50">
-                      <div className="flex-1">
-                        {member.type === 'email' ? (
-                          <div>
-                            <div className="font-medium text-gray-900">{member.email}</div>
-                            <div className="text-xs text-gray-500">Email invitation</div>
+                    <div key={member.id} className="p-4 flex items-center justify-between hover:bg-gray-50 group">
+                      <div className="flex items-center space-x-3 flex-1">
+                        {/* Status Icon */}
+                        {member.type === 'invite' ? (
+                          <div className="flex-shrink-0">
+                            <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
+                              <Icon path="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" className="w-5 h-5 text-blue-600" />
+                            </div>
                           </div>
                         ) : (
-                          <div>
-                            <div className="font-medium text-gray-900">{member.fullName}</div>
-                            <div className="text-xs text-gray-500">
-                              {member.username} • PIN: {member.password || member.pin}
+                          <div className="flex-shrink-0">
+                            <div className="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center">
+                              <Icon path="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" className="w-5 h-5 text-green-600" />
                             </div>
                           </div>
                         )}
+                        
+                        <div className="flex-1 min-w-0">
+                          {member.type === 'invite' ? (
+                            <div>
+                              <div className="font-medium text-gray-900">{member.email}</div>
+                              <div className="flex items-center space-x-2 text-xs text-gray-500">
+                                <span>Email invitation</span>
+                                <span className="px-2 py-0.5 bg-yellow-100 text-yellow-800 rounded-full">Pending</span>
+                              </div>
+                            </div>
+                          ) : (
+                            <div>
+                              <div className="font-medium text-gray-900">{member.fullName}</div>
+                              <div className="flex items-center space-x-2 text-xs text-gray-500">
+                                <span className="font-mono">{member.username}</span>
+                                <span>•</span>
+                                <span className="font-mono font-semibold">PIN: {member.password || member.pin}</span>
+                                <span className="px-2 py-0.5 bg-green-100 text-green-800 rounded-full">Active</span>
+                              </div>
+                            </div>
+                          )}
+                        </div>
                       </div>
-                      <button
-                        onClick={() => handleRemoveMember(member.id)}
-                        className="ml-4 p-1 text-gray-400 hover:text-red-600 transition-colors"
-                        title="Remove"
-                      >
-                        <Icon path="M6 18L18 6M6 6l12 12" className="w-5 h-5" />
-                      </button>
+                      
+                      <div className="flex items-center space-x-2">
+                        {/* Download/Print button for managed accounts */}
+                        {member.type === 'managed' && (
+                          <button
+                            onClick={async () => {
+                              try {
+                                const { generateCredentialCards } = await import('../utils/pdfGenerator');
+                                await generateCredentialCards([{
+                                  ...member,
+                                  roleName: currentRoleConfig.roleName,
+                                  organizationName: currentOrganization?.name || 'Organization'
+                                }], currentOrganization);
+                                addToast('Credential card generated!', 'success');
+                              } catch (error) {
+                                console.error('Error generating card:', error);
+                                addToast('Error generating card', 'error');
+                              }
+                            }}
+                            className="p-2 text-gray-400 hover:text-blue-600 transition-colors opacity-0 group-hover:opacity-100"
+                            title="Download/Print Credentials"
+                          >
+                            <Icon path="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" className="w-5 h-5" />
+                          </button>
+                        )}
+                        <button
+                          onClick={() => handleRemoveMember(member.id)}
+                          className="p-2 text-gray-400 hover:text-red-600 transition-colors"
+                          title="Remove"
+                        >
+                          <Icon path="M6 18L18 6M6 6l12 12" className="w-5 h-5" />
+                        </button>
+                      </div>
                     </div>
                   ))
                 )}
