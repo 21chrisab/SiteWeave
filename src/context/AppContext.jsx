@@ -271,16 +271,35 @@ export const AppProvider = ({ children }) => {
       // Only fetch data if user is authenticated
       async function fetchInitialData() {
         try {
-          // First, check if user has a profile (include must_change_password)
+          // First, check if user has a profile
           const { data: profile, error: profileError } = await supabaseClient
             .from('profiles')
-            .select('*, must_change_password')
+            .select('*')
             .eq('id', state.user.id)
             .maybeSingle();
           
           console.log('User profile:', profile);
           if (profileError) {
             console.error('Profile error:', profileError);
+          }
+          
+          // Check must_change_password separately (column may not exist in older schemas)
+          let mustChangePassword = false;
+          if (profile) {
+            try {
+              const { data: profileCheck } = await supabaseClient
+                .from('profiles')
+                .select('must_change_password')
+                .eq('id', state.user.id)
+                .single();
+              mustChangePassword = profileCheck?.must_change_password || false;
+            } catch (error) {
+              // Column doesn't exist yet, default to false
+              if (error.code !== '42703') { // Only log if it's not a missing column error
+                console.warn('Error checking must_change_password:', error);
+              }
+              mustChangePassword = false;
+            }
           }
           
           let finalProfile = profile;
