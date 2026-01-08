@@ -13,9 +13,16 @@ import { supabaseClient } from '../context/AppContext';
  * </PermissionGuard>
  */
 function PermissionGuard({ permission, children, fallback = null }) {
-  const { state } = useAppContext();
+  const context = useAppContext();
   const [hasAccess, setHasAccess] = useState(false);
   const [loading, setLoading] = useState(true);
+
+  // Handle case where context might not be available yet
+  if (!context || !context.state) {
+    return fallback;
+  }
+
+  const { state } = context;
 
   useEffect(() => {
     async function checkPermission() {
