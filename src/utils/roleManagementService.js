@@ -82,10 +82,14 @@ export async function createRole(supabase, organizationId, name, permissions) {
  * @param {import('@supabase/supabase-js').SupabaseClient} supabase - Supabase client
  * @param {string} roleId - Role ID
  * @param {Object} updates - Updates object (name, permissions, etc.)
- * @returns {Promise<Object>} Updated role
+ * @returns {Promise<{success: boolean, data?: Object, error?: string}>} Result object
  */
 export async function updateRole(supabase, roleId, updates) {
   try {
+    if (!roleId) {
+      return { success: false, error: 'Role ID is required' };
+    }
+
     const updateData = {
       ...updates,
       updated_at: new Date().toISOString()
@@ -98,11 +102,23 @@ export async function updateRole(supabase, roleId, updates) {
       .select()
       .single();
 
-    if (error) throw error;
-    return data;
+    if (error) {
+      console.error('Error updating role:', error);
+      // Check if role doesn't exist
+      if (error.code === 'PGRST116' || error.message?.includes('0 rows')) {
+        return { success: false, error: 'Role not found. It may have been deleted or you may not have permission to update it.' };
+      }
+      return { success: false, error: error.message || 'Failed to update role' };
+    }
+
+    if (!data) {
+      return { success: false, error: 'Role not found or update returned no data' };
+    }
+
+    return { success: true, data };
   } catch (error) {
     console.error('Error updating role:', error);
-    throw error;
+    return { success: false, error: error.message || 'Failed to update role' };
   }
 }
 

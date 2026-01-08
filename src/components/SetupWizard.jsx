@@ -69,7 +69,10 @@ function SetupWizard({ show, onComplete }) {
   };
 
   const handleSaveMemberRole = async () => {
-    if (!memberRole) return;
+    if (!memberRole || !memberRole.id) {
+      addToast('Member role not found. Please refresh and try again.', 'error');
+      return;
+    }
 
     setLoading(true);
     try {
@@ -78,19 +81,24 @@ function SetupWizard({ show, onComplete }) {
         memberRole.id,
         {
           name: memberRole.name,
-          permissions: permissions
+          permissions: permissions,
+          is_system_role: memberRole.is_system_role !== undefined ? memberRole.is_system_role : true
         }
       );
 
       if (result.success) {
         addToast('Member role updated successfully', 'success');
+        // Update local state with the updated role
+        if (result.data) {
+          setMemberRole(result.data);
+        }
         setStep(2);
       } else {
         addToast(result.error || 'Failed to update role', 'error');
       }
     } catch (error) {
       console.error('Error updating role:', error);
-      addToast('Failed to update role', 'error');
+      addToast(error.message || 'Failed to update role', 'error');
     } finally {
       setLoading(false);
     }
