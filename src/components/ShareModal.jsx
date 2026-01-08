@@ -361,7 +361,7 @@ function ShareModal({ projectId, onClose }) {
               disabled={submitting || entries.length === 0}
               className="rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
             >
-              {submitting ? 'Adding…' : `Add ${entries.length} to Project`}
+              {submitting ? 'Adding…' : `Add ${entries.length} to Crew`}
             </button>
           </div>
         </form>
