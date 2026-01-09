@@ -29,6 +29,16 @@ function InviteAcceptPage() {
   const [checkingAuth, setCheckingAuth] = useState(true);
 
   useEffect(() => {
+    console.log('InviteAcceptPage mounted, token:', token);
+    
+    if (!token) {
+      console.error('No token found in URL params');
+      setError('Invalid invitation link: missing token');
+      setLoading(false);
+      setCheckingAuth(false);
+      return;
+    }
+    
     checkAuthAndLoadInvitation();
   }, [token]);
 
@@ -36,25 +46,43 @@ function InviteAcceptPage() {
   const checkAuthAndLoadInvitation = async () => {
     setCheckingAuth(true);
     try {
+      console.log('Checking authentication...');
       // Check current session
       const { data: { session }, error: sessionError } = await supabase.auth.getSession();
       
+      if (sessionError) {
+        console.error('Error getting session:', sessionError);
+      }
+      
+      console.log('Session check result:', { hasSession: !!session, hasUser: !!session?.user });
+      
       if (session?.user) {
         // User is authenticated, check if they can auto-accept
+        console.log('User is authenticated, loading invitation for auto-accept');
         await loadInvitation(true, session.user);
       } else {
         // User is not authenticated, load invitation normally
+        console.log('User not authenticated, loading invitation normally');
         await loadInvitation(false);
       }
     } catch (error) {
       console.error('Error checking auth:', error);
-      await loadInvitation(false);
+      setError(`Failed to check authentication: ${error.message}`);
+      setLoading(false);
     } finally {
       setCheckingAuth(false);
     }
   };
 
   const loadInvitation = async (isAuthenticated = false, currentUser = null) => {
+    if (!token) {
+      console.error('loadInvitation called without token');
+      setError('Invalid invitation link: missing token');
+      setLoading(false);
+      return;
+    }
+    
+    console.log('Loading invitation with token:', token);
     setLoading(true);
     setError(null);
     try {
@@ -68,9 +96,19 @@ function InviteAcceptPage() {
         .eq('invitation_token', token)
         .eq('status', 'pending')
         .single();
+      
+      console.log('Invitation query result:', { data: !!data, error: error?.message });
 
-      if (error || !data) {
+      if (error) {
+        console.error('Error loading invitation:', error);
+        setError(`Failed to load invitation: ${error.message || 'Invalid or expired invitation link. Please ask your admin for a new one.'}`);
+        setLoading(false);
+        return;
+      }
+
+      if (!data) {
         setError('Invalid or expired invitation link. Please ask your admin for a new one.');
+        setLoading(false);
         return;
       }
 
@@ -432,10 +470,33 @@ function InviteAcceptPage() {
     }
   };
 
+  // Early return if no token
+  if (!token) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4 sm:p-6">
+        <div className="max-w-md w-full bg-white shadow-lg rounded-lg p-6 sm:p-8 text-center">
+          <div className="w-12 h-12 sm:w-16 sm:h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+            <svg className="w-6 h-6 sm:w-8 sm:h-8 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </div>
+          <h2 className="text-xl sm:text-2xl font-bold text-gray-900 mb-2">Invalid Invitation Link</h2>
+          <p className="text-sm sm:text-base text-gray-600 mb-6">The invitation link is missing a token. Please check the link and try again.</p>
+          <button
+            onClick={() => navigate('/login')}
+            className="px-4 sm:px-6 py-2 text-sm sm:text-base bg-gray-900 text-white rounded-lg hover:bg-gray-800 transition-colors"
+          >
+            Go to Login
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   if (checkingAuth || loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <LoadingSpinner />
+        <LoadingSpinner size="lg" text="Loading invitation..." />
       </div>
     );
   }
@@ -479,19 +540,46 @@ function InviteAcceptPage() {
     );
   }
 
+  // Don't render form if invitation is not loaded
+  if (!invitation && !error) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <LoadingSpinner size="lg" text="Loading invitation..." />
+      </div>
+    );
+  }
+
+  if (!invitation) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4 sm:p-6">
+        <div className="max-w-md w-full bg-white shadow-lg rounded-lg p-6 sm:p-8 text-center">
+          <div className="w-12 h-12 sm:w-16 sm:h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+            <svg className="w-6 h-6 sm:w-8 sm:h-8 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </div>
+          <h2 className="text-xl sm:text-2xl font-bold text-gray-900 mb-2">Invalid Invitation</h2>
+          <p className="text-sm sm:text-base text-gray-600 mb-6">{error || 'Unable to load invitation'}</p>
+          <button
+            onClick={() => navigate('/login')}
+            className="px-4 sm:px-6 py-2 text-sm sm:text-base bg-gray-900 text-white rounded-lg hover:bg-gray-800 transition-colors"
+          >
+            Go to Login
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4 sm:p-6">
       <div className="max-w-md w-full bg-white shadow-lg rounded-lg p-6 sm:p-8">
         <div className="text-center mb-6">
           <h2 className="text-xl sm:text-2xl font-bold text-gray-900 mb-2">Welcome to SiteWeave</h2>
           <p className="text-sm sm:text-base text-gray-600">
-            {invitation && (
-              <>
-                Join <strong>{invitation.organizations?.name}</strong>
-                {invitation.roles?.name && (
-                  <> as a <strong>{invitation.roles.name}</strong></>
-                )}
-              </>
+            Join <strong>{invitation.organizations?.name || 'the organization'}</strong>
+            {invitation.roles?.name && (
+              <> as a <strong>{invitation.roles.name}</strong></>
             )}
           </p>
         </div>
