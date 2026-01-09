@@ -2,6 +2,7 @@ import React from 'react'
 import { Link, Route, Routes, useNavigate, useParams, useLocation } from 'react-router-dom'
 import { supabase } from './supabaseClient'
 import LoadingSpinner from './components/LoadingSpinner'
+import InviteAcceptPage from './components/InviteAcceptPage'
 import {
   fetchChannelMessages,
   sendMessage,
@@ -1344,6 +1345,7 @@ export default function App() {
       </nav>
       
       <Routes>
+        <Route path="/invite/:token" element={<InviteAcceptPage />} />
         <Route path="/login" element={<Login />} />
         <Route path="/" element={session ? <Home /> : <Login />} />
         <Route path="/messages" element={session ? <Messages /> : <Login />} />
