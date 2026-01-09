@@ -32,6 +32,17 @@ function UseSession() {
   return { session, loading }
 }
 
+// Helper function to get the correct redirect URL (prevents localhost)
+function getRedirectUrl() {
+  const origin = window.location.origin
+  // If we're on localhost, use production URL instead
+  if (origin.includes('localhost') || origin.includes('127.0.0.1')) {
+    console.warn('Detected localhost in redirect URL, using production URL instead')
+    return 'https://app.siteweave.org'
+  }
+  return origin
+}
+
 function Login() {
   const navigate = useNavigate()
   const [email, setEmail] = React.useState('')
@@ -54,10 +65,12 @@ function Login() {
 
   const handleGoogleLogin = async () => {
     setIsLoading(true)
+    const redirectUrl = getRedirectUrl()
+    console.log('Google OAuth redirect URL:', redirectUrl)
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
-        redirectTo: window.location.origin
+        redirectTo: redirectUrl
       }
     })
     if (error) {
@@ -68,10 +81,12 @@ function Login() {
 
   const handleMicrosoftLogin = async () => {
     setIsLoading(true)
+    const redirectUrl = getRedirectUrl()
+    console.log('Microsoft OAuth redirect URL:', redirectUrl)
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'azure',
       options: {
-        redirectTo: window.location.origin,
+        redirectTo: redirectUrl,
         scopes: 'openid email profile'
       }
     })
@@ -1269,12 +1284,44 @@ export default function App() {
   const location = useLocation()
   const navigate = useNavigate()
   
-  // Handle OAuth callback
+  // Handle OAuth callback - check for auth code in URL
   React.useEffect(() => {
     const handleAuthCallback = async () => {
-      const { data: { session } } = await supabase.auth.getSession()
-      if (session) {
-        navigate('/')
+      // Check if we're on an OAuth callback (has code or error in URL)
+      const urlParams = new URLSearchParams(window.location.search)
+      const code = urlParams.get('code')
+      const error = urlParams.get('error')
+      
+      if (error) {
+        console.error('OAuth error:', error)
+        // Redirect to login page with error
+        navigate('/login?error=' + encodeURIComponent(error))
+        return
+      }
+      
+      if (code) {
+        console.log('OAuth callback detected, exchanging code for session...')
+        // Exchange code for session
+        const { data: { session }, error: sessionError } = await supabase.auth.getSession()
+        
+        if (sessionError) {
+          console.error('Error getting session after OAuth:', sessionError)
+          navigate('/login?error=' + encodeURIComponent(sessionError.message))
+          return
+        }
+        
+        if (session) {
+          console.log('OAuth login successful, redirecting to home...')
+          // Clear the OAuth code from URL
+          window.history.replaceState({}, document.title, window.location.pathname)
+          navigate('/')
+        }
+      } else {
+        // No OAuth callback, just check for existing session
+        const { data: { session } } = await supabase.auth.getSession()
+        if (session) {
+          navigate('/')
+        }
       }
     }
     handleAuthCallback()
