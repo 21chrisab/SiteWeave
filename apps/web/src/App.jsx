@@ -32,6 +32,14 @@ function UseSession() {
   return { session, loading }
 }
 
+// Helper function to get the correct redirect URL
+function getRedirectUrl() {
+  const origin = window.location.origin
+  // Use current origin - Supabase will handle the redirect properly
+  // Only use production URL if explicitly needed (e.g., for testing)
+  return origin
+}
+
 function Login() {
   const navigate = useNavigate()
   const [email, setEmail] = React.useState('')
@@ -54,10 +62,12 @@ function Login() {
 
   const handleGoogleLogin = async () => {
     setIsLoading(true)
+    const redirectUrl = getRedirectUrl()
+    console.log('Google OAuth redirect URL:', redirectUrl)
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
-        redirectTo: window.location.origin
+        redirectTo: redirectUrl
       }
     })
     if (error) {
@@ -68,10 +78,12 @@ function Login() {
 
   const handleMicrosoftLogin = async () => {
     setIsLoading(true)
+    const redirectUrl = getRedirectUrl()
+    console.log('Microsoft OAuth redirect URL:', redirectUrl)
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'azure',
       options: {
-        redirectTo: window.location.origin,
+        redirectTo: redirectUrl,
         scopes: 'openid email profile'
       }
     })
@@ -1269,12 +1281,101 @@ export default function App() {
   const location = useLocation()
   const navigate = useNavigate()
   
-  // Handle OAuth callback
+  // Handle OAuth callback - check for auth code in URL or hash fragments
   React.useEffect(() => {
     const handleAuthCallback = async () => {
-      const { data: { session } } = await supabase.auth.getSession()
-      if (session) {
-        navigate('/')
+      // Check for hash fragment tokens (implicit flow)
+      const hash = window.location.hash
+      if (hash && hash.includes('access_token')) {
+        console.log('OAuth callback detected (hash fragment), processing tokens...')
+        try {
+          // Parse hash fragment
+          const hashParams = new URLSearchParams(hash.substring(1))
+          const accessToken = hashParams.get('access_token')
+          const refreshToken = hashParams.get('refresh_token')
+          const expiresAt = hashParams.get('expires_at')
+          
+          if (accessToken) {
+            // Set session from hash fragment tokens
+            const { data, error: setSessionError } = await supabase.auth.setSession({
+              access_token: accessToken,
+              refresh_token: refreshToken || '',
+            })
+            
+            if (setSessionError) {
+              console.error('Error setting session from hash fragment:', setSessionError)
+              navigate('/login?error=' + encodeURIComponent(setSessionError.message))
+              return
+            }
+            
+            if (data.session) {
+              console.log('OAuth login successful (hash fragment), redirecting to home...')
+              // Clear the hash from URL
+              window.history.replaceState({}, document.title, window.location.pathname + window.location.search)
+              navigate('/')
+              return
+            }
+          }
+        } catch (error) {
+          console.error('Error processing hash fragment:', error)
+          navigate('/login?error=' + encodeURIComponent('Failed to process OAuth callback'))
+          return
+        }
+      }
+      
+      // Check for query parameters (PKCE flow)
+      const urlParams = new URLSearchParams(window.location.search)
+      const code = urlParams.get('code')
+      const error = urlParams.get('error')
+      
+      if (error) {
+        console.error('OAuth error:', error)
+        // Redirect to login page with error
+        navigate('/login?error=' + encodeURIComponent(error))
+        return
+      }
+      
+      if (code) {
+        console.log('OAuth callback detected (PKCE), exchanging code for session...')
+        try {
+          // Exchange code for session (PKCE flow)
+          const { data, error: exchangeError } = await supabase.auth.exchangeCodeForSession(code)
+          
+          if (exchangeError) {
+            console.error('Error exchanging code for session:', exchangeError)
+            // Try to get session as fallback (in case Supabase processed it automatically)
+            const { data: { session } } = await supabase.auth.getSession()
+            if (session) {
+              console.log('Session found after exchange error, proceeding...')
+              window.history.replaceState({}, document.title, window.location.pathname)
+              navigate('/')
+              return
+            }
+            navigate('/login?error=' + encodeURIComponent(exchangeError.message))
+            return
+          }
+          
+          if (data.session) {
+            console.log('OAuth login successful (PKCE), redirecting to home...')
+            // Clear the OAuth code from URL
+            window.history.replaceState({}, document.title, window.location.pathname)
+            navigate('/')
+            return
+          } else {
+            console.warn('Code exchange succeeded but no session returned')
+            navigate('/login?error=' + encodeURIComponent('Authentication failed: No session created'))
+          }
+        } catch (error) {
+          console.error('Error during code exchange:', error)
+          navigate('/login?error=' + encodeURIComponent(error.message || 'Failed to complete authentication'))
+          return
+        }
+      } else {
+        // No OAuth callback, just check for existing session
+        const { data: { session } } = await supabase.auth.getSession()
+        if (session) {
+          navigate('/')
+        }
       }
     }
     handleAuthCallback()
