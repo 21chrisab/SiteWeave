@@ -86,6 +86,33 @@ function Sidebar() {
                     <Icon path={isCollapsed ? "M11 19l-7-7 7-7m8 14l-7-7 7-7" : "M13 5l7 7-7 7M5 5l7 7-7 7"} className="w-4 h-4" />
                 </button>
             </div>
+            {/* Organization Display */}
+            {!isCollapsed && (
+              <div className="px-6 py-3 border-b border-gray-200">
+                {state.currentOrganization ? (
+                  <>
+                    <p className="text-xs text-gray-500 uppercase tracking-wide">Organization</p>
+                    <p className="text-sm font-semibold text-gray-800 mt-1 truncate">
+                      {state.currentOrganization.name}
+                    </p>
+                  </>
+                ) : state.isProjectCollaborator ? (
+                  <>
+                    <p className="text-xs text-gray-500 uppercase tracking-wide">Guest Access</p>
+                    <p className="text-sm font-semibold text-gray-800 mt-1">
+                      Project Collaborator
+                    </p>
+                    <p className="text-xs text-gray-500 mt-1">
+                      {state.collaborationProjects.length} project{state.collaborationProjects.length !== 1 ? 's' : ''} accessible
+                    </p>
+                  </>
+                ) : state.organizationLoading ? (
+                  <p className="text-xs text-gray-500">Loading...</p>
+                ) : (
+                  <p className="text-xs text-gray-500">No organization</p>
+                )}
+              </div>
+            )}
             <nav className="flex-1 px-4 space-y-1" data-onboarding="sidebar-nav" role="navigation" aria-label="Main navigation">
                 {navItems.map(item => (
                     <div key={item}>
@@ -106,7 +133,12 @@ function Sidebar() {
                                         key={p.id} 
                                         onClick={(e) => {
                                             e.preventDefault();
+                                            e.stopPropagation();
                                             dispatch({type: 'SET_PROJECT', payload: p.id});
+                                            // Ensure we're on Projects view to show project details
+                                            if (state.activeView !== 'Projects') {
+                                                dispatch({type: 'SET_VIEW', payload: 'Projects'});
+                                            }
                                         }}
                                         className={`block text-sm py-1 truncate w-full text-left ${state.selectedProjectId === p.id ? 'text-blue-600 font-semibold' : 'text-gray-500 hover:text-gray-800'}`}
                                         aria-label={`Select project: ${p.name}`}
@@ -132,7 +164,7 @@ function Sidebar() {
                                     {state.user?.user_metadata?.full_name || state.user?.email}
                                 </p>
                                 <p className="text-xs text-gray-500">
-                                    {state.user?.user_metadata?.title || 'User'}
+                                    {state.userRole?.name || (state.isProjectCollaborator ? 'Guest Collaborator' : state.user?.user_metadata?.title || 'User')}
                                 </p>
                             </div>
                         </div>

@@ -6,6 +6,7 @@ import { useToast } from '../context/ToastContext';
 import LoadingSpinner from './LoadingSpinner';
 import DateDropdown from './DateDropdown';
 import Avatar from './Avatar';
+import PermissionGuard from './PermissionGuard';
 
 function ProjectModal({ onClose, onSave, isLoading = false, project = null }) {
     const { state } = useAppContext();
@@ -207,17 +208,19 @@ function ProjectModal({ onClose, onSave, isLoading = false, project = null }) {
                 <div className="flex items-center justify-between mb-6">
                     <h2 className="text-2xl font-bold">{isEditMode ? 'Edit Project' : 'Create New Project'}</h2>
                     {isEditMode && (
-                        <button
-                            type="button"
-                            onClick={() => {
-                                setDuplicateName(`${project.name} - Copy`);
-                                setDuplicateStartDate('');
-                                setShowDuplicateDialog(true);
-                            }}
-                            className="px-4 py-2 text-sm bg-purple-100 text-purple-700 rounded-lg hover:bg-purple-200"
-                        >
-                            Duplicate Project
-                        </button>
+                        <PermissionGuard permission="can_create_projects">
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setDuplicateName(`${project.name} - Copy`);
+                                    setDuplicateStartDate('');
+                                    setShowDuplicateDialog(true);
+                                }}
+                                className="px-4 py-2 text-sm bg-purple-100 text-purple-700 rounded-lg hover:bg-purple-200"
+                            >
+                                Duplicate Project
+                            </button>
+                        </PermissionGuard>
                     )}
                 </div>
                 <form onSubmit={handleSubmit}>

@@ -6,6 +6,7 @@ import * as Linking from 'expo-linking';
 import * as AppleAuthentication from 'expo-apple-authentication';
 import * as Crypto from 'expo-crypto';
 import { Platform } from 'react-native';
+import { getPushToken, registerPushToken, setupNotificationListeners } from '../utils/notifications';
 
 const AuthContext = createContext();
 
@@ -28,6 +29,8 @@ function parseHashParams(url) {
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [activeOrganization, setActiveOrganization] = useState(null);
+  const [organizationError, setOrganizationError] = useState(null);
   
   // Get Supabase credentials from environment
   // Expo uses EXPO_PUBLIC_ prefix for environment variables
@@ -38,6 +41,93 @@ export function AuthProvider({ children }) {
     const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || 
       Constants.expoConfig?.extra?.supabaseAnonKey;
     return createSupabaseClient(supabaseUrl, supabaseAnonKey);
+  }, []);
+
+  // Load user's organization from profiles table
+  const loadUserOrganization = async () => {
+    if (!user) {
+      setActiveOrganization(null);
+      setOrganizationError(null);
+      return;
+    }
+
+    try {
+      // Get user's profile with organization
+      const { data: profile, error: profileError } = await supabase
+        .from('profiles')
+        .select(`
+          organization_id,
+          organizations (
+            id,
+            name
+          )
+        `)
+        .eq('id', user.id)
+        .single();
+
+      if (profileError) {
+        console.error('Error loading organization:', profileError);
+        setOrganizationError('Failed to load organization');
+        setActiveOrganization(null);
+        return;
+      }
+
+      if (!profile?.organization_id || !profile?.organizations) {
+        setOrganizationError('No organization found. Please contact your administrator.');
+        setActiveOrganization(null);
+        return;
+      }
+
+      setActiveOrganization({
+        id: profile.organizations.id,
+        name: profile.organizations.name
+      });
+      setOrganizationError(null);
+    } catch (error) {
+      console.error('Error in loadUserOrganization:', error);
+      setOrganizationError('Failed to load organization');
+      setActiveOrganization(null);
+    }
+  };
+
+  // Register push token when user is available
+  useEffect(() => {
+    if (user) {
+      const registerToken = async () => {
+        try {
+          const token = await getPushToken();
+          if (token) {
+            await registerPushToken(supabase, user.id, token);
+          }
+        } catch (error) {
+          console.error('Error registering push token:', error);
+        }
+      };
+      
+      // Register token after a short delay to ensure user is fully loaded
+      const timer = setTimeout(registerToken, 1000);
+      return () => clearTimeout(timer);
+    }
+  }, [user, supabase]);
+
+  // Setup notification listeners
+  useEffect(() => {
+    const cleanup = setupNotificationListeners(
+      (notification) => {
+        console.log('Notification received:', notification);
+        // Handle foreground notifications if needed
+      },
+      (response) => {
+        console.log('Notification tapped:', response);
+        // Handle notification tap navigation if needed
+        // const data = response.notification.request.content.data;
+        // if (data?.screen) {
+        //   router.push(data.screen);
+        // }
+      }
+    );
+
+    return cleanup;
   }, []);
 
   useEffect(() => {
@@ -58,11 +148,17 @@ export function AuthProvider({ children }) {
             // User is signed in or session refreshed - keep them signed in
             if (session?.user) {
               setUser(session.user);
+              // Load organization after user is set
+              setTimeout(() => {
+                loadUserOrganization();
+              }, 100);
             }
             break;
           case 'SIGNED_OUT':
             // Only clear user if explicitly signed out
             setUser(null);
+            setActiveOrganization(null);
+            setOrganizationError(null);
             break;
           case 'PASSWORD_RECOVERY':
             // Don't change user state for password recovery
@@ -109,14 +205,25 @@ export function AuthProvider({ children }) {
               refreshError.message?.includes('invalid_grant')) {
             // Token is truly invalid, sign out
             setUser(null);
+            setActiveOrganization(null);
           }
           // Otherwise, keep the existing session
         } else if (refreshedSession?.user) {
           setUser(refreshedSession.user);
+          // Load organization after user is set
+          setTimeout(() => {
+            loadUserOrganization();
+          }, 100);
+        } else if (session?.user) {
+          // If refresh failed but we have a session, still load organization
+          setTimeout(() => {
+            loadUserOrganization();
+          }, 100);
         }
       } else {
         console.log('No session found');
         setUser(null);
+        setActiveOrganization(null);
       }
     } catch (error) {
       console.error('Error checking session:', error);
@@ -408,6 +515,8 @@ export function AuthProvider({ children }) {
   const signOut = async () => {
     await supabase.auth.signOut();
     setUser(null);
+    setActiveOrganization(null);
+    setOrganizationError(null);
   };
 
   const deleteAccount = async () => {
@@ -450,6 +559,9 @@ export function AuthProvider({ children }) {
     <AuthContext.Provider value={{ 
       user, 
       loading, 
+      activeOrganization,
+      organizationError,
+      loadUserOrganization,
       signIn, 
       signInWithGoogle, 
       signInWithMicrosoft, 

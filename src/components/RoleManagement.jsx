@@ -5,6 +5,8 @@ import { getRoles, createRole, updateRole, deleteRole } from '../utils/roleManag
 import { useToast } from '../context/ToastContext';
 import PermissionGuard from './PermissionGuard';
 import LoadingSpinner from './LoadingSpinner';
+import RoleCreationModal from './RoleCreationModal';
+import Icon from './Icon';
 
 // Default permission structure
 const DEFAULT_PERMISSIONS = {
@@ -24,12 +26,9 @@ function RoleManagement() {
   const { addToast } = useToast();
   const [roles, setRoles] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [showCreateForm, setShowCreateForm] = useState(false);
+  const [showRoleModal, setShowRoleModal] = useState(false);
   const [editingRole, setEditingRole] = useState(null);
-  const [roleForm, setRoleForm] = useState({
-    name: '',
-    permissions: { ...DEFAULT_PERMISSIONS }
-  });
+  const [isSaving, setIsSaving] = useState(false);
 
   const organizationId = state.currentOrganization?.id;
 
@@ -54,43 +53,51 @@ function RoleManagement() {
     }
   };
 
-  const handleCreateRole = async (e) => {
-    e.preventDefault();
-    if (!roleForm.name || !organizationId) return;
+  const handleSaveRole = async (roleData) => {
+    if (!roleData.name || !organizationId) return;
 
+    setIsSaving(true);
     try {
-      await createRole(supabaseClient, organizationId, roleForm.name, roleForm.permissions);
-      addToast('Role created successfully', 'success');
-      setRoleForm({ name: '', permissions: { ...DEFAULT_PERMISSIONS } });
-      setShowCreateForm(false);
-      loadRoles();
+      if (editingRole) {
+        // Update existing role
+        const result = await updateRole(supabaseClient, editingRole.id, roleData);
+        if (result.success) {
+          addToast('Role updated successfully', 'success');
+          setShowRoleModal(false);
+          setEditingRole(null);
+          loadRoles();
+        } else {
+          addToast(result.error || 'Failed to update role', 'error');
+        }
+      } else {
+        // Create new role
+        await createRole(supabaseClient, organizationId, roleData.name, roleData.permissions);
+        addToast('Role created successfully', 'success');
+        setShowRoleModal(false);
+        loadRoles();
+      }
     } catch (error) {
-      console.error('Error creating role:', error);
-      addToast('Failed to create role', 'error');
+      console.error('Error saving role:', error);
+      addToast(error.message || 'Failed to save role', 'error');
+    } finally {
+      setIsSaving(false);
     }
   };
 
-  const handleUpdateRole = async (e) => {
-    e.preventDefault();
-    if (!editingRole || !roleForm.name) return;
+  const handleDuplicateRole = async (role) => {
+    if (!organizationId) return;
 
+    setIsSaving(true);
     try {
-      const result = await updateRole(supabaseClient, editingRole.id, {
-        name: roleForm.name,
-        permissions: roleForm.permissions
-      });
-      
-      if (result.success) {
-        addToast('Role updated successfully', 'success');
-        setEditingRole(null);
-        setRoleForm({ name: '', permissions: { ...DEFAULT_PERMISSIONS } });
-        loadRoles();
-      } else {
-        addToast(result.error || 'Failed to update role', 'error');
-      }
+      const duplicatedName = `${role.name} (Copy)`;
+      await createRole(supabaseClient, organizationId, duplicatedName, role.permissions);
+      addToast('Role duplicated successfully', 'success');
+      loadRoles();
     } catch (error) {
-      console.error('Error updating role:', error);
-      addToast(error.message || 'Failed to update role', 'error');
+      console.error('Error duplicating role:', error);
+      addToast('Failed to duplicate role', 'error');
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -109,23 +116,14 @@ function RoleManagement() {
     }
   };
 
-  const handleEditRole = (role) => {
-    setEditingRole(role);
-    setRoleForm({
-      name: role.name,
-      permissions: role.permissions || { ...DEFAULT_PERMISSIONS }
-    });
-    setShowCreateForm(true);
+  const handleCreateRole = () => {
+    setEditingRole(null);
+    setShowRoleModal(true);
   };
 
-  const togglePermission = (permission) => {
-    setRoleForm({
-      ...roleForm,
-      permissions: {
-        ...roleForm.permissions,
-        [permission]: !roleForm.permissions[permission]
-      }
-    });
+  const handleEditRole = (role) => {
+    setEditingRole(role);
+    setShowRoleModal(true);
   };
 
   if (loading) {
@@ -139,63 +137,16 @@ function RoleManagement() {
         <p className="text-gray-600 mt-1">Create and manage custom roles for your organization</p>
       </div>
 
-      <PermissionGuard permission="can_manage_users">
+      <PermissionGuard permission="can_manage_roles">
         <div className="mb-6">
           <button
-            onClick={() => {
-              setShowCreateForm(!showCreateForm);
-              setEditingRole(null);
-              setRoleForm({ name: '', permissions: { ...DEFAULT_PERMISSIONS } });
-            }}
-            className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
+            onClick={handleCreateRole}
+            className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 flex items-center space-x-2"
           >
-            {showCreateForm ? 'Cancel' : 'Create New Role'}
+            <Icon path="M12 4v16m8-8H4" className="w-5 h-5" />
+            <span>Create Custom Role</span>
           </button>
         </div>
-
-        {showCreateForm && (
-          <div className="bg-white rounded-lg shadow p-6 mb-6">
-            <h3 className="text-lg font-semibold mb-4">
-              {editingRole ? 'Edit Role' : 'Create Role'}
-            </h3>
-            <form onSubmit={editingRole ? handleUpdateRole : handleCreateRole} className="space-y-4">
-              <input
-                type="text"
-                placeholder="Role Name (e.g., Site Supervisor, Project Manager)"
-                value={roleForm.name}
-                onChange={(e) => setRoleForm({ ...roleForm, name: e.target.value })}
-                className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
-                required
-              />
-
-              <div className="mt-4">
-                <label className="block text-sm font-medium text-gray-700 mb-2">Permissions</label>
-                <div className="grid grid-cols-2 gap-3">
-                  {Object.keys(DEFAULT_PERMISSIONS).map(permission => (
-                    <label key={permission} className="flex items-center space-x-2">
-                      <input
-                        type="checkbox"
-                        checked={roleForm.permissions[permission] || false}
-                        onChange={() => togglePermission(permission)}
-                        className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                      />
-                      <span className="text-sm text-gray-700">
-                        {permission.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
-                      </span>
-                    </label>
-                  ))}
-                </div>
-              </div>
-
-              <button
-                type="submit"
-                className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700"
-              >
-                {editingRole ? 'Update Role' : 'Create Role'}
-              </button>
-            </form>
-          </div>
-        )}
       </PermissionGuard>
 
       {/* Roles List */}
@@ -216,9 +167,16 @@ function RoleManagement() {
                       <span className="text-xs text-gray-500">System Role (Cannot be modified)</span>
                     )}
                   </div>
-                  <PermissionGuard permission="can_manage_users">
+                  <PermissionGuard permission="can_manage_roles">
                     {!role.is_system_role && (
-                      <div className="space-x-2">
+                      <div className="flex items-center space-x-2">
+                        <button
+                          onClick={() => handleDuplicateRole(role)}
+                          className="p-2 text-purple-600 hover:bg-purple-50 rounded"
+                          title="Duplicate role"
+                        >
+                          <Icon path="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" className="w-4 h-4" />
+                        </button>
                         <button
                           onClick={() => handleEditRole(role)}
                           className="px-3 py-1 text-blue-600 hover:bg-blue-50 rounded text-sm"
@@ -251,6 +209,18 @@ function RoleManagement() {
           )}
         </div>
       </div>
+
+      {/* Role Creation Modal */}
+      <RoleCreationModal
+        show={showRoleModal}
+        onClose={() => {
+          setShowRoleModal(false);
+          setEditingRole(null);
+        }}
+        onSave={handleSaveRole}
+        existingRole={editingRole}
+        isLoading={isSaving}
+      />
     </div>
   );
 }

@@ -20,7 +20,8 @@ module.exports = function(env) {
         bundleIdentifier: "com.siteweave.mobile",
         usesAppleSignIn: true,
         infoPlist: {
-          ITSAppUsesNonExemptEncryption: false
+          ITSAppUsesNonExemptEncryption: false,
+          NSLocationWhenInUseUsageDescription: "We use your location to display local weather conditions."
         }
       },
       android: {
@@ -29,7 +30,8 @@ module.exports = function(env) {
           backgroundColor: "#ffffff"
         },
         edgeToEdgeEnabled: false,
-        package: "com.siteweave.mobile"
+        package: "com.siteweave.mobile",
+        permissions: ["ACCESS_COARSE_LOCATION", "ACCESS_FINE_LOCATION"]
       },
       web: {
         favicon: "./assets/favicon.png",
@@ -39,7 +41,23 @@ module.exports = function(env) {
         typedRoutes: true
       },
       plugins: [
-        "expo-router"
+        "expo-router",
+        "expo-font",
+        [
+          "expo-location",
+          {
+            locationAlwaysAndWhenInUsePermission: "We use your location to display local weather conditions.",
+            locationAlwaysPermission: "We use your location to display local weather conditions.",
+            locationWhenInUsePermission: "We use your location to display local weather conditions.",
+          }
+        ],
+        [
+          "expo-notifications",
+          {
+            "icon": "./assets/icon.png",
+            "color": "#3B82F6"
+          }
+        ]
       ],
       extra: {
         router: {

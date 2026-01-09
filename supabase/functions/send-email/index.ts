@@ -35,7 +35,7 @@ serve(async (req) => {
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          from: 'SiteWeave Notifications <notifications@send.resend.dev>', // Resend shared domain for production
+          from: 'SiteWeave Notifications <notifications@siteweave.org>',
           to: toArray,
           subject: subject,
           html: html,

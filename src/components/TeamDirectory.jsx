@@ -30,7 +30,7 @@ function TeamDirectory() {
         .select(`
           id,
           created_at,
-          contacts (
+          contacts!fk_profiles_contact (
             id,
             name,
             email,

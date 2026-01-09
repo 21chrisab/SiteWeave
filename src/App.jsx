@@ -11,6 +11,7 @@ import DirectoryManagementModal from './components/DirectoryManagementModal'
 import PermissionGuard from './components/PermissionGuard'
 import ForcePasswordReset from './components/ForcePasswordReset'
 import { LazyViewWrapper, DashboardView, ProjectDetailsView, CalendarView, MessagesView, ContactsView, TeamView, SettingsView } from './components/LazyViews'
+import NoOrganizationView from './views/NoOrganizationView'
 
 function App() {
   const { state, dispatch } = useAppContext()
@@ -94,6 +95,12 @@ function App() {
         <Route path="*" element={<LoginForm />} />
       </Routes>
     )
+  }
+
+  // Show no organization screen if user is logged in but has no organization
+  // UNLESS they are a project collaborator
+  if (!state.organizationLoading && state.user && !state.currentOrganization && state.organizationError && !state.isProjectCollaborator) {
+    return <NoOrganizationView />
   }
 
   // Render main app with Sidebar

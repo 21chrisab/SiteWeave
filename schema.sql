@@ -259,6 +259,8 @@ CREATE TABLE IF NOT EXISTS activity_log (
 CREATE TABLE IF NOT EXISTS invitations (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     email TEXT NOT NULL,
+    organization_id UUID REFERENCES organizations(id) ON DELETE CASCADE,
+    role_id UUID REFERENCES roles(id) ON DELETE SET NULL,
     project_id UUID,
     issue_id INTEGER,
     step_id INTEGER,
@@ -741,6 +743,12 @@ END $$;
 -- Invitations constraints
 DO $$ 
 BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_invitations_organization_id') THEN
+        ALTER TABLE invitations ADD CONSTRAINT fk_invitations_organization_id FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_invitations_role_id') THEN
+        ALTER TABLE invitations ADD CONSTRAINT fk_invitations_role_id FOREIGN KEY (role_id) REFERENCES roles(id) ON DELETE SET NULL;
+    END IF;
     IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_invitations_project_id') THEN
         ALTER TABLE invitations ADD CONSTRAINT fk_invitations_project_id FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE;
     END IF;
@@ -974,6 +982,9 @@ ALTER TABLE tasks ENABLE ROW LEVEL SECURITY;
 ALTER TABLE user_preferences ENABLE ROW LEVEL SECURITY;
 ALTER TABLE activity_log ENABLE ROW LEVEL SECURITY;
 ALTER TABLE invitations ENABLE ROW LEVEL SECURITY;
+ALTER TABLE roles ENABLE ROW LEVEL SECURITY;
+ALTER TABLE organizations ENABLE ROW LEVEL SECURITY;
+ALTER TABLE project_collaborators ENABLE ROW LEVEL SECURITY;
 
 -- ============================================================================
 -- PROJECTS TABLE POLICIES
@@ -2009,5 +2020,7 @@ CREATE INDEX IF NOT EXISTS idx_activity_log_entity_type ON activity_log(entity_t
 CREATE INDEX IF NOT EXISTS idx_invitations_email ON invitations(email);
 CREATE INDEX IF NOT EXISTS idx_invitations_status ON invitations(status);
 CREATE INDEX IF NOT EXISTS idx_invitations_token ON invitations(invitation_token);
+CREATE INDEX IF NOT EXISTS idx_invitations_organization_id ON invitations(organization_id);
+CREATE INDEX IF NOT EXISTS idx_invitations_role_id ON invitations(role_id);
 CREATE INDEX IF NOT EXISTS idx_invitations_project_id ON invitations(project_id);
 CREATE INDEX IF NOT EXISTS idx_invitations_invited_by ON invitations(invited_by_user_id);

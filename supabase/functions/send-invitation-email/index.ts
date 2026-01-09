@@ -150,7 +150,7 @@ SiteWeave - Modern Project Management for Construction
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          from: 'SiteWeave Invitations <invitations@send.resend.dev>', // Resend shared domain for production
+          from: 'SiteWeave Invitations <invitations@siteweave.org>',
           to: [to],
           subject: subject,
           html: htmlBody,

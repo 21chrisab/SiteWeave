@@ -8,15 +8,16 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 
 export default function ProjectsScreen() {
-  const { user, supabase } = useAuth();
+  const { user, supabase, activeOrganization } = useAuth();
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const [projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(true);
 
   const loadProjects = useCallback(async () => {
-    if (!user || !supabase) {
+    if (!user || !supabase || !activeOrganization) {
       setLoading(false);
+      setProjects([]);
       return;
     }
     
@@ -24,11 +25,16 @@ export default function ProjectsScreen() {
       setLoading(true);
       const data = await fetchUserProjectsWithProgress(supabase, user.id);
       
+      // Filter projects by organization_id
+      const orgProjects = (data || []).filter(project => 
+        project.organization_id === activeOrganization.id
+      );
+      
       // Fetch incoming tasks with assignee info for each project
       const projectsWithTasks = await Promise.all(
-        (data || []).map(async (project) => {
+        (orgProjects || []).map(async (project) => {
           try {
-            // Fetch tasks with assignee contact info
+            // Fetch tasks with assignee contact info, filtered by organization
             const { data: tasks, error: tasksError } = await supabase
               .from('tasks')
               .select(`
@@ -43,6 +49,7 @@ export default function ProjectsScreen() {
                 )
               `)
               .eq('project_id', project.id)
+              .eq('organization_id', activeOrganization.id)
               .order('due_date', { ascending: true, nullsFirst: false });
             
             if (tasksError) throw tasksError;
@@ -88,7 +95,7 @@ export default function ProjectsScreen() {
     } finally {
       setLoading(false);
     }
-  }, [user, supabase]);
+  }, [user, supabase, activeOrganization]);
 
   useEffect(() => {
     loadProjects();
@@ -109,6 +116,9 @@ export default function ProjectsScreen() {
     <View style={[styles.safeArea, { paddingTop: insets.top }]}>
       <View style={styles.container}>
         <View style={styles.header}>
+          {activeOrganization?.name && (
+            <Text style={styles.organizationName}>{activeOrganization.name}</Text>
+          )}
           <Text style={styles.title}>Projects</Text>
         </View>
 
@@ -151,6 +161,12 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: '#E5E7EB',
     minHeight: 44,
+  },
+  organizationName: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#4B5563',
+    marginBottom: 4,
   },
   title: {
     fontSize: 28,

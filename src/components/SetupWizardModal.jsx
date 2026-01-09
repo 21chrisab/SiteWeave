@@ -8,6 +8,7 @@ import { getAllRolePresets } from '../utils/rolePresets';
 import Modal from './Modal';
 import LoadingSpinner from './LoadingSpinner';
 import Icon from './Icon';
+import RoleCreationModal from './RoleCreationModal';
 
 /**
  * SetupWizardModal - Split-view setup wizard for new Organization Admins
@@ -107,11 +108,14 @@ function SetupWizardModal({ show, onComplete }) {
   const [roles, setRoles] = useState([]); // Array of {roleName, permissions, members, isCustom, description}
   const [loading, setLoading] = useState(false);
   const [isFinishing, setIsFinishing] = useState(false);
+  const [showAddRoleDropdown, setShowAddRoleDropdown] = useState(false);
   const [showRolePresetDropdown, setShowRolePresetDropdown] = useState(false);
   const [editingRoleName, setEditingRoleName] = useState(false);
   const [tempRoleName, setTempRoleName] = useState('');
   const addRoleButtonRef = useRef(null);
   const [dropdownPosition, setDropdownPosition] = useState({ top: 0, left: 0 });
+  const [showCreateCustomRoleModal, setShowCreateCustomRoleModal] = useState(false);
+  const [isCreatingCustomRole, setIsCreatingCustomRole] = useState(false);
 
   // Get all roles (standard + custom)
   const allRoles = roles.length > 0 ? roles : STANDARD_ROLES.map(t => ({
@@ -137,8 +141,7 @@ function SetupWizardModal({ show, onComplete }) {
   const [emailInput, setEmailInput] = useState('');
   const [managedInput, setManagedInput] = useState({
     fullName: '',
-    username: '',
-    password: ''
+    username: '' // Username is optional, will be auto-generated if blank
   });
   const [previewCredentials, setPreviewCredentials] = useState(null);
 
@@ -177,8 +180,62 @@ function SetupWizardModal({ show, onComplete }) {
     setRoles(updatedRoles);
     setCurrentRoleIndex(updatedRoles.length - 1);
     setShowRolePresetDropdown(false);
+    setShowAddRoleDropdown(false);
     setShowPermissions(false);
     addToast(`Added "${preset.defaultName}" role`, 'success');
+  };
+
+  // Handle opening role library
+  const handleBrowseRoleLibrary = () => {
+    setShowAddRoleDropdown(false);
+    setShowRolePresetDropdown(true);
+  };
+
+  // Handle creating custom role from dropdown
+  const handleCreateCustomRoleFromDropdown = () => {
+    setShowAddRoleDropdown(false);
+    setShowCreateCustomRoleModal(true);
+  };
+
+  // Handle creating custom role
+  const handleCreateCustomRole = async (roleData) => {
+    if (!currentOrganization?.id) {
+      addToast('Organization not found', 'error');
+      return;
+    }
+
+    setIsCreatingCustomRole(true);
+    try {
+      // Create role in database
+      const createdRole = await createRole(
+        supabaseClient,
+        currentOrganization.id,
+        roleData.name,
+        roleData.permissions
+      );
+
+      // Add to local state for wizard
+      const newRole = {
+        roleName: roleData.name,
+        permissions: { ...roleData.permissions },
+        members: [],
+        isCustom: true,
+        description: 'Custom role',
+        id: createdRole.id // Store the database ID
+      };
+      const updatedRoles = [...roles];
+      updatedRoles.push(newRole);
+      setRoles(updatedRoles);
+      setCurrentRoleIndex(updatedRoles.length - 1);
+      setShowCreateCustomRoleModal(false);
+      setShowPermissions(false);
+      addToast(`Created "${roleData.name}" role`, 'success');
+    } catch (error) {
+      console.error('Error creating custom role:', error);
+      addToast('Failed to create custom role', 'error');
+    } finally {
+      setIsCreatingCustomRole(false);
+    }
   };
 
   // Handle duplicating a role
@@ -235,6 +292,9 @@ function SetupWizardModal({ show, onComplete }) {
     setRoles(updatedRoles);
   };
 
+  // Update preview credentials when name changes (use ref to avoid regenerating PIN)
+  const previewPinRef = useRef(null);
+
   // Generate username from full name
   const generateUsername = (fullName, orgSlug) => {
     if (!fullName) return '';
@@ -247,20 +307,30 @@ function SetupWizardModal({ show, onComplete }) {
     return slug || 'user';
   };
 
-  // Generate PIN
+  // Generate 5-digit PIN
   const generatePIN = () => {
-    return Math.floor(1000 + Math.random() * 9000).toString();
+    return Math.floor(10000 + Math.random() * 90000).toString();
   };
-
-  // Update preview credentials when name changes (use ref to avoid regenerating PIN)
-  const previewPinRef = React.useRef(null);
+  
+  // Generate PIN immediately when switching to managed mode
+  useEffect(() => {
+    if (inputMode === 'managed') {
+      // Generate PIN immediately when switching to managed mode
+      if (!previewPinRef.current) {
+        previewPinRef.current = generatePIN();
+      }
+    } else {
+      previewPinRef.current = null; // Reset when switching modes
+    }
+  }, [inputMode]);
   
   useEffect(() => {
     if (inputMode === 'managed' && managedInput.fullName) {
-      const username = managedInput.username || generateUsername(managedInput.fullName, currentOrganization?.slug);
-      // Only generate new PIN if password field is empty and we don't have a preview PIN yet
-      const pin = managedInput.password || previewPinRef.current || generatePIN();
-      if (!previewPinRef.current && !managedInput.password) {
+      const orgSlug = currentOrganization?.slug || '';
+      const username = managedInput.username || generateUsername(managedInput.fullName, orgSlug);
+      // Use the pre-generated PIN
+      const pin = previewPinRef.current || generatePIN();
+      if (!previewPinRef.current) {
         previewPinRef.current = pin;
       }
       setPreviewCredentials({
@@ -268,11 +338,21 @@ function SetupWizardModal({ show, onComplete }) {
         username: username,
         pin: pin
       });
+    } else if (inputMode === 'managed') {
+      // Show PIN even without a name (for immediate display)
+      const pin = previewPinRef.current || generatePIN();
+      if (!previewPinRef.current) {
+        previewPinRef.current = pin;
+      }
+      setPreviewCredentials({
+        fullName: '',
+        username: '',
+        pin: pin
+      });
     } else {
       setPreviewCredentials(null);
-      previewPinRef.current = null; // Reset when switching modes
     }
-  }, [managedInput.fullName, managedInput.username, managedInput.password, inputMode, currentOrganization?.slug]);
+  }, [managedInput.fullName, managedInput.username, inputMode, currentOrganization?.slug || '']);
 
   const handleBulkEmailAdd = (emailText) => {
     const emails = emailText
@@ -357,14 +437,19 @@ function SetupWizardModal({ show, onComplete }) {
       addToast('Member added to list', 'success');
     } else {
       // Managed account
-      if (!managedInput.fullName || !managedInput.username || !managedInput.password) {
-        addToast('Please fill in all fields', 'error');
+      if (!managedInput.fullName) {
+        addToast('Please enter a full name', 'error');
         return;
       }
 
-      // Generate a simple PIN (4 digits) if password is empty
-      const pin = managedInput.password || generatePIN();
-      const username = managedInput.username || generateUsername(managedInput.fullName, currentOrganization?.slug);
+      // Always auto-generate 5-digit PIN
+      const pin = previewPinRef.current || generatePIN();
+      if (!previewPinRef.current) {
+        previewPinRef.current = pin;
+      }
+      
+      // Auto-generate username if blank
+      const username = managedInput.username.trim() || generateUsername(managedInput.fullName, currentOrganization?.slug);
 
       const newMember = {
         id: `temp-${Date.now()}`,
@@ -393,7 +478,9 @@ function SetupWizardModal({ show, onComplete }) {
       }
       updatedRoles[currentRoleIndex].members.push(newMember);
       setRoles(updatedRoles);
-      setManagedInput({ fullName: '', username: '', password: '' });
+      // Reset form and generate new PIN for next entry
+      setManagedInput({ fullName: '', username: '' });
+      previewPinRef.current = null; // Reset PIN so a new one is generated for next entry
       setPreviewCredentials(null);
       addToast('Managed account added to list', 'success');
     }
@@ -440,28 +527,53 @@ function SetupWizardModal({ show, onComplete }) {
         return;
       }
 
-      // Create roles first
+      // Create roles first using direct Supabase client (bypasses edge function CORS issues)
+      // First, get existing roles to avoid duplicates
+      const existingRoles = await getRoles(supabaseClient, currentOrganization.id);
+      const existingRolesMap = new Map(existingRoles.map(r => [r.name.toLowerCase(), r.id]));
+      
       const createdRoles = {};
       for (const roleConfig of roles) {
-        const response = await fetch(
-          `${supabaseClient.supabaseUrl}/functions/v1/team-create-role`,
-          {
-            method: 'POST',
-            headers: {
-              'Authorization': `Bearer ${session.access_token}`,
-              'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-              organizationId: currentOrganization.id,
-              roleName: roleConfig.roleName,
-              permissions: roleConfig.permissions
-            })
+        try {
+          // Check if role already exists
+          const roleNameLower = roleConfig.roleName.toLowerCase();
+          if (existingRolesMap.has(roleNameLower)) {
+            // Role already exists, use existing role ID
+            createdRoles[roleConfig.roleName] = existingRolesMap.get(roleNameLower);
+            console.log(`Role "${roleConfig.roleName}" already exists, using existing role`);
+          } else {
+            // Create new role
+            const createdRole = await createRole(
+              supabaseClient,
+              currentOrganization.id,
+              roleConfig.roleName,
+              roleConfig.permissions
+            );
+            if (createdRole && createdRole.id) {
+              createdRoles[roleConfig.roleName] = createdRole.id;
+              // Add to map to avoid duplicates in same batch
+              existingRolesMap.set(roleNameLower, createdRole.id);
+            }
           }
-        );
-
-        const result = await response.json();
-        if (result.success && result.roleId) {
-          createdRoles[roleConfig.roleName] = result.roleId;
+        } catch (error) {
+          console.error(`Error creating role ${roleConfig.roleName}:`, error);
+          // If it's a duplicate error, try to find the existing role
+          if (error.code === '23505' || error.message?.includes('duplicate key')) {
+            try {
+              const existingRolesRetry = await getRoles(supabaseClient, currentOrganization.id);
+              const existingRole = existingRolesRetry.find(r => r.name.toLowerCase() === roleConfig.roleName.toLowerCase());
+              if (existingRole) {
+                createdRoles[roleConfig.roleName] = existingRole.id;
+                console.log(`Found existing role "${roleConfig.roleName}" after duplicate error`);
+              } else {
+                addToast(`Role "${roleConfig.roleName}" already exists but could not be found`, 'error');
+              }
+            } catch (retryError) {
+              addToast(`Failed to create role "${roleConfig.roleName}": ${error.message}`, 'error');
+            }
+          } else {
+            addToast(`Failed to create role "${roleConfig.roleName}": ${error.message}`, 'error');
+          }
         }
       }
 
@@ -563,40 +675,50 @@ function SetupWizardModal({ show, onComplete }) {
 
   // Update dropdown position when button position changes
   useEffect(() => {
-    if (showRolePresetDropdown && addRoleButtonRef.current) {
+    if ((showAddRoleDropdown || showRolePresetDropdown) && addRoleButtonRef.current) {
       const updatePosition = () => {
-        const rect = addRoleButtonRef.current.getBoundingClientRect();
-        setDropdownPosition({
-          top: rect.bottom + 8, // 8px = mt-2 equivalent
-          left: rect.left
-        });
+        if (addRoleButtonRef.current) {
+          const rect = addRoleButtonRef.current.getBoundingClientRect();
+          // Use fixed positioning relative to viewport (getBoundingClientRect already gives viewport coords)
+          setDropdownPosition({
+            top: rect.bottom + 8, // 8px margin below button
+            left: rect.left
+          });
+        }
       };
+      // Update position immediately
       updatePosition();
+      // Update on scroll and resize
       window.addEventListener('scroll', updatePosition, true);
       window.addEventListener('resize', updatePosition);
       return () => {
         window.removeEventListener('scroll', updatePosition, true);
         window.removeEventListener('resize', updatePosition);
       };
+    } else {
+      // Reset position when dropdowns close
+      setDropdownPosition({ top: 0, left: 0 });
     }
-  }, [showRolePresetDropdown]);
+  }, [showAddRoleDropdown, showRolePresetDropdown]);
 
-  // Close dropdown when clicking outside
+  // Close dropdowns when clicking outside
   useEffect(() => {
-    if (showRolePresetDropdown) {
+    if (showAddRoleDropdown || showRolePresetDropdown) {
       const handleClickOutside = (e) => {
         if (
           addRoleButtonRef.current &&
           !addRoleButtonRef.current.contains(e.target) &&
+          !e.target.closest('.add-role-dropdown-portal') &&
           !e.target.closest('.role-preset-dropdown-portal')
         ) {
+          setShowAddRoleDropdown(false);
           setShowRolePresetDropdown(false);
         }
       };
       document.addEventListener('mousedown', handleClickOutside);
       return () => document.removeEventListener('mousedown', handleClickOutside);
     }
-  }, [showRolePresetDropdown]);
+  }, [showAddRoleDropdown, showRolePresetDropdown]);
 
   if (!show) return null;
 
@@ -614,25 +736,12 @@ function SetupWizardModal({ show, onComplete }) {
             {allRoles.map((role, idx) => (
               <React.Fragment key={`${role.roleName}-${idx}`}>
                 <div className={`flex items-center flex-shrink-0 ${idx <= currentRoleIndex ? 'text-blue-600' : 'text-gray-400'}`}>
-                  <div className={`relative group w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium ${
+                  <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium ${
                     idx < currentRoleIndex ? 'bg-blue-600 text-white' :
                     idx === currentRoleIndex ? 'bg-blue-100 text-blue-700 border-2 border-blue-600' :
                     'bg-gray-100 text-gray-400'
                   }`}>
                     {idx < currentRoleIndex ? '✓' : idx + 1}
-                    {/* Duplicate button on hover */}
-                    {role.isCustom && idx !== currentRoleIndex && (
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleDuplicateRole(idx);
-                        }}
-                        className="absolute -top-1 -right-1 w-4 h-4 bg-purple-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-xs"
-                        title="Duplicate role"
-                      >
-                        <Icon path="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" className="w-3 h-3" />
-                      </button>
-                    )}
                   </div>
                   <span className="ml-2 text-sm font-medium hidden sm:inline">{role.roleName}</span>
                 </div>
@@ -646,14 +755,53 @@ function SetupWizardModal({ show, onComplete }) {
           {/* Right: Pinned Add Role Button */}
           <div className="flex-shrink-0" ref={addRoleButtonRef}>
             <button
-              onClick={() => setShowRolePresetDropdown(!showRolePresetDropdown)}
-              className="w-8 h-8 rounded-full bg-green-100 text-green-700 border-2 border-green-300 flex items-center justify-center hover:bg-green-200 transition-colors"
-              title="Add Role from Library"
+              onClick={() => {
+                // If role preset dropdown is open, close both dropdowns
+                if (showRolePresetDropdown) {
+                  setShowRolePresetDropdown(false);
+                  setShowAddRoleDropdown(false);
+                } else {
+                  // Otherwise, toggle the main dropdown
+                  setShowAddRoleDropdown(!showAddRoleDropdown);
+                }
+              }}
+              className="px-3 py-1.5 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 transition-colors flex items-center space-x-1"
+              title="Add Role"
             >
-              <Icon path="M12 4v16m8-8H4" className="w-5 h-5" />
+              <Icon path="M12 4v16m8-8H4" className="w-4 h-4" />
+              <span>Add Role</span>
             </button>
           </div>
         </div>
+
+        {/* Add Role Dropdown Menu - Rendered via Portal */}
+        {showAddRoleDropdown && typeof document !== 'undefined' && createPortal(
+          <div
+            className="add-role-dropdown-portal fixed bg-white rounded-lg shadow-xl border border-gray-200 z-[9999] w-56"
+            style={{
+              top: `${dropdownPosition.top}px`,
+              left: `${dropdownPosition.left}px`
+            }}
+          >
+            <div className="p-1">
+              <button
+                onClick={handleBrowseRoleLibrary}
+                className="w-full text-left px-3 py-2 rounded-md hover:bg-gray-50 transition-colors flex items-center space-x-2"
+              >
+                <Icon path="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" className="w-4 h-4 text-gray-600" />
+                <span className="text-sm font-medium text-gray-900">Browse Role Library</span>
+              </button>
+              <button
+                onClick={handleCreateCustomRoleFromDropdown}
+                className="w-full text-left px-3 py-2 rounded-md hover:bg-gray-50 transition-colors flex items-center space-x-2"
+              >
+                <Icon path="M12 4v16m8-8H4" className="w-4 h-4 text-gray-600" />
+                <span className="text-sm font-medium text-gray-900">Create Custom Role</span>
+              </button>
+            </div>
+          </div>,
+          document.body
+        )}
 
         {/* Role Preset Dropdown - Rendered via Portal */}
         {showRolePresetDropdown && typeof document !== 'undefined' && createPortal(
@@ -723,34 +871,36 @@ function SetupWizardModal({ show, onComplete }) {
                   </div>
                 ) : (
                   <>
-                    <h3 className="text-xl font-bold text-gray-900 flex-1">{currentRoleConfig.roleName}</h3>
-                    <button
-                      onClick={() => setEditingRoleName(true)}
-                      className="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded"
-                      title="Rename role"
-                    >
-                      <Icon path="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" className="w-4 h-4" />
-                    </button>
+                    <div className="flex-1">
+                      <h3 className="text-xl font-bold text-gray-900">{currentRoleConfig.roleName}</h3>
+                      {currentRoleConfig.isCustom && (
+                        <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-purple-100 text-purple-800 mt-1">
+                          Custom Role
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex items-center space-x-1">
+                      {/* Duplicate button in header */}
+                      <button
+                        onClick={() => handleDuplicateRole(currentRoleIndex)}
+                        className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded"
+                        title="Duplicate this role"
+                      >
+                        <Icon path="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" className="w-4 h-4" />
+                      </button>
+                      {/* Edit name button */}
+                      <button
+                        onClick={() => setEditingRoleName(true)}
+                        className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded"
+                        title="Rename role"
+                      >
+                        <Icon path="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" className="w-4 h-4" />
+                      </button>
+                    </div>
                   </>
                 )}
               </div>
               <p className="text-sm text-gray-600 mb-4">{currentRoleConfig.description || 'Configure permissions for this role'}</p>
-              <div className="flex items-center space-x-2 mb-2">
-                {currentRoleConfig.isCustom && (
-                  <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
-                    Custom Role
-                  </span>
-                )}
-                {/* Duplicate button for current role */}
-                <button
-                  onClick={() => handleDuplicateRole(currentRoleIndex)}
-                  className="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-gray-100 text-gray-700 hover:bg-gray-200 transition-colors"
-                  title="Duplicate this role"
-                >
-                  <Icon path="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" className="w-3 h-3 mr-1" />
-                  Duplicate
-                </button>
-              </div>
               
               {/* Critical Permissions - Always Visible */}
               <div className="space-y-2 mt-4 pt-4 border-t border-blue-200">
@@ -762,9 +912,8 @@ function SetupWizardModal({ show, onComplete }) {
                   return (
                     <div key={perm.key} className="flex items-center space-x-2 text-sm">
                       <Icon path={perm.icon} className={`w-4 h-4 ${isAllowed ? 'text-green-600' : 'text-red-500'}`} />
-                      <span className="flex-1 text-gray-700">{perm.label}:</span>
-                      <span className={`font-medium ${isAllowed ? 'text-green-600' : 'text-red-500'}`}>
-                        {isAllowed ? 'Allowed' : 'Forbidden'}
+                      <span className={`flex-1 ${isAllowed ? 'text-green-600 font-medium' : 'text-gray-700'}`}>
+                        {perm.label}
                       </span>
                     </div>
                   );
@@ -877,36 +1026,35 @@ function SetupWizardModal({ show, onComplete }) {
                 <div className="space-y-3">
                   <input
                     type="text"
-                    placeholder="Full Name (e.g., Burger Bun)"
+                    placeholder="Full Name (e.g., John Smith)"
                     value={managedInput.fullName}
                     onChange={(e) => setManagedInput({ ...managedInput, fullName: e.target.value })}
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
                   />
                   <input
                     type="text"
-                    placeholder="Username (auto-generated if empty)"
+                    placeholder="Username (optional - auto-generated if empty)"
                     value={managedInput.username}
                     onChange={(e) => setManagedInput({ ...managedInput, username: e.target.value })}
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
                   />
                   <div className="space-y-2">
                     <div className="flex space-x-2">
-                      <input
-                        type="text"
-                        placeholder="Temporary Access Code (auto-generated if empty)"
-                        value={managedInput.password}
-                        onChange={(e) => setManagedInput({ ...managedInput, password: e.target.value })}
-                        className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
-                      />
+                      <div className="flex-1 px-3 py-2 border border-gray-300 rounded-md bg-gray-50 text-gray-600 flex items-center">
+                        <span className="text-sm">
+                          Access Code: <span className="font-mono font-bold text-gray-900">{previewCredentials?.pin || previewPinRef.current || 'Generating...'}</span>
+                        </span>
+                      </div>
                       <button
                         onClick={handleAddMember}
-                        className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors"
+                        disabled={!managedInput.fullName}
+                        className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                       >
                         Add
                       </button>
                     </div>
                     <p className="text-xs text-gray-500">
-                      User will be forced to change this on first login.
+                      A 5-digit access code is automatically generated. User will be forced to change this on first login.
                     </p>
                   </div>
 
@@ -1076,6 +1224,14 @@ function SetupWizardModal({ show, onComplete }) {
           </div>
         </div>
       </div>
+
+      {/* Create Custom Role Modal */}
+      <RoleCreationModal
+        show={showCreateCustomRoleModal}
+        onClose={() => setShowCreateCustomRoleModal(false)}
+        onSave={handleCreateCustomRole}
+        isLoading={isCreatingCustomRole}
+      />
     </Modal>
   );
 }

@@ -15,12 +15,13 @@ import MyDayItemModal from '../../components/MyDayItemModal';
 import ProjectCardCompact from '../../components/ProjectCardCompact';
 import ProfileDrawer from '../../components/ProfileDrawer';
 import PressableWithFade from '../../components/PressableWithFade';
+import WeatherWidget from '../../components/WeatherWidget';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useHaptics } from '../../hooks/useHaptics';
 
 export default function HomeScreen() {
-  const { user, supabase } = useAuth();
+  const { user, supabase, activeOrganization } = useAuth();
   const insets = useSafeAreaInsets();
   const haptics = useHaptics();
   const [tasks, setTasks] = useState([]);
@@ -35,7 +36,14 @@ export default function HomeScreen() {
   const [showProfileDrawer, setShowProfileDrawer] = useState(false);
 
   const loadData = async () => {
-    if (!user || !supabase) return;
+    if (!user || !supabase || !activeOrganization) {
+      setTasks([]);
+      setEvents([]);
+      setProjects([]);
+      setKpis({ activeProjects: 0, completedTasks: 0, overdueTasks: 0 });
+      setMyDayItems([]);
+      return;
+    }
     
     try {
       const [tasksData, eventsData, projectsData, activeCount, completedCount, overdueCount] = await Promise.all([
@@ -47,9 +55,14 @@ export default function HomeScreen() {
         fetchOverdueTasksCount(supabase, user.id),
       ]);
       
-      setTasks(tasksData);
-      setEvents(eventsData);
-      setProjects(projectsData);
+      // Filter all data by organization_id
+      const orgTasks = (tasksData || []).filter(task => task.organization_id === activeOrganization.id);
+      const orgEvents = (eventsData || []).filter(event => event.organization_id === activeOrganization.id);
+      const orgProjects = (projectsData || []).filter(project => project.organization_id === activeOrganization.id);
+      
+      setTasks(orgTasks);
+      setEvents(orgEvents);
+      setProjects(orgProjects);
       setKpis({
         activeProjects: activeCount,
         completedTasks: completedCount,
@@ -61,7 +74,7 @@ export default function HomeScreen() {
       today.setHours(0, 0, 0, 0);
       
       // Prioritize tasks: due today first, then by priority
-      const prioritizedTasks = tasksData
+      const prioritizedTasks = orgTasks
         .map(task => ({
           ...task,
           type: 'task',
@@ -70,7 +83,7 @@ export default function HomeScreen() {
         .sort((a, b) => b.priorityScore - a.priorityScore);
 
       // Prioritize events: by start time
-      const prioritizedEvents = eventsData
+      const prioritizedEvents = orgEvents
         .map(event => ({
           ...event,
           type: 'event',
@@ -132,7 +145,7 @@ export default function HomeScreen() {
 
   useEffect(() => {
     loadData();
-  }, [user]);
+  }, [user, activeOrganization]);
 
   const onRefresh = async () => {
     setRefreshing(true);
@@ -219,7 +232,12 @@ export default function HomeScreen() {
         {/* Header */}
         <View style={styles.header}>
           <View style={styles.headerContent}>
-            <Text style={styles.greeting}>Hello, {getUserName()}</Text>
+            <View>
+              {activeOrganization?.name && (
+                <Text style={styles.organizationName}>{activeOrganization.name}</Text>
+              )}
+              <Text style={styles.greeting}>Hello, {getUserName()}</Text>
+            </View>
             <View style={styles.headerButtons}>
               <PressableWithFade 
                 style={styles.notificationButton}
@@ -250,6 +268,9 @@ export default function HomeScreen() {
             </View>
           </View>
         </View>
+
+        {/* Weather Widget */}
+        <WeatherWidget />
 
         {/* Section A: KPIs Carousel */}
         <View style={styles.kpiSection}>
@@ -350,6 +371,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+  },
+  organizationName: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#4B5563',
+    marginBottom: 4,
   },
   greeting: {
     fontSize: 28,

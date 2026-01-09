@@ -23,6 +23,7 @@ export async function inviteUser(supabase, email, organizationId, roleId, invite
       .insert({
         email: email.toLowerCase(),
         organization_id: organizationId,
+        role_id: roleId || null,
         invited_by_user_id: invitedByUserId,
         invitation_token: invitationToken,
         status: 'pending'
@@ -179,7 +180,7 @@ export async function getOrganizationUsers(supabase, organizationId) {
           name,
           permissions
         ),
-        contacts (
+        contacts!fk_profiles_contact (
           id,
           name,
           email,

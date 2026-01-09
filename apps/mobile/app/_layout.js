@@ -1,9 +1,10 @@
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { AuthProvider, useAuth } from '../context/AuthContext';
 import { useEffect } from 'react';
+import NoOrganizationScreen from '../components/NoOrganizationScreen';
 
 function RootLayoutNav() {
-  const { user, loading } = useAuth();
+  const { user, loading, activeOrganization, organizationError } = useAuth();
   const segments = useSegments();
   const router = useRouter();
 
@@ -25,6 +26,11 @@ function RootLayoutNav() {
 
     return () => clearTimeout(timer);
   }, [user, loading, segments, router]);
+
+  // Show no organization screen if user is logged in but has no organization
+  if (!loading && user && !activeOrganization && organizationError) {
+    return <NoOrganizationScreen />;
+  }
 
   return (
     <Stack screenOptions={{ headerShown: false, animation: 'none' }}>

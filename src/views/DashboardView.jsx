@@ -9,6 +9,7 @@ import DashboardStats from '../components/DashboardStats';
 import ViewSwitcher from '../components/ViewSwitcher';
 import ProjectBoardView from '../components/ProjectBoardView';
 import ProjectListView from '../components/ProjectListView';
+import PermissionGuard from '../components/PermissionGuard';
 import { useProjectShortcuts } from '../hooks/useKeyboardShortcuts';
 
 function DashboardView() {
@@ -309,13 +310,15 @@ function DashboardView() {
                         </div>
                         <div className="flex items-center gap-4">
                             <ViewSwitcher currentView={viewType} onViewChange={setViewType} />
-                            <button 
-                                onClick={() => setShowModal(true)} 
-                                data-onboarding="new-project-btn"
-                                className="px-4 py-2 text-sm font-semibold text-white bg-blue-600 rounded-lg shadow-sm hover:bg-blue-700 btn-smooth"
-                            >
-                                + New Project
-                            </button>
+                            <PermissionGuard permission="can_create_projects">
+                                <button 
+                                    onClick={() => setShowModal(true)} 
+                                    data-onboarding="new-project-btn"
+                                    className="px-4 py-2 text-sm font-semibold text-white bg-blue-600 rounded-lg shadow-sm hover:bg-blue-700 btn-smooth"
+                                >
+                                    + New Project
+                                </button>
+                            </PermissionGuard>
                         </div>
                     </header>
                     

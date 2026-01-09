@@ -3,12 +3,17 @@ import { useAppContext, supabaseClient } from '../context/AppContext';
 import { useToast } from '../context/ToastContext';
 import LoadingSpinner from '../components/LoadingSpinner';
 import Avatar from '../components/Avatar';
+import PermissionGuard from '../components/PermissionGuard';
 import packageJson from '../../package.json';
 import { getStoredCalendarToken } from '../utils/calendarIntegration';
 
 function SettingsView() {
   const { state, dispatch } = useAppContext();
   const { addToast } = useToast();
+  
+  const navigateToTeam = () => {
+    dispatch({ type: 'SET_VIEW', payload: 'Team' });
+  };
   const [isUpdating, setIsUpdating] = useState(false);
   const [isChangingPassword, setIsChangingPassword] = useState(false);
   const [appVersion, setAppVersion] = useState(packageJson.version);
@@ -149,6 +154,63 @@ function SettingsView() {
       </header>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        {/* Organization Section */}
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+          <h2 className="text-xl font-semibold text-gray-900 mb-4">Organization</h2>
+          <div className="space-y-3">
+            {state.currentOrganization ? (
+              <>
+                <div>
+                  <span className="text-sm text-gray-600">Organization:</span>
+                  <p className="font-medium text-gray-900 mt-1">{state.currentOrganization.name}</p>
+                </div>
+                <div>
+                  <span className="text-sm text-gray-600">Your Role:</span>
+                  <p className="font-medium text-gray-900 mt-1">{state.userRole?.name || 'No role assigned'}</p>
+                </div>
+                <div className="pt-3 border-t border-gray-200 space-y-2">
+                  <PermissionGuard permission="can_manage_roles">
+                    <button
+                      onClick={navigateToTeam}
+                      className="w-full text-left px-3 py-2 text-sm text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded-md transition-colors"
+                    >
+                      Manage Roles →
+                    </button>
+                  </PermissionGuard>
+                  <PermissionGuard permission="can_manage_users">
+                    <button
+                      onClick={navigateToTeam}
+                      className="w-full text-left px-3 py-2 text-sm text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded-md transition-colors"
+                    >
+                      Manage Team Members →
+                    </button>
+                  </PermissionGuard>
+                </div>
+              </>
+            ) : state.isProjectCollaborator ? (
+              <>
+                <div>
+                  <span className="text-sm text-gray-600">Access Type:</span>
+                  <p className="font-medium text-gray-900 mt-1">Guest Collaborator</p>
+                </div>
+                <div>
+                  <span className="text-sm text-gray-600">Projects:</span>
+                  <p className="font-medium text-gray-900 mt-1">
+                    {state.collaborationProjects.length} project{state.collaborationProjects.length !== 1 ? 's' : ''} accessible
+                  </p>
+                </div>
+                <p className="text-xs text-gray-500 pt-2">
+                  You have guest access to specific projects. Contact the project owner to request organization membership.
+                </p>
+              </>
+            ) : (
+              <div>
+                <p className="text-sm text-gray-500">No organization assigned</p>
+              </div>
+            )}
+          </div>
+        </div>
+
         {/* Profile Settings */}
         <div 
           data-onboarding="profile-section"

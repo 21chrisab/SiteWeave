@@ -29,6 +29,10 @@ const initialState = {
   currentOrganization: null, // Current organization context
   userRole: null, // User's role with permissions
   mustChangePassword: false, // Flag to force password reset for managed accounts
+  organizationError: null, // Error message if user has no organization
+  organizationLoading: false, // Loading state for organization check
+  isProjectCollaborator: false, // User is a guest collaborator
+  collaborationProjects: [], // Projects user can access as collaborator
 };
 
 function appReducer(state, action) {
@@ -106,12 +110,63 @@ function appReducer(state, action) {
     case 'SET_ORGANIZATION': return { ...state, currentOrganization: action.payload };
     case 'SET_USER_ROLE': return { ...state, userRole: action.payload };
     case 'SET_MUST_CHANGE_PASSWORD': return { ...state, mustChangePassword: action.payload };
+    case 'SET_ORGANIZATION_ERROR': return { ...state, organizationError: action.payload };
+    case 'SET_ORGANIZATION_LOADING': return { ...state, organizationLoading: action.payload };
+    case 'SET_COLLABORATOR_STATUS': return { 
+      ...state, 
+      isProjectCollaborator: action.payload.isCollaborator,
+      collaborationProjects: action.payload.projects || []
+    };
     default: return state;
   }
 }
 
 export const AppProvider = ({ children }) => {
   const [state, dispatch] = useReducer(appReducer, initialState);
+
+  // Expose debug helpers to window for console access (development only)
+  useEffect(() => {
+    if (typeof window !== 'undefined' && import.meta.env.DEV) {
+      window.__SITEWEAVE_DEBUG__ = {
+        getState: () => state,
+        getSupabase: () => supabaseClient,
+        clearSetupWizard: (userId) => {
+          if (userId) {
+            localStorage.removeItem(`setup_complete_${userId}`);
+            console.log('Setup wizard flag cleared for user:', userId);
+          } else if (state.user?.id) {
+            localStorage.removeItem(`setup_complete_${state.user.id}`);
+            console.log('Setup wizard flag cleared for current user');
+          } else {
+            console.log('No user ID provided or user not logged in');
+          }
+        },
+        checkSetupWizard: () => {
+          if (state.user?.id) {
+            const setupComplete = localStorage.getItem(`setup_complete_${state.user.id}`);
+            console.log('Setup wizard status:', {
+              userId: state.user.id,
+              setupComplete: setupComplete,
+              userRole: state.userRole?.name,
+              canManageTeam: state.userRole?.permissions?.can_manage_team
+            });
+            return { setupComplete: !!setupComplete, userRole: state.userRole };
+          } else {
+            console.log('No user logged in');
+            return null;
+          }
+        },
+        getOrganization: () => {
+          console.log('Current organization:', state.currentOrganization);
+          return state.currentOrganization;
+        },
+        getUser: () => {
+          console.log('Current user:', state.user);
+          return state.user;
+        }
+      };
+    }
+  }, [state]);
 
   useEffect(() => {
     // Check for existing session
@@ -457,6 +512,41 @@ export const AppProvider = ({ children }) => {
             organization = orgData;
             dispatch({ type: 'SET_ORGANIZATION', payload: orgData });
             dispatch({ type: 'SET_USER_ROLE', payload: profileWithOrg.roles });
+            // Clear any organization errors if org is found
+            dispatch({ type: 'SET_ORGANIZATION_ERROR', payload: null });
+            dispatch({ type: 'SET_COLLABORATOR_STATUS', payload: { isCollaborator: false, projects: [] } });
+          } else {
+            // No organization found - check for project collaborations
+            dispatch({ type: 'SET_ORGANIZATION_LOADING', payload: true });
+            try {
+              const { getUserCollaborationProjects } = await import('../utils/projectCollaborationService');
+              const collaborations = await getUserCollaborationProjects(supabaseClient, state.user.id);
+              
+              if (collaborations && collaborations.length > 0) {
+                // User is a collaborator - allow access
+                const collaborationProjects = collaborations.map(c => c.projects).filter(Boolean);
+                dispatch({ 
+                  type: 'SET_COLLABORATOR_STATUS', 
+                  payload: { 
+                    isCollaborator: true, 
+                    projects: collaborationProjects 
+                  } 
+                });
+                dispatch({ type: 'SET_ORGANIZATION_ERROR', payload: null });
+                console.log('User is a project collaborator with', collaborations.length, 'project(s)');
+              } else {
+                // No organization AND no collaborations
+                dispatch({ type: 'SET_ORGANIZATION_ERROR', payload: 'No organization or project access found. Please contact your administrator.' });
+                dispatch({ type: 'SET_COLLABORATOR_STATUS', payload: { isCollaborator: false, projects: [] } });
+              }
+            } catch (error) {
+              console.error('Error checking for project collaborations:', error);
+              // On error, still set organization error
+              dispatch({ type: 'SET_ORGANIZATION_ERROR', payload: 'No organization found. Please contact your administrator.' });
+              dispatch({ type: 'SET_COLLABORATOR_STATUS', payload: { isCollaborator: false, projects: [] } });
+            } finally {
+              dispatch({ type: 'SET_ORGANIZATION_LOADING', payload: false });
+            }
           }
           
           // Check if user must change password
@@ -468,9 +558,8 @@ export const AppProvider = ({ children }) => {
           // The RLS policy allows:
           // - Organization members: projects in their organization
           // - Project collaborators: specific projects they're invited to
-          const [{ data: projects }, { data: contacts, error: contactsError }, { data: tasks }, { data: files }, {data: calendarEvents}, {data: messageChannels}, {data: messages}, { data: userPreferences, error: userPrefsError }, { data: activityLog }] = await Promise.all([
+          const [{ data: projects }, { data: tasks }, { data: files }, {data: calendarEvents}, {data: messageChannels}, {data: messages}, { data: userPreferences, error: userPrefsError }, { data: activityLog }] = await Promise.all([
             supabaseClient.from('projects').select('*'),
-            supabaseClient.from('contacts').select('*'),
             supabaseClient.from('tasks').select('*'),
             supabaseClient.from('files').select('*'),
             supabaseClient.from('calendar_events').select('*'),
@@ -485,27 +574,59 @@ export const AppProvider = ({ children }) => {
           const finalProjects = projects || [];
           console.log('Loaded projects:', finalProjects.length);
           
-          // Handle contacts query - fetch project_contacts separately to avoid RLS join issues
-          let finalContacts = contacts || [];
+          // Fetch virtual contacts (Organization Directory + Project Collaborators)
+          // Import virtual contacts service
+          const { getVirtualContacts, getProjectContactsForContacts } = await import('../utils/virtualContactsService');
+          const userProjectIds = finalProjects.map(p => p.id);
+          const organizationId = organization?.id || null;
           
-          if (contactsError) {
-            console.error('Error fetching contacts:', contactsError);
-            finalContacts = [];
-          } else if (finalContacts.length > 0) {
-            // Fetch project_contacts separately and attach to contacts
-            const contactIds = finalContacts.map(c => c.id);
-            const { data: projectContacts } = await supabaseClient
-              .from('project_contacts')
-              .select('contact_id, project_id')
-              .in('contact_id', contactIds);
+          let finalContacts = [];
+          try {
+            finalContacts = await getVirtualContacts(
+              supabaseClient,
+              state.user.id,
+              organizationId,
+              userProjectIds
+            );
             
-            // Manually attach project_contacts to contacts (matching the original query structure)
-            finalContacts = finalContacts.map(contact => ({
-              ...contact,
-              project_contacts: (projectContacts || [])
-                .filter(pc => pc.contact_id === contact.id)
-                .map(pc => ({ project_id: pc.project_id }))
-            }));
+            // Populate project_contacts for internal members who might have project assignments
+            const internalContactIds = finalContacts
+              .filter(c => c.is_internal && c.id)
+              .map(c => c.id);
+            
+            if (internalContactIds.length > 0) {
+              const projectContacts = await getProjectContactsForContacts(supabaseClient, internalContactIds);
+              
+              // Attach project_contacts to internal contacts
+              finalContacts = finalContacts.map(contact => {
+                if (contact.is_internal) {
+                  const contactProjectContacts = projectContacts
+                    .filter(pc => pc.contact_id === contact.id)
+                    .map(pc => ({ project_id: pc.project_id }));
+                  
+                  // Merge with existing project_contacts from collaborators
+                  const existingProjectContacts = contact.project_contacts || [];
+                  const mergedProjectContacts = [...existingProjectContacts];
+                  
+                  contactProjectContacts.forEach(pc => {
+                    if (!mergedProjectContacts.some(epc => epc.project_id === pc.project_id)) {
+                      mergedProjectContacts.push(pc);
+                    }
+                  });
+                  
+                  return {
+                    ...contact,
+                    project_contacts: mergedProjectContacts
+                  };
+                }
+                return contact;
+              });
+            }
+            
+            console.log('Loaded virtual contacts:', finalContacts.length);
+          } catch (error) {
+            console.error('Error fetching virtual contacts:', error);
+            finalContacts = [];
           }
           
           dispatch({ type: 'SET_DATA', payload: { 

@@ -10,6 +10,7 @@ import TaskBulkActions from '../components/TaskBulkActions';
 import FieldIssues from '../components/FieldIssues';
 import Workflow from '../components/Workflow';
 import Avatar from '../components/Avatar';
+import PermissionGuard from '../components/PermissionGuard';
 import { useTaskShortcuts } from '../hooks/useKeyboardShortcuts';
 import { handleApiError, createOptimisticUpdate } from '../utils/errorHandling';
 import { parseRecurrence } from '../utils/recurrenceService';
@@ -612,7 +613,9 @@ function ProjectDetailsView() {
                                             </select>
                                         </div>
                                     </div>
-                                    <button onClick={() => setShowTaskModal(true)} className="px-4 py-2 text-sm font-semibold text-white bg-blue-600 rounded-lg shadow-sm hover:bg-blue-700">+ New Task</button>
+                                    <PermissionGuard permission="can_create_tasks">
+                                        <button onClick={() => setShowTaskModal(true)} className="px-4 py-2 text-sm font-semibold text-white bg-blue-600 rounded-lg shadow-sm hover:bg-blue-700">+ New Task</button>
+                                    </PermissionGuard>
                                 </div>
                                 <TaskBulkActions
                                     selectedTasks={selectedTasks}

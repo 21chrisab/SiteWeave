@@ -78,6 +78,8 @@ function DirectoryManagementModal({ show, onClose }) {
         return;
       }
 
+      console.log('Sending invitation to:', inviteEmail, 'for organization:', currentOrganization.id);
+      
       const response = await fetch(
         `${supabaseClient.supabaseUrl}/functions/v1/team-invite`,
         {
@@ -94,10 +96,42 @@ function DirectoryManagementModal({ show, onClose }) {
         }
       );
 
+      console.log('Invitation response status:', response.status, response.statusText);
+
+      // Check if response is ok
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('Invitation error response:', errorText);
+        let errorMessage = 'Failed to send invitation';
+        try {
+          const errorJson = JSON.parse(errorText);
+          errorMessage = errorJson.error || errorMessage;
+        } catch (e) {
+          errorMessage = errorText || `Server error: ${response.status}`;
+        }
+        addToast(errorMessage, 'error');
+        setIsInviting(false);
+        return;
+      }
+
       const result = await response.json();
+      console.log('Invitation result:', result);
 
       if (result.success) {
-        addToast('Invitation sent successfully', 'success');
+        console.log('Email sent status:', result.emailSent, 'Email error:', result.emailError);
+        if (result.emailSent) {
+          addToast('Invitation sent successfully! Email delivered.', 'success');
+        } else if (result.emailError) {
+          addToast(`Invitation created but email failed: ${result.emailError}. Share this link: ${result.setupUrl}`, 'warning');
+        } else {
+          // Check if emailSent/emailError fields exist in response
+          if (result.emailSent === undefined && result.emailError === undefined) {
+            console.warn('Edge function may not be updated. Response missing emailSent/emailError fields.');
+            addToast('Invitation created. Please redeploy the team-invite edge function to enable email sending.', 'warning');
+          } else {
+            addToast('Invitation created successfully. Email service not configured.', 'warning');
+          }
+        }
         setInviteEmail('');
         setInviteRoleId('');
         loadData();
@@ -106,7 +140,7 @@ function DirectoryManagementModal({ show, onClose }) {
       }
     } catch (error) {
       console.error('Error inviting user:', error);
-      addToast('Failed to send invitation', 'error');
+      addToast(`Failed to send invitation: ${error.message || 'Network error'}`, 'error');
     } finally {
       setIsInviting(false);
     }

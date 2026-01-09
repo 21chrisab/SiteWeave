@@ -19,12 +19,11 @@ import PressableWithFade from '../../../components/PressableWithFade';
 export default function ProjectDetailScreen() {
   const { id } = useLocalSearchParams();
   const router = useRouter();
-  const { supabase } = useAuth();
+  const { supabase, activeOrganization } = useAuth();
   const insets = useSafeAreaInsets();
   const [project, setProject] = useState(null);
   const [tasks, setTasks] = useState([]);
   const [phases, setPhases] = useState([]);
-  const [files, setFiles] = useState([]);
   const [issues, setIssues] = useState([]);
   const [activeTab, setActiveTab] = useState('tasks');
   const [loading, setLoading] = useState(true);
@@ -56,11 +55,14 @@ export default function ProjectDetailScreen() {
   };
 
   const loadProjectData = async () => {
-    if (!id || !supabase) return;
+    if (!id || !supabase || !activeOrganization) {
+      setLoading(false);
+      return;
+    }
     
     try {
       setLoading(true);
-      const [projectData, tasksData, phasesResult, filesResult] = await Promise.all([
+      const [projectData, tasksData, phasesResult] = await Promise.all([
         fetchProject(supabase, id).catch(err => {
           console.error('Error fetching project:', err);
           return null;
@@ -69,7 +71,7 @@ export default function ProjectDetailScreen() {
           console.error('Error fetching tasks:', err);
           return [];
         }),
-        supabase.from('project_phases').select('*').eq('project_id', id).order('order', { ascending: true }).then(
+        supabase.from('project_phases').select('*').eq('project_id', id).eq('organization_id', activeOrganization.id).order('order', { ascending: true }).then(
           ({ data, error }) => {
             if (error) {
               console.error('Error fetching phases:', error);
@@ -79,18 +81,6 @@ export default function ProjectDetailScreen() {
           }
         ).catch(err => {
           console.error('Error fetching phases:', err);
-          return { data: [], error: err };
-        }),
-        supabase.from('files').select('*').eq('project_id', id).order('modified_at', { ascending: false }).then(
-          ({ data, error }) => {
-            if (error) {
-              console.error('Error fetching files:', error);
-              return { data: [], error };
-            }
-            return { data: data || [], error: null };
-          }
-        ).catch(err => {
-          console.error('Error fetching files:', err);
           return { data: [], error: err };
         }),
       ]);
@@ -105,7 +95,6 @@ export default function ProjectDetailScreen() {
       setProject(projectData);
       setTasks(tasksData || []);
       setPhases(phasesResult.data || []);
-      setFiles(filesResult.data || []);
 
       // Calculate progress
       if (phasesResult.data && phasesResult.data.length > 0) {
@@ -223,20 +212,6 @@ export default function ProjectDetailScreen() {
     </PressableWithFade>
   );
 
-  const renderFileItem = ({ item }) => (
-    <PressableWithFade style={styles.fileItem} activeOpacity={0.7}>
-      <Ionicons name="document-outline" size={24} color="#3B82F6" />
-      <View style={styles.fileInfo}>
-        <Text style={styles.fileName} numberOfLines={1}>{item.name}</Text>
-        {item.modified_at && (
-          <Text style={styles.fileDate}>
-            {new Date(item.modified_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-          </Text>
-        )}
-      </View>
-      <Ionicons name="chevron-forward" size={20} color="#4B5563" />
-    </PressableWithFade>
-  );
 
   const getIssuePriorityColor = (priority) => {
     switch (priority?.toLowerCase()) {
@@ -379,15 +354,6 @@ export default function ProjectDetailScreen() {
             </Text>
           </PressableWithFade>
           <PressableWithFade
-            style={[styles.tab, activeTab === 'files' && styles.tabActive]}
-            onPress={() => setActiveTab('files')}
-            activeOpacity={0.7}
-          >
-            <Text style={[styles.tabText, activeTab === 'files' && styles.tabTextActive]}>
-              Files
-            </Text>
-          </PressableWithFade>
-          <PressableWithFade
             style={[styles.tab, activeTab === 'issues' && styles.tabActive]}
             onPress={() => setActiveTab('issues')}
             activeOpacity={0.7}
@@ -431,23 +397,6 @@ export default function ProjectDetailScreen() {
               ) : (
                 <View style={styles.emptyContainer}>
                   <Text style={styles.emptyText}>No phases defined for this project.</Text>
-                </View>
-              )}
-            </View>
-          )}
-
-          {activeTab === 'files' && (
-            <View>
-              {files.length > 0 ? (
-                <FlatList
-                  data={files}
-                  keyExtractor={(item) => item.id}
-                  renderItem={renderFileItem}
-                  scrollEnabled={false}
-                />
-              ) : (
-                <View style={styles.emptyContainer}>
-                  <Text style={styles.emptyText}>No files for this project.</Text>
                 </View>
               )}
             </View>
@@ -643,28 +592,6 @@ const styles = StyleSheet.create({
   priorityText: {
     fontSize: 12,
     fontWeight: '600',
-  },
-  fileItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F3F4F6',
-    gap: 12,
-    minHeight: 44,
-  },
-  fileInfo: {
-    flex: 1,
-  },
-  fileName: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#111827',
-    marginBottom: 4,
-  },
-  fileDate: {
-    fontSize: 14,
-    color: '#4B5563',
   },
   issueItem: {
     backgroundColor: '#fff',
