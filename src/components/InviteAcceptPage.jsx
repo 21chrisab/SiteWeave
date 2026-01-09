@@ -20,10 +20,25 @@ function InviteAcceptPage() {
   const [error, setError] = useState(null);
 
   useEffect(() => {
+    console.log('InviteAcceptPage mounted, token:', token);
+    if (!token) {
+      console.error('No token found in URL params');
+      setError('Invalid invitation link: missing token');
+      setLoading(false);
+      return;
+    }
     loadInvitation();
   }, [token]);
 
   const loadInvitation = async () => {
+    if (!token) {
+      console.error('loadInvitation called without token');
+      setError('Invalid invitation link: missing token');
+      setLoading(false);
+      return;
+    }
+    
+    console.log('Loading invitation with token:', token);
     setLoading(true);
     setError(null);
     try {
@@ -38,21 +53,38 @@ function InviteAcceptPage() {
         .eq('status', 'pending')
         .single();
 
-      if (error || !data) {
-        setError('Invalid or expired invitation link');
+      console.log('Invitation query result:', { data: !!data, error: error?.message });
+
+      if (error) {
+        console.error('Error loading invitation:', error);
+        setError(`Failed to load invitation: ${error.message || 'Invalid or expired invitation link. Please ask your admin for a new one.'}`);
+        setLoading(false);
+        return;
+      }
+
+      if (!data) {
+        setError('Invalid or expired invitation link. Please ask your admin for a new one.');
+        setLoading(false);
         return;
       }
 
       // Check if invitation is expired
       if (new Date(data.expires_at) < new Date()) {
-        setError('This invitation has expired');
+        setError('This invitation has expired. Please ask your admin for a new one.');
+        setLoading(false);
         return;
       }
 
       setInvitation(data);
     } catch (error) {
       console.error('Error loading invitation:', error);
-      setError('Failed to load invitation');
+      console.error('Error details:', {
+        message: error.message,
+        stack: error.stack,
+        name: error.name
+      });
+      setError(`Failed to load invitation: ${error.message || 'An unexpected error occurred. Please try again or contact support.'}`);
+      setLoading(false);
     } finally {
       setLoading(false);
     }
@@ -125,6 +157,7 @@ function InviteAcceptPage() {
   };
 
   if (loading) {
+    console.log('InviteAcceptPage: Loading state', { loading, hasToken: !!token });
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <LoadingSpinner />
@@ -132,7 +165,8 @@ function InviteAcceptPage() {
     );
   }
 
-  if (error) {
+  if (error && !invitation) {
+    console.error('InviteAcceptPage: Error state without invitation', { error, token });
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
         <div className="max-w-md w-full bg-white shadow-lg rounded-lg p-8 text-center">
@@ -143,6 +177,30 @@ function InviteAcceptPage() {
           </div>
           <h2 className="text-2xl font-bold text-gray-900 mb-2">Invalid Invitation</h2>
           <p className="text-gray-600 mb-6">{error}</p>
+          <button
+            onClick={() => navigate('/login')}
+            className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+          >
+            Go to Login
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // Final fallback - if we still don't have an invitation and no error is set, show error
+  if (!invitation) {
+    console.error('InviteAcceptPage: No invitation loaded and no error state', { token, error, loading });
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
+        <div className="max-w-md w-full bg-white shadow-lg rounded-lg p-8 text-center">
+          <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+            <svg className="w-8 h-8 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </div>
+          <h2 className="text-2xl font-bold text-gray-900 mb-2">Unable to Load Invitation</h2>
+          <p className="text-gray-600 mb-6">{error || 'Unable to load invitation. Please check the link and try again.'}</p>
           <button
             onClick={() => navigate('/login')}
             className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"

@@ -60,11 +60,3 @@ Thumbs.db
 *.tmp
 *.temp
 .cache/
-
-# Electron build outputs (too large for GitHub)
-release/*.exe
-release/*.exe.blockmap
-release/win-unpacked/
-release/mac/
-release/linux/
-dist-electron/
