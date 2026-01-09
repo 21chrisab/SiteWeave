@@ -7,6 +7,12 @@ import LoadingSpinner from './LoadingSpinner';
  * Invitation Acceptance Landing Page
  * Handles invitation acceptance with support for both new and existing users
  * Redirects to org page after successful acceptance
+ * 
+ * Features:
+ * - Auto-accepts if user is already authenticated with matching email
+ * - Creates/links contact record when accepting invitations
+ * - Supports new user signup and existing user login
+ * - Last updated: 2026-01-09
  */
 function InviteAcceptPage() {
   const { token } = useParams();
