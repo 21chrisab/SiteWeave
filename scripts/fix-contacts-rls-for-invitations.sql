@@ -1,8 +1,21 @@
 -- Fix Contacts RLS Policy to Allow Contact Creation During Invitation Acceptance
 -- This allows newly signed-up users to create contacts in the organization they're joining
 
--- Drop the existing INSERT policy
-DROP POLICY IF EXISTS "Authenticated users can create contacts" ON public.contacts;
+-- Drop ALL existing INSERT policies on contacts to start fresh
+DO $$
+DECLARE
+  r RECORD;
+BEGIN
+  FOR r IN (
+    SELECT policyname 
+    FROM pg_policies 
+    WHERE schemaname = 'public' 
+    AND tablename = 'contacts'
+    AND cmd = 'INSERT'
+  ) LOOP
+    EXECUTE format('DROP POLICY IF EXISTS %I ON public.contacts', r.policyname);
+  END LOOP;
+END $$;
 
 -- Create a new policy that allows:
 -- 1. Authenticated users to create contacts in organizations they belong to
@@ -37,7 +50,7 @@ BEGIN
     SELECT 1 FROM pg_policies 
     WHERE schemaname = 'public' 
     AND tablename = 'contacts' 
-    AND policyname = 'Authenticated users can create contacts in their organization or for invitations'
+    AND policyname = 'Authenticated users can create contacts in their organization or for themselves'
   ) THEN
     RAISE NOTICE 'Contacts INSERT RLS policy updated successfully';
   ELSE
