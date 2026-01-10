@@ -29,7 +29,8 @@ USING (
 );
 
 -- Also need to allow public access to organizations table for the invite page
--- Check if a policy already exists
+-- This policy is ADDITIVE - it doesn't replace existing policies, it adds to them
+-- Authenticated users should still be able to read their organizations via existing policies
 DO $$
 BEGIN
   IF NOT EXISTS (
@@ -43,6 +44,7 @@ BEGIN
     FOR SELECT
     USING (
       -- Allow reading organization name if there's a pending invitation for it
+      -- This is for unauthenticated users viewing invite pages
       id IN (
         SELECT organization_id 
         FROM public.invitations 
