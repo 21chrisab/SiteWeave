@@ -34,7 +34,7 @@ BEGIN
     SELECT 1 FROM pg_policies 
     WHERE schemaname = 'public' 
     AND tablename = 'contacts' 
-    AND policyname = 'Authenticated users can create contacts in their organization or for themselves'
+    AND policyname = 'Authenticated users can create contacts'
   ) THEN
     RAISE NOTICE 'Contacts INSERT RLS policy updated successfully';
   ELSE
