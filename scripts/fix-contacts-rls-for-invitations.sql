@@ -23,30 +23,20 @@ WITH CHECK (
       AND organization_id IS NOT NULL
     ))
     OR
-    -- Allow if there's a pending invitation for this organization
-    -- We check if the user's profile email (via contacts) matches an invitation
-    -- OR if the contact being created matches an invitation email
-    (organization_id IN (
-      SELECT organization_id
-      FROM public.invitations
-      WHERE status = 'pending'
-      AND invitation_token IS NOT NULL
-      AND (
-        -- Check if invitation email matches the contact email being created
-        email = contacts.email
-        OR
-        -- Check if invitation email matches user's contact email
-        email IN (
-          SELECT c.email
-          FROM public.profiles p
-          JOIN public.contacts c ON p.contact_id = c.id
-          WHERE p.id = auth.uid()
-        )
-      )
-    ))
-    OR
-    -- Allow if the contact is being created by the user themselves (created_by_user_id matches)
+    -- Allow if the contact is being created by the user themselves
+    -- This covers invitation acceptance where user creates their own contact
     (created_by_user_id = auth.uid())
+    OR
+    -- Allow if there's a pending invitation for this contact's email to this organization
+    -- In WITH CHECK, we can reference the row being inserted directly
+    EXISTS (
+      SELECT 1
+      FROM public.invitations
+      WHERE invitations.organization_id = contacts.organization_id
+      AND LOWER(invitations.email) = LOWER(contacts.email)
+      AND invitations.status = 'pending'
+      AND invitations.invitation_token IS NOT NULL
+    )
   )
 );
 
