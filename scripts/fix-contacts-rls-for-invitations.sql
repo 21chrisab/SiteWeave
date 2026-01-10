@@ -28,12 +28,12 @@ WITH CHECK (
     (created_by_user_id = auth.uid())
     OR
     -- Allow if there's a pending invitation for this contact's email to this organization
-    -- In WITH CHECK, we can reference the row being inserted directly
+    -- In WITH CHECK, reference columns directly (not table.column)
     EXISTS (
       SELECT 1
       FROM public.invitations
-      WHERE invitations.organization_id = contacts.organization_id
-      AND LOWER(invitations.email) = LOWER(contacts.email)
+      WHERE invitations.organization_id = organization_id
+      AND LOWER(invitations.email) = LOWER(email)
       AND invitations.status = 'pending'
       AND invitations.invitation_token IS NOT NULL
     )
