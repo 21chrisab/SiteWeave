@@ -2,8 +2,21 @@
 -- This allows unauthenticated users to read invitations by token
 -- This is needed for the web app invite acceptance flow
 
--- Drop the existing restrictive SELECT policy
-DROP POLICY IF EXISTS "Users can see invitations they sent or received" ON public.invitations;
+-- Drop ALL existing SELECT policies on invitations to start fresh
+DO $$
+DECLARE
+  r RECORD;
+BEGIN
+  FOR r IN (
+    SELECT policyname 
+    FROM pg_policies 
+    WHERE schemaname = 'public' 
+    AND tablename = 'invitations'
+    AND cmd = 'SELECT'
+  ) LOOP
+    EXECUTE format('DROP POLICY IF EXISTS %I ON public.invitations', r.policyname);
+  END LOOP;
+END $$;
 
 -- Create a new policy that allows:
 -- 1. Public access to pending invitations by token (for invite acceptance)
@@ -29,53 +42,9 @@ USING (
 );
 
 -- Also need to allow public access to organizations table for the invite page
--- This policy is ADDITIVE - it doesn't replace existing policies, it adds to them
--- Authenticated users should still be able to read their organizations via existing policies
-DO $$
-BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_policies 
-    WHERE schemaname = 'public' 
-    AND tablename = 'organizations' 
-    AND policyname = 'Public can read organization names for invitations'
-  ) THEN
-    CREATE POLICY "Public can read organization names for invitations"
-    ON public.organizations
-    FOR SELECT
-    USING (
-      -- Allow reading organization name if there's a pending invitation for it
-      -- This is for unauthenticated users viewing invite pages
-      id IN (
-        SELECT organization_id 
-        FROM public.invitations 
-        WHERE status = 'pending' 
-        AND invitation_token IS NOT NULL
-      )
-    );
-  END IF;
-END $$;
+-- Note: This will be handled by fix-organizations-rls-complete.sql
+-- So we don't create it here to avoid conflicts
 
 -- Also need to allow public access to roles table for the invite page
-DO $$
-BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_policies 
-    WHERE schemaname = 'public' 
-    AND tablename = 'roles' 
-    AND policyname = 'Public can read role names for invitations'
-  ) THEN
-    CREATE POLICY "Public can read role names for invitations"
-    ON public.roles
-    FOR SELECT
-    USING (
-      -- Allow reading role name if there's a pending invitation with this role
-      id IN (
-        SELECT role_id 
-        FROM public.invitations 
-        WHERE status = 'pending' 
-        AND invitation_token IS NOT NULL
-        AND role_id IS NOT NULL
-      )
-    );
-  END IF;
-END $$;
+-- Note: This will be handled by fix-roles-rls-for-profile-query.sql
+-- So we don't create it here to avoid conflicts
