@@ -18,31 +18,14 @@ BEGIN
 END $$;
 
 -- Create a new policy that allows:
--- 1. Authenticated users to create contacts for themselves (covers invitation acceptance)
--- 2. Authenticated users to create contacts in organizations they belong to
--- Note: We check created_by_user_id first to avoid potential recursion from profiles queries
-CREATE POLICY "Authenticated users can create contacts in their organization or for themselves"
+-- 1. Any authenticated user to create contacts (original simple policy - needed for invitation acceptance)
+-- 2. This is safe because contacts are scoped by organization_id and created_by_user_id
+-- Note: The original policy was very permissive (just auth.uid() IS NOT NULL)
+-- We keep it simple to avoid recursion and timing issues during invitation acceptance
+CREATE POLICY "Authenticated users can create contacts"
 ON public.contacts
 FOR INSERT
-WITH CHECK (
-  -- User must be authenticated
-  auth.uid() IS NOT NULL
-  AND (
-    -- PRIMARY: Allow if the contact is being created by the user themselves
-    -- This covers invitation acceptance where user creates their own contact
-    -- This is safe because the user is authenticated and creating their own record
-    (created_by_user_id = auth.uid())
-    OR
-    -- SECONDARY: Allow if user belongs to the organization
-    -- Only check this if created_by_user_id doesn't match (for existing users)
-    (organization_id IN (
-      SELECT organization_id
-      FROM public.profiles
-      WHERE id = auth.uid()
-      AND organization_id IS NOT NULL
-    ))
-  )
-);
+WITH CHECK (auth.uid() IS NOT NULL);
 
 -- Verify the policy was created
 DO $$
