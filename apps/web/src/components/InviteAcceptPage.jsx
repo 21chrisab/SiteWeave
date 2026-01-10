@@ -137,10 +137,24 @@ function InviteAcceptPage() {
         throw new Error('User account creation failed');
       }
 
-      // Note: signUp() may not return a session if email confirmation is required
-      // We'll use edge functions for operations that need to bypass RLS
-      // For operations that need a session, we'll handle them after the user confirms email
-      
+      // For invitation flows, auto-confirm the user so they can sign in immediately
+      // This bypasses email confirmation requirements
+      try {
+        const { data: confirmResult, error: confirmError } = await supabase.functions.invoke('auto-confirm-user', {
+          body: { userId: authData.user.id }
+        });
+
+        if (confirmError) {
+          console.warn('Failed to auto-confirm user (may require email confirmation):', confirmError);
+          // Continue anyway - user might need to confirm email
+        } else if (confirmResult?.success) {
+          console.log('User auto-confirmed successfully');
+        }
+      } catch (confirmErr) {
+        console.warn('Error calling auto-confirm-user:', confirmErr);
+        // Continue anyway
+      }
+
       // Wait a moment for profile to be created by Supabase trigger
       await new Promise(resolve => setTimeout(resolve, 500));
 
@@ -216,10 +230,31 @@ function InviteAcceptPage() {
         }
       }
 
-      // Step 3: Update the invitation status and profile
-      // Use edge function to handle this if no session
-      const { data: sessionCheck } = await supabase.auth.getSession();
-      if (sessionCheck?.session) {
+      // Step 3: Try to sign in the user to establish a session
+      // This ensures we have a session for subsequent operations
+      let session = authData.session;
+      if (!session) {
+        // Try to sign in with the password they just created
+        const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
+          email: invitation.email,
+          password: password
+        });
+
+        if (signInError) {
+          // If sign-in fails, user might need email confirmation
+          console.warn('Failed to sign in after signup:', signInError);
+          setMessage('Account created! Please check your email to confirm your account, then sign in to complete the invitation.');
+          setTimeout(() => {
+            navigate('/login');
+          }, 3000);
+          return;
+        }
+
+        session = signInData?.session;
+      }
+
+      // Step 4: Update the invitation status and profile (now that we have a session)
+      if (session) {
         // Update invitation status
         const { error: updateError } = await supabase
           .from('invitations')
@@ -244,14 +279,8 @@ function InviteAcceptPage() {
 
         if (profileError) throw profileError;
       } else {
-        // No session - user needs to confirm email first
-        // The contact is created, but profile updates will happen on first login
-        // For now, show a message that they need to check their email
-        setMessage('Account created! Please check your email to confirm your account, then sign in to complete the invitation.');
-        setTimeout(() => {
-          navigate('/login');
-        }, 3000);
-        return;
+        // No session - this shouldn't happen if auto-confirm worked
+        throw new Error('Failed to establish session. Please try signing in manually.');
       }
 
       setMessage(`Welcome to ${invitation.organizations?.name || 'the organization'}!`);
