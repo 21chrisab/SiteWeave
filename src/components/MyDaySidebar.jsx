@@ -47,50 +47,50 @@ function MyDaySidebar() {
     }
 
     return (
-        <div className="space-y-6">
-            <div className="flex items-center justify-between">
-                <h2 className="font-bold text-lg">My Day</h2>
-                <div className="flex items-center gap-1 text-xs text-gray-500">
+        <div className="space-y-5">
+            <div className="flex items-center justify-between pb-2 border-b border-gray-200">
+                <h2 className="font-bold text-lg text-gray-900">My Day</h2>
+                <div className="flex items-center gap-1.5 text-xs text-gray-500">
                     <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
                     <span>Live</span>
                 </div>
             </div>
             <div>
-                <h3 className="text-sm font-semibold text-gray-500 mb-3">TO-DO ({myTodos.length})</h3>
-                <div className="space-y-2">
+                <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">TO-DO ({myTodos.length})</h3>
+                <div className="space-y-2.5">
                     {myTodos.length > 0 ? myTodos.map(task => (
-                        <div key={task.id} className="flex items-center gap-3 text-sm">
-                            <input type="checkbox" className="h-4 w-4 rounded border-gray-300" />
-                            <span>{task.text}</span>
+                        <div key={task.id} className="flex items-center gap-2.5 text-sm text-gray-700">
+                            <input type="checkbox" className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
+                            <span className="flex-1">{task.text}</span>
                         </div>
-                    )) : <p className="text-sm text-center py-4 text-gray-400">No tasks assigned to you.</p>}
+                    )) : <p className="text-sm text-center py-3 text-gray-400">No tasks assigned to you.</p>}
                 </div>
             </div>
             <div>
-                <h3 className="text-sm font-semibold text-gray-500 mb-3">RECENT ACTIVITY</h3>
-                 <div className="space-y-3">
+                <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">RECENT ACTIVITY</h3>
+                 <div className="space-y-2.5">
                     {recentActivity.length > 0 ? recentActivity.map(activity => (
-                        <div key={activity.id} className="flex items-start gap-3 text-sm">
+                        <div key={activity.id} className="flex items-start gap-2.5 text-sm">
                             {activity.user.avatar ? (
-                                <img src={activity.user.avatar} alt={activity.user.name} className="w-8 h-8 rounded-full mt-1" />
+                                <img src={activity.user.avatar} alt={activity.user.name} className="w-7 h-7 rounded-full flex-shrink-0" />
                             ) : (
-                                <div className="mt-1">
+                                <div className="flex-shrink-0">
                                     <Avatar name={activity.user.name} size="sm" />
                                 </div>
                             )}
-                            <div>
-                                <p><span className="font-semibold">{activity.user.name}</span> {activity.action}</p>
-                                <p className="text-xs text-gray-400">{activity.time}</p>
+                            <div className="flex-1 min-w-0">
+                                <p className="text-gray-700"><span className="font-semibold">{activity.user.name}</span> {activity.action}</p>
+                                <p className="text-xs text-gray-400 mt-0.5">{activity.time}</p>
                             </div>
                         </div>
                     )) : (
-                        <p className="text-sm text-center py-4 text-gray-400">No recent activity.</p>
+                        <p className="text-sm text-center py-3 text-gray-400">No recent activity.</p>
                     )}
                 </div>
             </div>
             <div>
-                <h3 className="text-sm font-semibold text-gray-500 mb-3">TODAY'S CALENDAR ({todayEvents.length})</h3>
-                 <div className="space-y-3">
+                <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">TODAY'S CALENDAR ({todayEvents.length})</h3>
+                 <div className="space-y-2.5">
                      {todayEvents.length > 0 ? todayEvents.map(event => {
                         const startTime = new Date(event.start_time);
                         const endTime = new Date(event.end_time);
@@ -122,15 +122,15 @@ function MyDaySidebar() {
                         };
 
                         return (
-                            <div key={event.id} className="bg-gray-50 rounded-lg p-3 border border-gray-200">
-                                <div className="flex items-start gap-3">
+                            <div key={event.id} className="bg-gray-50 rounded-lg p-2.5 border border-gray-200">
+                                <div className="flex items-start gap-2.5">
                                     <div className="flex-shrink-0 mt-0.5">
-                                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth="1.5" stroke="#3B82F6" className="w-5 h-5">
+                                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth="1.5" stroke="#3B82F6" className="w-4 h-4">
                                             <path strokeLinecap="round" strokeLinejoin="round" d={getEventIcon()} />
                                         </svg>
                                     </div>
                                     <div className="flex-1 min-w-0">
-                                        <h4 className="font-semibold text-gray-900 text-sm">{event.title}</h4>
+                                        <h4 className="font-semibold text-gray-900 text-sm leading-tight">{event.title}</h4>
                                         <p className="text-xs text-gray-500 mt-1">
                                             {timeString} • {location}
                                         </p>
@@ -138,10 +138,10 @@ function MyDaySidebar() {
                                 </div>
                             </div>
                         );
-                     }) : <p className="text-sm text-center py-4 text-gray-400">No events scheduled today.</p>}
+                     }) : <p className="text-sm text-center py-3 text-gray-400">No events scheduled today.</p>}
                 </div>
             </div>
-            <div className="text-xs text-gray-400 pt-2 border-t border-gray-200">
+            <div className="text-xs text-gray-400 pt-3 border-t border-gray-200">
                 Last updated: {lastUpdate.toLocaleTimeString()}
             </div>
         </div>

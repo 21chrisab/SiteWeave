@@ -21,9 +21,11 @@ function DateDropdown({ value, onChange, label, className = '' }) {
         }
     }, [value]);
 
-    // Generate date options (50 years range)
-    const currentYear = new Date().getFullYear();
-    const years = Array.from({ length: 50 }, (_, i) => currentYear + i);
+    // Generate date options (2026-2050 range)
+    // Allow past dates but minimum year is 2026, maximum is 2050
+    const minYear = 2026;
+    const maxYear = 2050;
+    const years = Array.from({ length: maxYear - minYear + 1 }, (_, i) => minYear + i);
     const months = [
         { value: '01', label: 'January' },
         { value: '02', label: 'February' },

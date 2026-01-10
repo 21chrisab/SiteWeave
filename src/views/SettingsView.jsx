@@ -4,6 +4,8 @@ import { useToast } from '../context/ToastContext';
 import LoadingSpinner from '../components/LoadingSpinner';
 import Avatar from '../components/Avatar';
 import PermissionGuard from '../components/PermissionGuard';
+import DirectoryManagementModal from '../components/DirectoryManagementModal';
+import RoleManagement from '../components/RoleManagement';
 import packageJson from '../../package.json';
 import { getStoredCalendarToken } from '../utils/calendarIntegration';
 
@@ -11,9 +13,8 @@ function SettingsView() {
   const { state, dispatch } = useAppContext();
   const { addToast } = useToast();
   
-  const navigateToTeam = () => {
-    dispatch({ type: 'SET_VIEW', payload: 'Team' });
-  };
+  const [showTeamModal, setShowTeamModal] = useState(false);
+  const [showRoleManagement, setShowRoleManagement] = useState(false);
   const [isUpdating, setIsUpdating] = useState(false);
   const [isChangingPassword, setIsChangingPassword] = useState(false);
   const [appVersion, setAppVersion] = useState(packageJson.version);
@@ -171,7 +172,7 @@ function SettingsView() {
                 <div className="pt-3 border-t border-gray-200 space-y-2">
                   <PermissionGuard permission="can_manage_roles">
                     <button
-                      onClick={navigateToTeam}
+                      onClick={() => setShowRoleManagement(true)}
                       className="w-full text-left px-3 py-2 text-sm text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded-md transition-colors"
                     >
                       Manage Roles →
@@ -179,7 +180,7 @@ function SettingsView() {
                   </PermissionGuard>
                   <PermissionGuard permission="can_manage_users">
                     <button
-                      onClick={navigateToTeam}
+                      onClick={() => setShowTeamModal(true)}
                       className="w-full text-left px-3 py-2 text-sm text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded-md transition-colors"
                     >
                       Manage Team Members →
@@ -434,6 +435,35 @@ function SettingsView() {
           </div>
         </div>
       </div>
+
+      {/* Team Management Modal */}
+      <DirectoryManagementModal 
+        show={showTeamModal} 
+        onClose={() => setShowTeamModal(false)} 
+      />
+
+      {/* Role Management Modal/View */}
+      {showRoleManagement && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
+              <h2 className="text-2xl font-bold text-gray-900">Role Management</h2>
+              <button
+                onClick={() => setShowRoleManagement(false)}
+                className="text-gray-400 hover:text-gray-600 transition-colors"
+                aria-label="Close"
+              >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <div className="p-6">
+              <RoleManagement />
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

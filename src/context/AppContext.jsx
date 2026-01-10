@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useReducer, useState } from 'react';
+import React, { createContext, useContext, useEffect, useReducer, useState, useRef } from 'react';
 import { createSupabaseClient } from '@siteweave/core-logic';
 import supabaseElectronAuth from '../utils/supabaseElectronAuth';
 
@@ -15,37 +15,137 @@ const supabaseClient = createSupabaseClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 export { supabaseClient };
 
-const AppContext = createContext();
+export const AppContext = createContext();
 
-const initialState = {
-  isLoading: true, 
-  authLoading: true, // Add separate auth loading state
-  activeView: 'Dashboard', 
-  selectedProjectId: null, 
-  selectedChannelId: null,
-  projects: [], contacts: [], tasks: [], files: [], calendarEvents: [], messageChannels: [], messages: [], activityLog: [],
-  user: null, // Changed from hardcoded user to null for proper auth
-  userPreferences: null, // Add user preferences for onboarding
-  currentOrganization: null, // Current organization context
-  userRole: null, // User's role with permissions
-  mustChangePassword: false, // Flag to force password reset for managed accounts
-  organizationError: null, // Error message if user has no organization
-  organizationLoading: false, // Loading state for organization check
-  isProjectCollaborator: false, // User is a guest collaborator
-  collaborationProjects: [], // Projects user can access as collaborator
+// Helper functions for sessionStorage persistence
+const STORAGE_KEY = 'siteweave_app_state';
+const STORAGE_USER_KEY = 'siteweave_user_id';
+
+const saveStateToStorage = (state) => {
+  try {
+    // Only save data arrays, not user/auth state
+    const dataToSave = {
+      projects: state.projects,
+      contacts: state.contacts,
+      tasks: state.tasks,
+      files: state.files,
+      calendarEvents: state.calendarEvents,
+      messageChannels: state.messageChannels,
+      messages: state.messages,
+      activityLog: state.activityLog,
+      selectedProjectId: state.selectedProjectId,
+      activeView: state.activeView,
+      timestamp: Date.now()
+    };
+    sessionStorage.setItem(STORAGE_KEY, JSON.stringify(dataToSave));
+    if (state.user?.id) {
+      sessionStorage.setItem(STORAGE_USER_KEY, state.user.id);
+    }
+  } catch (error) {
+    console.warn('Failed to save state to sessionStorage:', error);
+  }
 };
 
+const loadStateFromStorage = (currentUserId) => {
+  try {
+    const savedUserId = sessionStorage.getItem(STORAGE_USER_KEY);
+    // Only restore if it's the same user
+    if (!currentUserId || savedUserId !== currentUserId) {
+      return null;
+    }
+    
+    const saved = sessionStorage.getItem(STORAGE_KEY);
+    if (!saved) return null;
+    
+    const parsed = JSON.parse(saved);
+    // Only use cached data if it's less than 5 minutes old
+    const maxAge = 5 * 60 * 1000; // 5 minutes
+    if (Date.now() - parsed.timestamp > maxAge) {
+      return null;
+    }
+    
+    return {
+      projects: parsed.projects || [],
+      contacts: parsed.contacts || [],
+      tasks: parsed.tasks || [],
+      files: parsed.files || [],
+      calendarEvents: parsed.calendarEvents || [],
+      messageChannels: parsed.messageChannels || [],
+      messages: parsed.messages || [],
+      activityLog: parsed.activityLog || [],
+      selectedProjectId: parsed.selectedProjectId || null,
+      activeView: parsed.activeView || 'Dashboard'
+    };
+  } catch (error) {
+    console.warn('Failed to load state from sessionStorage:', error);
+    return null;
+  }
+};
+
+const getInitialState = () => {
+  const baseState = {
+    isLoading: true, 
+    authLoading: true, // Add separate auth loading state
+    activeView: 'Dashboard', 
+    selectedProjectId: null, 
+    selectedChannelId: null,
+    projects: [], contacts: [], tasks: [], files: [], calendarEvents: [], messageChannels: [], messages: [], activityLog: [],
+    user: null, // Changed from hardcoded user to null for proper auth
+    userPreferences: null, // Add user preferences for onboarding
+    currentOrganization: null, // Current organization context
+    userRole: null, // User's role with permissions
+    mustChangePassword: false, // Flag to force password reset for managed accounts
+    organizationError: null, // Error message if user has no organization
+    organizationLoading: false, // Loading state for organization check
+    isProjectCollaborator: false, // User is a guest collaborator
+    collaborationProjects: [], // Projects user can access as collaborator
+  };
+  
+  // Try to restore from sessionStorage (will be null if no user or different user)
+  const restored = loadStateFromStorage(null); // We'll restore after user is known
+  if (restored) {
+    return { ...baseState, ...restored };
+  }
+  
+  return baseState;
+};
+
+const initialState = getInitialState();
+
 function appReducer(state, action) {
+  let newState;
   switch (action.type) {
-    case 'SET_DATA': return { ...state, ...action.payload, isLoading: false };
-    case 'SET_VIEW': return { ...state, activeView: action.payload };
+    case 'SET_DATA': 
+      // Preserve current activeView if not provided in payload (to prevent resetting on data refresh)
+      newState = { 
+        ...state, 
+        ...action.payload, 
+        activeView: action.payload.activeView !== undefined ? action.payload.activeView : state.activeView,
+        isLoading: false 
+      };
+      // Save to sessionStorage for quick restore on refresh
+      saveStateToStorage(newState);
+      return newState;
+    case 'SET_VIEW': 
+      newState = { ...state, activeView: action.payload };
+      saveStateToStorage(newState);
+      return newState;
     case 'SET_PROJECT': return { ...state, selectedProjectId: action.payload };
     case 'SET_CHANNEL': return { ...state, selectedChannelId: action.payload, activeView: 'Messages' };
     case 'SET_USER': return { ...state, user: action.payload };
     case 'SET_AUTH_LOADING': return { ...state, authLoading: action.payload };
-    case 'ADD_PROJECT': return { ...state, projects: [...state.projects, action.payload] };
-    case 'UPDATE_PROJECT': return { ...state, projects: state.projects.map(p => p.id === action.payload.id ? action.payload : p) };
-    case 'DELETE_PROJECT': return { ...state, projects: state.projects.filter(p => p.id !== action.payload) };
+    case 'ADD_PROJECT': 
+      newState = { ...state, projects: [...state.projects, action.payload] };
+      saveStateToStorage(newState);
+      return newState;
+    case 'UPDATE_PROJECT': 
+      newState = { ...state, projects: state.projects.map(p => p.id === action.payload.id ? action.payload : p) };
+      saveStateToStorage(newState);
+      return newState;
+    case 'DELETE_PROJECT': 
+      newState = { ...state, projects: state.projects.filter(p => p.id !== action.payload) };
+      saveStateToStorage(newState);
+      return newState;
     case 'ADD_TASK': return { ...state, tasks: [...state.tasks, action.payload] };
     case 'UPDATE_TASK': return { ...state, tasks: state.tasks.map(task => task.id === action.payload.id ? action.payload : task) };
     case 'DELETE_TASK': return { ...state, tasks: state.tasks.filter(task => task.id !== action.payload) };
@@ -63,6 +163,7 @@ function appReducer(state, action) {
       calendarEvents: state.calendarEvents.filter(event => event.id !== action.payload) 
     };
     case 'ADD_MESSAGE': return { ...state, messages: [...state.messages, action.payload] };
+    case 'UPDATE_MESSAGE': return { ...state, messages: state.messages.map(m => m.id === action.payload.id ? action.payload : m) };
     case 'ADD_CHANNEL': return { ...state, messageChannels: [...state.messageChannels, action.payload] };
     case 'ADD_ACTIVITY': return { ...state, activityLog: [action.payload, ...state.activityLog].slice(0, 50) }; // Keep latest 50
     case 'ADD_CONTACT': {
@@ -123,6 +224,12 @@ function appReducer(state, action) {
 
 export const AppProvider = ({ children }) => {
   const [state, dispatch] = useReducer(appReducer, initialState);
+  const currentActiveViewRef = useRef(state.activeView);
+  
+  // Keep ref in sync with state
+  useEffect(() => {
+    currentActiveViewRef.current = state.activeView;
+  }, [state.activeView]);
 
   // Expose debug helpers to window for console access (development only)
   useEffect(() => {
@@ -184,16 +291,32 @@ export const AppProvider = ({ children }) => {
           }
         } else if (session?.user) {
           dispatch({ type: 'SET_USER', payload: session.user });
+          // Restore cached data immediately when user is set, but preserve current activeView
+          const cachedData = loadStateFromStorage(session.user.id);
+          if (cachedData) {
+            // Preserve current activeView if it's already set (user is navigating)
+            const activeViewToUse = currentActiveViewRef.current && currentActiveViewRef.current !== 'Dashboard' 
+              ? currentActiveViewRef.current 
+              : (cachedData.activeView || 'Dashboard');
+            dispatch({ type: 'SET_DATA', payload: { 
+              ...cachedData, 
+              activeView: activeViewToUse,
+              isLoading: false 
+            } });
+          }
         }
       } catch (error) {
-        // Handle invalid refresh token error in catch block
-        if (error.message?.includes('Invalid Refresh Token') || error.message?.includes('Refresh Token Not Found')) {
-          console.warn('Invalid refresh token detected, clearing session');
-          await supabaseClient.auth.signOut();
-          dispatch({ type: 'SET_USER', payload: null });
-        } else {
-          console.error('Error getting session:', error);
-        }
+          // Handle invalid refresh token error in catch block
+          if (error.message?.includes('Invalid Refresh Token') || error.message?.includes('Refresh Token Not Found')) {
+            console.warn('Invalid refresh token detected, clearing session');
+            await supabaseClient.auth.signOut();
+            dispatch({ type: 'SET_USER', payload: null });
+            // Clear cached data on logout
+            sessionStorage.removeItem(STORAGE_KEY);
+            sessionStorage.removeItem(STORAGE_USER_KEY);
+          } else {
+            console.error('Error getting session:', error);
+          }
       } finally {
         dispatch({ type: 'SET_AUTH_LOADING', payload: false });
       }
@@ -210,10 +333,29 @@ export const AppProvider = ({ children }) => {
             console.warn('Token refresh failed, signing out');
             await supabaseClient.auth.signOut();
             dispatch({ type: 'SET_USER', payload: null });
+            // Clear cached data on logout
+            sessionStorage.removeItem(STORAGE_KEY);
+            sessionStorage.removeItem(STORAGE_USER_KEY);
           } else if (session?.user) {
             dispatch({ type: 'SET_USER', payload: session.user });
+            // Restore cached data immediately when user is set, but preserve current activeView
+            const cachedData = loadStateFromStorage(session.user.id);
+            if (cachedData) {
+              // Preserve current activeView if it's already set (user is navigating)
+              const activeViewToUse = currentActiveViewRef.current && currentActiveViewRef.current !== 'Dashboard' 
+                ? currentActiveViewRef.current 
+                : (cachedData.activeView || 'Dashboard');
+              dispatch({ type: 'SET_DATA', payload: { 
+                ...cachedData, 
+                activeView: activeViewToUse,
+                isLoading: false 
+              } });
+            }
           } else {
             dispatch({ type: 'SET_USER', payload: null });
+            // Clear cached data on logout
+            sessionStorage.removeItem(STORAGE_KEY);
+            sessionStorage.removeItem(STORAGE_USER_KEY);
           }
         } catch (error) {
           // Handle invalid refresh token errors
@@ -221,6 +363,9 @@ export const AppProvider = ({ children }) => {
             console.warn('Invalid refresh token detected, clearing session');
             await supabaseClient.auth.signOut();
             dispatch({ type: 'SET_USER', payload: null });
+            // Clear cached data on logout
+            sessionStorage.removeItem(STORAGE_KEY);
+            sessionStorage.removeItem(STORAGE_USER_KEY);
           } else {
             console.error('Error handling auth state change:', error);
           }
@@ -629,6 +774,7 @@ export const AppProvider = ({ children }) => {
             finalContacts = [];
           }
           
+          // Preserve current activeView when fetching data
           dispatch({ type: 'SET_DATA', payload: { 
             projects: finalProjects, 
             contacts: finalContacts, 
@@ -637,7 +783,8 @@ export const AppProvider = ({ children }) => {
             calendarEvents: calendarEvents || [], 
             messageChannels: messageChannels || [], 
             messages: messages || [],
-            activityLog: activityLog || []
+            activityLog: activityLog || [],
+            activeView: currentActiveViewRef.current || state.activeView
           } });
           
           // Handle user preferences with error checking
@@ -772,6 +919,16 @@ export const AppProvider = ({ children }) => {
           }
         }
         if (newMessage) dispatch({ type: 'ADD_MESSAGE', payload: newMessage });
+      })
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'messages' }, async (payload) => {
+        // Update message instantly when edited
+        const updatedMessage = payload.new;
+        // Preserve user info if it exists in the current message
+        const currentMessage = state.messages.find(m => m.id === updatedMessage.id);
+        if (currentMessage?.user) {
+          updatedMessage.user = currentMessage.user;
+        }
+        dispatch({ type: 'UPDATE_MESSAGE', payload: updatedMessage });
       })
       .subscribe();
 

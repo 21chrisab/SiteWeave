@@ -21,9 +21,28 @@ function TaskModal({ project, onClose, onSave, isLoading = false }) {
     const [recurrenceOccurrences, setRecurrenceOccurrences] = useState(10);
     
 
+    // Get contacts assigned to this project
     const projectContacts = state.contacts.filter(contact =>
         contact.project_contacts && contact.project_contacts.some(pc => pc.project_id === project.id)
     );
+    
+    // Also include org admins even if not in project_contacts
+    // This allows org admins to be assigned tasks on any project in their organization
+    // Check for both "Org Admin" and "OrganizationAdmin" role names
+    const orgAdmins = state.contacts.filter(contact => 
+        contact.is_internal && 
+        contact.organization_id === project.organization_id &&
+        contact.role_name && 
+        (contact.role_name.toLowerCase() === 'org admin' || 
+         contact.role_name.toLowerCase() === 'organizationadmin' ||
+         contact.role_name.toLowerCase().includes('admin'))
+    );
+    
+    // Combine and deduplicate by contact id
+    const allAssignableContacts = [
+        ...projectContacts,
+        ...orgAdmins.filter(admin => !projectContacts.some(pc => pc.id === admin.id))
+    ];
     
 
     const handleSubmit = (e) => {
@@ -56,8 +75,8 @@ function TaskModal({ project, onClose, onSave, isLoading = false }) {
             // Validate it's a valid UUID format
             const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
             if (uuidRegex.test(assigneeId)) {
-                // Verify the contact exists in project contacts
-                const contactExists = projectContacts.some(c => c.id === assigneeId);
+                // Verify the contact exists in assignable contacts (project contacts or org admins)
+                const contactExists = allAssignableContacts.some(c => c.id === assigneeId);
                 if (contactExists) {
                     validAssigneeId = assigneeId;
                 } else {
@@ -105,15 +124,18 @@ function TaskModal({ project, onClose, onSave, isLoading = false }) {
                         <label className="block text-sm font-semibold mb-1 text-gray-600">Assignee</label>
                         <select value={assigneeId} onChange={e => setAssigneeId(e.target.value)} className="w-full p-2 border rounded-lg bg-white">
                             <option value="">Unassigned</option>
-                            {projectContacts.length > 0 ? (
-                                projectContacts.map(contact => (
-                                    <option key={contact.id} value={contact.id}>{contact.name}</option>
+                            {allAssignableContacts.length > 0 ? (
+                                allAssignableContacts.map(contact => (
+                                    <option key={contact.id} value={contact.id}>
+                                        {contact.name}
+                                        {orgAdmins.some(admin => admin.id === contact.id) && !projectContacts.some(pc => pc.id === contact.id) && ' (Admin)'}
+                                    </option>
                                 ))
                             ) : (
                                 <option value="" disabled>No team members assigned to this project</option>
                             )}
                         </select>
-                        {projectContacts.length === 0 && (
+                        {allAssignableContacts.length === 0 && (
                             <p className="text-xs text-gray-500 mt-1">
                                 Add team members to this project first using the "+ Add Team Member" button
                             </p>

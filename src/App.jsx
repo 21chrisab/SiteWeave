@@ -120,13 +120,16 @@ function App() {
     }
   }, [state.user, state.mustChangePassword])
 
-  // Check if user needs to see setup wizard (first login for Org Admins)
+  // Check if user needs to see setup wizard (first login for Org Admins ONLY)
   React.useEffect(() => {
     const checkSetupWizard = async () => {
       if (!state.user || !state.currentOrganization || state.mustChangePassword) return // Don't show setup wizard if password reset is needed
 
-      // Show setup wizard if user is an Org Admin and hasn't completed setup
-      if (state.userRole?.name === 'Org Admin' || state.userRole?.permissions?.can_manage_team) {
+      // ONLY show setup wizard if user has the exact "Org Admin" role name
+      // This prevents regular members from seeing the setup wizard
+      const isOrgAdmin = state.userRole?.name === 'Org Admin';
+      
+      if (isOrgAdmin) {
         const setupComplete = localStorage.getItem(`setup_complete_${state.user.id}`)
         if (!setupComplete) {
           setShowSetupWizard(true)
@@ -186,8 +189,8 @@ function App() {
 
   // Render main app with Sidebar
   const renderView = () => {
-    // If a project is selected, show project details
-    if (state.selectedProjectId) {
+    // If a project is selected AND we're on Projects view, show project details
+    if (state.selectedProjectId && state.activeView === 'Projects') {
       return (
         <LazyViewWrapper>
           <ProjectDetailsView />
@@ -227,7 +230,8 @@ function App() {
             <ContactsView />
           </LazyViewWrapper>
         )
-      case 'Team':
+      case 'Organization':
+      case 'Team': // Support both for backwards compatibility
         return (
           <LazyViewWrapper>
             <TeamView />
@@ -279,7 +283,7 @@ function App() {
       <Sidebar />
 
       {/* Main Content */}
-      <main className="flex-1 overflow-y-auto">
+      <main className="flex-1 overflow-y-auto p-6">
         {renderView()}
       </main>
 

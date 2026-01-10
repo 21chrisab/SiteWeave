@@ -223,13 +223,13 @@ function SetupWizard({ show, onComplete }) {
 
               <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
                 <div>
-                  <label className="font-medium text-gray-900">Create Comments</label>
+                  <label className="font-medium text-gray-900">Send Messages</label>
                   <p className="text-sm text-gray-600">Add comments to projects and tasks</p>
                 </div>
                 <input
                   type="checkbox"
-                  checked={permissions.create_comments || false}
-                  onChange={(e) => handlePermissionChange('create_comments', e.target.checked)}
+                  checked={permissions.can_send_messages || false}
+                  onChange={(e) => handlePermissionChange('can_send_messages', e.target.checked)}
                   className="w-5 h-5 text-blue-600 rounded focus:ring-blue-500"
                 />
               </div>

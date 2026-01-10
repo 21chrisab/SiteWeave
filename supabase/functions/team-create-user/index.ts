@@ -29,11 +29,14 @@ serve(async (req) => {
       throw new Error('Unauthorized')
     }
 
-    const { email, password, fullName, organizationId, roleId } = await req.json()
+    const { fullName, username, password, organizationId, roleId } = await req.json()
 
-    if (!email || !password || !fullName || !organizationId) {
-      throw new Error('Missing required fields: email, password, fullName, organizationId')
+    if (!fullName || !username || !password || !organizationId) {
+      throw new Error('Missing required fields: fullName, username, password, organizationId')
     }
+    
+    // Generate email from username if not provided (for managed accounts)
+    const email = `${username}@siteweave.local`
 
     // Verify user has can_manage_team permission
     const { data: profile } = await supabaseAdmin
@@ -52,13 +55,14 @@ serve(async (req) => {
       throw new Error('Not authorized - can_manage_team permission required')
     }
 
-    // Create auth user
+    // Create auth user with username
     const { data: authData, error: authError2 } = await supabaseAdmin.auth.admin.createUser({
       email: email.toLowerCase(),
       password: password,
       email_confirm: true,
       user_metadata: {
-        full_name: fullName
+        full_name: fullName,
+        username: username
       }
     })
 
@@ -95,7 +99,9 @@ serve(async (req) => {
     return new Response(
       JSON.stringify({
         success: true,
-        userId: authData.user.id
+        userId: authData.user.id,
+        email: email.toLowerCase(),
+        username: username
       }),
       {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },

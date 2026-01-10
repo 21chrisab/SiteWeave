@@ -38,7 +38,7 @@ const PERMISSION_GROUPS = [
       { key: 'can_manage_team', label: 'Manage Organization Directory', description: 'Add or remove employees from your company account' },
       { key: 'can_manage_roles', label: 'Manage Roles', description: 'Create and edit custom roles' },
       { key: 'can_manage_contacts', label: 'Manage Contacts', description: 'Add and edit contact information' },
-      { key: 'create_comments', label: 'Create Comments', description: 'Add comments to tasks and projects' },
+      { key: 'can_send_messages', label: 'Send Messages', description: 'Send messages in project channels' },
     ]
   }
 ];
@@ -58,7 +58,7 @@ const DEFAULT_PERMISSIONS = {
   can_manage_team: false,
   can_manage_roles: false,
   can_manage_contacts: false,
-  create_comments: true, // Default to true for basic access
+  can_send_messages: true, // Default to true for basic access
 };
 
 function RoleCreationModal({ show, onClose, onSave, existingRole = null, isLoading = false }) {

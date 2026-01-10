@@ -6,10 +6,25 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
 const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY')
 
+// CORS headers for browser requests
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+}
+
 serve(async (req) => {
+  // Handle CORS preflight requests
+  if (req.method === 'OPTIONS') {
+    return new Response('ok', { headers: corsHeaders })
+  }
+
   // Only allow POST requests
   if (req.method !== 'POST') {
-    return new Response('Method not allowed', { status: 405 })
+    return new Response('Method not allowed', { 
+      status: 405,
+      headers: corsHeaders
+    })
   }
 
   try {
@@ -19,7 +34,13 @@ serve(async (req) => {
     if (!to || !subject || (!html && !text)) {
       return new Response(
         JSON.stringify({ error: 'Missing required fields: to, subject, and html or text' }),
-        { status: 400, headers: { 'Content-Type': 'application/json' } }
+        { 
+          status: 400, 
+          headers: { 
+            'Content-Type': 'application/json',
+            ...corsHeaders
+          } 
+        }
       )
     }
 
@@ -49,13 +70,25 @@ serve(async (req) => {
         console.error('Resend error:', resendData)
         return new Response(
           JSON.stringify({ error: 'Failed to send email via Resend', details: resendData }),
-          { status: 500, headers: { 'Content-Type': 'application/json' } }
+          { 
+            status: 500, 
+            headers: { 
+              'Content-Type': 'application/json',
+              ...corsHeaders
+            } 
+          }
         )
       }
 
       return new Response(
         JSON.stringify({ success: true, id: resendData.id }),
-        { status: 200, headers: { 'Content-Type': 'application/json' } }
+        { 
+          status: 200, 
+          headers: { 
+            'Content-Type': 'application/json',
+            ...corsHeaders
+          } 
+        }
       )
     }
 
@@ -80,14 +113,26 @@ serve(async (req) => {
         to,
         subject 
       }),
-      { status: 200, headers: { 'Content-Type': 'application/json' } }
+      { 
+        status: 200, 
+        headers: { 
+          'Content-Type': 'application/json',
+          ...corsHeaders
+        } 
+      }
     )
 
   } catch (error) {
     console.error('Error in send-email function:', error)
     return new Response(
       JSON.stringify({ error: error.message }),
-      { status: 500, headers: { 'Content-Type': 'application/json' } }
+      { 
+        status: 500, 
+        headers: { 
+          'Content-Type': 'application/json',
+          ...corsHeaders
+        } 
+      }
     )
   }
 })

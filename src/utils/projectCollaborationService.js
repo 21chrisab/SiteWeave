@@ -119,7 +119,7 @@ export async function getProjectCollaborators(supabase, projectId) {
         access_level,
         created_at,
         invited_by_user_id,
-        profiles!project_collaborators_user_id_fkey (
+        profiles!inner (
           id,
           contacts (
             id,

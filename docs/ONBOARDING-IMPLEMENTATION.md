@@ -29,7 +29,7 @@ This document describes the complete onboarding system for SiteWeave, including 
 1. Creates organization record
 2. Seeds two default roles:
    - **"Org Admin"**: Full permissions including `can_manage_team: true`
-   - **"Member"**: Basic permissions (`read_projects: true`, `create_comments: true`)
+   - **"Member"**: Basic permissions (`read_projects: true`, `can_send_messages: true`)
 3. Creates auth user with provided password (using Admin API)
 4. Creates contact record for admin
 5. Links profile to organization with "Org Admin" role
@@ -85,7 +85,7 @@ curl -X POST https://your-project.supabase.co/functions/v1/create-org-admin \
 - Loads the default "Member" role
 - Allows admin to customize permissions:
   - `read_projects`
-  - `create_comments`
+  - `can_send_messages`
   - `can_create_tasks`
   - `can_edit_tasks`
 - Saves updated permissions to database

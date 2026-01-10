@@ -24,7 +24,7 @@ export const ROLE_PRESETS = [
       can_edit_tasks: false,
       can_delete_tasks: false,
       read_projects: true,
-      create_comments: true
+      can_send_messages: true
     }
   },
   {
@@ -46,7 +46,7 @@ export const ROLE_PRESETS = [
       can_edit_tasks: true,
       can_delete_tasks: false,
       read_projects: true,
-      create_comments: true
+      can_send_messages: true
     }
   },
   {
@@ -68,7 +68,7 @@ export const ROLE_PRESETS = [
       can_edit_tasks: true,
       can_delete_tasks: false,
       read_projects: true,
-      create_comments: true
+      can_send_messages: true
     }
   },
   {
@@ -90,7 +90,7 @@ export const ROLE_PRESETS = [
       can_edit_tasks: true,
       can_delete_tasks: true,
       read_projects: true,
-      create_comments: true
+      can_send_messages: true
     }
   },
   {
@@ -112,7 +112,7 @@ export const ROLE_PRESETS = [
       can_edit_tasks: false,
       can_delete_tasks: false,
       read_projects: true,
-      create_comments: false
+      can_send_messages: false
     }
   },
   {
@@ -134,7 +134,7 @@ export const ROLE_PRESETS = [
       can_edit_tasks: true,
       can_delete_tasks: false,
       read_projects: true,
-      create_comments: true
+      can_send_messages: true
     }
   }
 ];

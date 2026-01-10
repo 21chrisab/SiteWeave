@@ -74,7 +74,7 @@ serve(async (req) => {
           can_edit_tasks: true,
           can_delete_tasks: true,
           read_projects: true,
-          create_comments: true
+          can_send_messages: true
         },
         is_system_role: true
       })
@@ -109,7 +109,7 @@ serve(async (req) => {
           can_edit_tasks: false,
           can_delete_tasks: false,
           read_projects: true,
-          create_comments: true
+          can_send_messages: true
         },
         is_system_role: true
       })

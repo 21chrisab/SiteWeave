@@ -29,7 +29,7 @@ serve(async (req) => {
       throw new Error('Unauthorized')
     }
 
-    const { email, organizationId, roleId } = await req.json()
+    const { email, organizationId, roleId, metadata } = await req.json()
 
     if (!email || !organizationId) {
       throw new Error('Missing required fields: email, organizationId')
@@ -55,18 +55,25 @@ serve(async (req) => {
     // Generate invitation token
     const invitationToken = crypto.randomUUID().replace(/-/g, '')
 
-    // Create invitation
+    // Create invitation with metadata
+    const invitationData: any = {
+      email: email.toLowerCase(),
+      organization_id: organizationId,
+      role_id: roleId || null,
+      invited_by_user_id: user.id,
+      invitation_token: invitationToken,
+      status: 'pending',
+      expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
+    }
+    
+    // Add metadata if provided
+    if (metadata && typeof metadata === 'object') {
+      invitationData.metadata = metadata
+    }
+
     const { data: invitation, error: invitationError } = await supabaseAdmin
       .from('invitations')
-      .insert({
-        email: email.toLowerCase(),
-        organization_id: organizationId,
-        role_id: roleId || null,
-        invited_by_user_id: user.id,
-        invitation_token: invitationToken,
-        status: 'pending',
-        expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
-      })
+      .insert(invitationData)
       .select()
       .single()
 
@@ -109,6 +116,10 @@ serve(async (req) => {
 
     if (RESEND_API_KEY) {
       try {
+        // Use metadata for personalized greeting
+        const firstName = metadata?.first_name || email.split('@')[0]
+        const greeting = metadata?.first_name ? `Hi ${metadata.first_name},` : 'Hi there,'
+        
         const emailSubject = `Join ${organizationName} on SiteWeave`
         const emailHtml = `
 <!DOCTYPE html>
@@ -159,6 +170,12 @@ serve(async (req) => {
             color: #1a1a1a; 
             margin: 0 0 16px 0;
             line-height: 1.3;
+        }
+        .greeting {
+            font-size: 18px;
+            font-weight: 500;
+            color: #1a1a1a;
+            margin: 0 0 16px 0;
         }
         .body-text { 
             font-size: 16px; 
@@ -270,6 +287,7 @@ serve(async (req) => {
             </div>
             <div class="content">
                 <h2 class="headline">Join ${organizationName} on SiteWeave</h2>
+                <p class="greeting">${greeting}</p>
                 <p class="body-text"><strong>${inviterName}</strong> has invited you to collaborate with <strong>${organizationName}</strong> on SiteWeave.</p>
                 <p class="body-text">Click the button below to accept your invitation and get started:</p>
                 <div class="cta-container">

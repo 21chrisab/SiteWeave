@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAppContext, supabaseClient } from '../context/AppContext';
 import { useToast } from '../context/ToastContext';
+import PermissionGuard from './PermissionGuard';
 
 function ProjectProgressCard({ project }) {
     const { dispatch } = useAppContext();
@@ -111,21 +112,23 @@ function ProjectProgressCard({ project }) {
                 ></div>
             </div>
 
-            {/* Budget Information */}
-            <div className="space-y-1">
-                <div className="flex justify-between text-xs text-gray-600">
-                    <span>Total Budget</span>
-                    <span className="font-medium">{formatCurrency(totalBudget)}</span>
+            {/* Budget Information - Only visible to users with can_view_financials permission */}
+            <PermissionGuard permission="can_view_financials">
+                <div className="space-y-1">
+                    <div className="flex justify-between text-xs text-gray-600">
+                        <span>Total Budget</span>
+                        <span className="font-medium">{formatCurrency(totalBudget)}</span>
+                    </div>
+                    <div className="flex justify-between text-xs text-gray-600">
+                        <span>Spent</span>
+                        <span className="font-medium">{formatCurrency(spentAmount)}</span>
+                    </div>
+                    <div className="flex justify-between text-xs text-gray-600">
+                        <span>Remaining</span>
+                        <span className="font-medium">{formatCurrency(totalBudget - spentAmount)}</span>
+                    </div>
                 </div>
-                <div className="flex justify-between text-xs text-gray-600">
-                    <span>Spent</span>
-                    <span className="font-medium">{formatCurrency(spentAmount)}</span>
-                </div>
-                <div className="flex justify-between text-xs text-gray-600">
-                    <span>Remaining</span>
-                    <span className="font-medium">{formatCurrency(totalBudget - spentAmount)}</span>
-                </div>
-            </div>
+            </PermissionGuard>
 
             {/* Simple Phase Count */}
             {phases.length > 0 && (

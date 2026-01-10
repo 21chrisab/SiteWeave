@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useAppContext, supabaseClient } from '../context/AppContext';
 import { useToast } from '../context/ToastContext';
+import PermissionGuard from './PermissionGuard';
+import { hasPermission } from '../utils/permissions';
 
 // Simple debounce utility
 function debounce(func, wait) {
@@ -24,11 +26,12 @@ function BuildPath({ project }) {
     const [showPhaseModal, setShowPhaseModal] = useState(false);
     const [isLoading, setIsLoading] = useState(false);
     const [editingValues, setEditingValues] = useState({});
-    const [userRole, setUserRole] = useState(null);
+    const [canEditProjects, setCanEditProjects] = useState(false);
     const [draggedPhase, setDraggedPhase] = useState(null);
     const [dragOverPhase, setDragOverPhase] = useState(null);
     const [dragOverPosition, setDragOverPosition] = useState(null);
     const [editingProgressPhaseId, setEditingProgressPhaseId] = useState(null);
+    const [editingNamePhaseId, setEditingNamePhaseId] = useState(null);
     const handlePhaseUpdateRef = useRef(null);
 
     // Default phases for construction projects
@@ -44,28 +47,30 @@ function BuildPath({ project }) {
     useEffect(() => {
         if (!project?.id) return;
         loadPhases();
-        loadUserRole();
-    }, [project?.id, state.user?.id]);
+        checkPermissions();
+    }, [project?.id, state.user?.id, state.currentOrganization?.id]);
 
-    const loadUserRole = async () => {
-        if (!state.user?.id) return;
+    const checkPermissions = async () => {
+        if (!state.user?.id || !state.currentOrganization?.id) {
+            setCanEditProjects(false);
+            return;
+        }
         try {
-            const { data, error } = await supabaseClient
-                .from('profiles')
-                .select('role')
-                .eq('id', state.user.id)
-                .maybeSingle();
-            
-            if (!error && data) {
-                setUserRole(data.role);
-            }
+            const hasEditPermission = await hasPermission(
+                supabaseClient,
+                state.user.id,
+                'can_edit_projects',
+                state.currentOrganization.id
+            );
+            setCanEditProjects(hasEditPermission);
         } catch (error) {
-            console.error('Error loading user role:', error);
+            console.error('Error checking permissions:', error);
+            setCanEditProjects(false);
         }
     };
 
     const isAuthorized = () => {
-        return userRole === 'Admin';
+        return canEditProjects;
     };
 
     const loadPhases = async () => {
@@ -404,11 +409,11 @@ function BuildPath({ project }) {
                         style={{ width: `${calculateOverallProgress()}%` }}
                     ></div>
                 </div>
-                {userRole === 'Admin' && (
+                <PermissionGuard permission="can_view_financials">
                     <div className="text-xs text-gray-600">
                         {formatCurrency(calculateSpentAmount())} of {formatCurrency(calculateTotalBudget())} spent
                     </div>
-                )}
+                </PermissionGuard>
             </div>
 
             {/* Phases List - Fixed height with scroll */}
@@ -434,26 +439,60 @@ function BuildPath({ project }) {
                                 <svg className="w-4 h-4 text-gray-400 cursor-move" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8h16M4 16h16" />
                                 </svg>
-                                <h4 className="font-semibold text-sm">{phase.name}</h4>
+                                {editingNamePhaseId === phase.id && isAuthorized() ? (
+                                    <input
+                                        type="text"
+                                        value={editingValues[`${phase.id}_name`] !== undefined ? editingValues[`${phase.id}_name`] : phase.name}
+                                        onChange={(e) => {
+                                            handleInputChange(phase.id, 'name', e.target.value);
+                                        }}
+                                        onBlur={() => {
+                                            const value = editingValues[`${phase.id}_name`] !== undefined 
+                                                ? editingValues[`${phase.id}_name`] 
+                                                : phase.name;
+                                            if (value.trim()) {
+                                                debouncedUpdate(phase.id, 'name', value.trim());
+                                            }
+                                            setEditingNamePhaseId(null);
+                                        }}
+                                        onKeyDown={(e) => {
+                                            if (e.key === 'Enter') {
+                                                e.target.blur();
+                                            } else if (e.key === 'Escape') {
+                                                setEditingValues(prev => {
+                                                    const newValues = { ...prev };
+                                                    delete newValues[`${phase.id}_name`];
+                                                    return newValues;
+                                                });
+                                                setEditingNamePhaseId(null);
+                                            }
+                                        }}
+                                        className="flex-1 px-2 py-1 text-sm font-semibold border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                        autoFocus
+                                        disabled={isLoading}
+                                    />
+                                ) : (
+                                    <h4 
+                                        className={`font-semibold text-sm flex items-center gap-1 ${isAuthorized() ? 'cursor-pointer hover:text-blue-600 transition-colors' : ''}`}
+                                        onClick={isAuthorized() ? () => setEditingNamePhaseId(phase.id) : undefined}
+                                        title={isAuthorized() ? "Click to edit" : undefined}
+                                    >
+                                        {editingValues[`${phase.id}_name`] !== undefined ? editingValues[`${phase.id}_name`] : phase.name}
+                                        {isAuthorized() && (
+                                            <svg className="w-3 h-3 opacity-60" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                                            </svg>
+                                        )}
+                                    </h4>
+                                )}
                             </div>
                             {isEditing && isAuthorized() && (
-                                <div className="flex gap-1">
-                                    <button
-                                        onClick={() => {
-                                            setEditingPhase(phase);
-                                            setShowPhaseModal(true);
-                                        }}
-                                        className="px-2 py-1 text-xs bg-blue-100 text-blue-600 rounded hover:bg-blue-200"
-                                    >
-                                        Edit
-                                    </button>
-                                    <button
-                                        onClick={() => handleDeletePhase(phase.id)}
-                                        className="px-2 py-1 text-xs bg-red-100 text-red-600 rounded hover:bg-red-200"
-                                    >
-                                        Delete
-                                    </button>
-                                </div>
+                                <button
+                                    onClick={() => handleDeletePhase(phase.id)}
+                                    className="px-2 py-1 text-xs bg-red-100 text-red-600 rounded hover:bg-red-200"
+                                >
+                                    Delete
+                                </button>
                             )}
                         </div>
 
@@ -520,8 +559,9 @@ function BuildPath({ project }) {
                             </div>
                         </div>
 
-                        {/* Budget Input - Only show when editing and user is Admin */}
-                        {isEditing && userRole === 'Admin' && (
+                        {/* Budget Input - Only show when editing and user has edit permission */}
+                        {isEditing && (
+                            <PermissionGuard permission="can_edit_projects">
                             <div className="mt-3">
                                 <label className="text-xs text-gray-600 block mb-1">Budget</label>
                                 <div className="flex items-center gap-2">
@@ -537,6 +577,7 @@ function BuildPath({ project }) {
                                     />
                                 </div>
                             </div>
+                            </PermissionGuard>
                         )}
                     </div>
                         {isDragTarget && dragOverPosition === 'bottom' && (

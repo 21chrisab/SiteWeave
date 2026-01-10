@@ -60,14 +60,7 @@ function TeamDirectory() {
   }
 
   return (
-    <div className="p-6 max-w-6xl mx-auto">
-      <div className="mb-6">
-        <h1 className="text-3xl font-bold text-gray-900">Team Directory</h1>
-        <p className="text-gray-600 mt-1">
-          Everyone in {currentOrganization?.name || 'your organization'}
-        </p>
-      </div>
-
+    <div className="mt-6">
       {teamMembers.length === 0 ? (
         <div className="bg-white shadow rounded-lg p-12 text-center">
           <p className="text-gray-500">No team members yet. Invite your first team member to get started!</p>
@@ -155,14 +148,6 @@ function TeamDirectory() {
           ))}
         </div>
       )}
-
-      <div className="mt-8 bg-blue-50 border border-blue-200 rounded-lg p-4">
-        <h3 className="font-semibold text-blue-900 mb-2">✨ The Magic</h3>
-        <p className="text-sm text-blue-800">
-          Everyone you see here is automatically part of your team because you share the same organization. 
-          No need to add each other as "friends" – you're already connected!
-        </p>
-      </div>
     </div>
   );
 }

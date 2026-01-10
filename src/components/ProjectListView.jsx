@@ -1,14 +1,52 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useAppContext } from '../context/AppContext';
 import { formatDateShort, formatCurrency, getStatusColor, normalizeStatusDisplay } from '../utils/projectHelpers';
 import { calculateProjectProgress, calculateProjectBudget } from '../utils/projectHelpers';
 import { supabaseClient } from '../context/AppContext';
 import PermissionGuard from './PermissionGuard';
+import { hasPermission } from '../utils/permissions';
 
 function ProjectListView({ projects, onEdit, onDelete, onProjectClick }) {
+    const { state } = useAppContext();
     const [sortConfig, setSortConfig] = useState({ key: null, direction: 'asc' });
     const [projectData, setProjectData] = useState({});
     const [isLoading, setIsLoading] = useState(true);
+    const [canViewFinancials, setCanViewFinancials] = useState(false);
+
+    // Check if user can view financials
+    useEffect(() => {
+        const checkFinancialPermission = async () => {
+            if (!state.user?.id || !state.currentOrganization?.id) {
+                setCanViewFinancials(false);
+                // Clear budget_remaining sort if user loses permission
+                if (sortConfig.key === 'budget_remaining') {
+                    setSortConfig({ key: null, direction: 'asc' });
+                }
+                return;
+            }
+            try {
+                const hasAccess = await hasPermission(
+                    supabaseClient,
+                    state.user.id,
+                    'can_view_financials',
+                    state.currentOrganization.id
+                );
+                setCanViewFinancials(hasAccess);
+                // Clear budget_remaining sort if user doesn't have permission
+                if (!hasAccess && sortConfig.key === 'budget_remaining') {
+                    setSortConfig({ key: null, direction: 'asc' });
+                }
+            } catch (error) {
+                console.error('Error checking financial permission:', error);
+                setCanViewFinancials(false);
+                // Clear budget_remaining sort on error
+                if (sortConfig.key === 'budget_remaining') {
+                    setSortConfig({ key: null, direction: 'asc' });
+                }
+            }
+        };
+        checkFinancialPermission();
+    }, [state.user?.id, state.currentOrganization?.id]);
 
     // Load progress and budget data for all projects IN PARALLEL
     React.useEffect(() => {
@@ -67,6 +105,10 @@ function ProjectListView({ projects, onEdit, onDelete, onProjectClick }) {
     }, [projects.length, projects.map(p => p.id).join(',')]);
 
     const handleSort = (key) => {
+        // Prevent sorting by budget_remaining if user doesn't have permission
+        if (key === 'budget_remaining' && !canViewFinancials) {
+            return;
+        }
         let direction = 'asc';
         if (sortConfig.key === key && sortConfig.direction === 'asc') {
             direction = 'desc';
@@ -184,15 +226,17 @@ function ProjectListView({ projects, onEdit, onDelete, onProjectClick }) {
                                     <SortIcon columnKey="due_date" />
                                 </div>
                             </th>
-                            <th
-                                className="px-4 sm:px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
-                                onClick={() => handleSort('budget_remaining')}
-                            >
-                                <div className="flex items-center gap-2">
-                                    Budget Rem.
-                                    <SortIcon columnKey="budget_remaining" />
-                                </div>
-                            </th>
+                            {canViewFinancials && (
+                                <th
+                                    className="px-4 sm:px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                                    onClick={() => handleSort('budget_remaining')}
+                                >
+                                    <div className="flex items-center gap-2">
+                                        Budget Rem.
+                                        <SortIcon columnKey="budget_remaining" />
+                                    </div>
+                                </th>
+                            )}
                             <th className="px-4 sm:px-6 py-3 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider">
                                 Actions
                             </th>
@@ -248,13 +292,15 @@ function ProjectListView({ projects, onEdit, onDelete, onProjectClick }) {
                                     <td className="px-4 sm:px-6 py-4 text-sm text-gray-600">
                                         {formatDateShort(project.due_date) || '—'}
                                     </td>
-                                    <td className="px-4 sm:px-6 py-4 text-sm font-medium text-gray-900">
-                                        {data.loading ? (
-                                            <div className="w-16 h-4 bg-gray-200 rounded animate-pulse"></div>
-                                        ) : (
-                                            formatCurrency(data.budget?.remaining || 0)
-                                        )}
-                                    </td>
+                                    {canViewFinancials && (
+                                        <td className="px-4 sm:px-6 py-4 text-sm font-medium text-gray-900">
+                                            {data.loading ? (
+                                                <div className="w-16 h-4 bg-gray-200 rounded animate-pulse"></div>
+                                            ) : (
+                                                formatCurrency(data.budget?.remaining || 0)
+                                            )}
+                                        </td>
+                                    )}
                                     <td className="px-4 sm:px-6 py-3 text-right">
                                         <div className="flex items-center justify-end gap-1">
                                             <PermissionGuard permission="can_edit_projects">

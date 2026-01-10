@@ -21,6 +21,32 @@ const DEFAULT_PERMISSIONS = {
   can_edit_projects: false
 };
 
+// Permission key to label mapping
+const PERMISSION_LABELS = {
+  can_create_projects: 'Create Projects',
+  can_edit_projects: 'Edit Projects',
+  can_delete_projects: 'Delete Projects',
+  read_projects: 'View Projects',
+  can_create_tasks: 'Create Tasks',
+  can_edit_tasks: 'Edit Tasks',
+  can_delete_tasks: 'Delete Tasks',
+  can_assign_tasks: 'Assign Tasks',
+  can_view_financials: 'View Financials',
+  can_view_reports: 'View Reports',
+  can_manage_team: 'Manage Organization Directory',
+  can_manage_roles: 'Manage Roles',
+  can_manage_contacts: 'Manage Contacts',
+  can_manage_users: 'Manage Users',
+  can_send_messages: 'Send Messages',
+  // Backward compatibility for old permission name
+  create_comments: 'Send Messages',
+};
+
+// Helper function to get permission label
+const getPermissionLabel = (key) => {
+  return PERMISSION_LABELS[key] || key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+};
+
 function RoleManagement() {
   const { state } = useContext(AppContext);
   const { addToast } = useToast();
@@ -199,7 +225,7 @@ function RoleManagement() {
                       .filter(([_, value]) => value === true)
                       .map(([key, _]) => (
                         <span key={key} className="px-2 py-1 bg-green-100 text-green-800 rounded text-xs">
-                          {key.replace(/_/g, ' ')}
+                          {getPermissionLabel(key)}
                         </span>
                       ))}
                   </div>

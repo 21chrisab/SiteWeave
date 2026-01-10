@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client'
 import { createBrowserRouter, RouterProvider } from 'react-router-dom'
 import App from './App.jsx'
 import ErrorBoundary from './components/ErrorBoundary.jsx'
+import RouteErrorElement from './components/RouteErrorElement.jsx'
 import { AppProvider } from './context/AppContext'
 import { ToastProvider } from './context/ToastContext'
 import './index.css'
@@ -17,7 +18,11 @@ if ('serviceWorker' in navigator) {
 }
 
 const router = createBrowserRouter([
-  { path: '/*', element: <App /> }
+  { 
+    path: '/*', 
+    element: <App />,
+    errorElement: <RouteErrorElement />
+  }
 ])
 
 createRoot(document.getElementById('root')).render(

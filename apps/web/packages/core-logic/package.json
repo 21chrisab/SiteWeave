@@ -1,0 +1,11 @@
+{
+  "name": "@siteweave/core-logic",
+  "version": "1.0.0",
+  "description": "Shared business logic for SiteWeave applications",
+  "main": "src/index.js",
+  "private": true,
+  "dependencies": {
+    "@supabase/supabase-js": "^2.74.0"
+  }
+}
+

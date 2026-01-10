@@ -2,12 +2,13 @@ import React, { useState, useEffect } from 'react';
 import { useAppContext, supabaseClient } from '../context/AppContext';
 import { useToast } from '../context/ToastContext';
 import Icon from './Icon';
+import Avatar from './Avatar';
 import { fetchThreadReplies, getThreadReplyCount } from '@siteweave/core-logic';
 
 const EMOJI_REACTIONS = ['👍', '❤️', '😂', '😮', '😢', '😡'];
 
 function MessageItem({ message, onEdit, onDelete, isGrouped = false, showAvatar = true, showTimestamp = false, isLastInChannel = false, onReply, onThreadExpand }) {
-    const { state } = useAppContext();
+    const { state, dispatch } = useAppContext();
     const { addToast } = useToast();
     const [isEditing, setIsEditing] = useState(false);
     const [editContent, setEditContent] = useState(message.content || '');
@@ -19,9 +20,47 @@ function MessageItem({ message, onEdit, onDelete, isGrouped = false, showAvatar 
     const [loadingThread, setLoadingThread] = useState(false);
     const [reactions, setReactions] = useState(message.reactions || []);
     const [hoveredReaction, setHoveredReaction] = useState(null);
+    const [localMessage, setLocalMessage] = useState(message);
     
-    const isCurrentUser = message.user_id === state.user.id;
-    const user = message.user || message.user_id;
+    // Keep localMessage in sync with message prop (for real-time updates)
+    useEffect(() => {
+        setLocalMessage(message);
+    }, [message]);
+    
+    // Keep editContent in sync with message content when message updates
+    useEffect(() => {
+        if (!isEditing) {
+            setEditContent(localMessage.content || '');
+        }
+    }, [localMessage.content, isEditing]);
+    
+    // Use localMessage for display (allows instant updates)
+    const displayMessage = localMessage;
+    
+    const isCurrentUser = displayMessage.user_id === state.user.id;
+    
+    // Get user info - for current user, try to get from contacts first
+    let user = displayMessage.user || displayMessage.user_id;
+    if (isCurrentUser) {
+        // Find current user's contact in state.contacts
+        const currentUserContact = state.contacts.find(c => 
+            c.is_internal && c.user_id === state.user.id
+        );
+        if (currentUserContact) {
+            user = {
+                id: state.user.id,
+                name: currentUserContact.name || state.user.user_metadata?.full_name || state.user.email,
+                avatar_url: currentUserContact.avatar_url
+            };
+        } else if (!user || typeof user === 'string') {
+            // Fallback if no contact found
+            user = {
+                id: state.user.id,
+                name: state.user.user_metadata?.full_name || state.user.email,
+                avatar_url: null
+            };
+        }
+    }
 
     const formatTime = (isoString) => new Date(isoString).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
     const formatDate = (isoString) => new Date(isoString).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
@@ -30,16 +69,31 @@ function MessageItem({ message, onEdit, onDelete, isGrouped = false, showAvatar 
         if (!editContent.trim()) return;
         
         setIsUpdatingMessage(true);
+        
+        // Optimistically update locally first for instant feedback
+        const updatedMessage = {
+            ...localMessage,
+            content: editContent.trim(),
+            edited_at: new Date().toISOString()
+        };
+        setLocalMessage(updatedMessage);
+        dispatch({ type: 'UPDATE_MESSAGE', payload: updatedMessage });
+        setIsEditing(false);
+        
+        // Then update in database (real-time subscription will handle the final update)
         const { error } = await supabaseClient
             .from('messages')
             .update({ content: editContent.trim(), edited_at: new Date().toISOString() })
-            .eq('id', message.id);
+            .eq('id', displayMessage.id);
         
         if (error) {
+            // Revert optimistic update on error
+            setLocalMessage(message);
+            dispatch({ type: 'UPDATE_MESSAGE', payload: message });
             addToast('Error updating message: ' + error.message, 'error');
+            setIsEditing(true); // Re-open edit mode on error
         } else {
             addToast('Message updated successfully!', 'success');
-            setIsEditing(false);
         }
         setIsUpdatingMessage(false);
     };
@@ -49,7 +103,7 @@ function MessageItem({ message, onEdit, onDelete, isGrouped = false, showAvatar 
         const { error } = await supabaseClient
             .from('messages')
             .delete()
-            .eq('id', message.id);
+            .eq('id', displayMessage.id);
         
         if (error) {
             addToast('Error deleting message: ' + error.message, 'error');
@@ -61,10 +115,10 @@ function MessageItem({ message, onEdit, onDelete, isGrouped = false, showAvatar 
 
     // Load reactions when message changes
     useEffect(() => {
-        if (message.reactions) {
-            setReactions(message.reactions);
+        if (displayMessage.reactions) {
+            setReactions(displayMessage.reactions);
         }
-    }, [message.reactions]);
+    }, [displayMessage.reactions]);
 
     const handleToggleReaction = async (emoji) => {
         // Check if user already reacted with this emoji
@@ -77,7 +131,7 @@ function MessageItem({ message, onEdit, onDelete, isGrouped = false, showAvatar 
             const { error } = await supabaseClient
                 .from('message_reactions')
                 .delete()
-                .eq('message_id', message.id)
+                .eq('message_id', displayMessage.id)
                 .eq('user_id', state.user.id)
                 .eq('emoji', emoji);
             
@@ -101,7 +155,7 @@ function MessageItem({ message, onEdit, onDelete, isGrouped = false, showAvatar 
             const { error } = await supabaseClient
                 .from('message_reactions')
                 .insert({
-                    message_id: message.id,
+                    message_id: displayMessage.id,
                     user_id: state.user.id,
                     emoji: emoji
                 });
@@ -137,10 +191,10 @@ function MessageItem({ message, onEdit, onDelete, isGrouped = false, showAvatar 
 
         setLoadingThread(true);
         try {
-            const replies = await fetchThreadReplies(supabaseClient, message.id);
+            const replies = await fetchThreadReplies(supabaseClient, displayMessage.id);
             setThreadReplies(replies);
             setShowThread(true);
-            if (onThreadExpand) onThreadExpand(message.id);
+            if (onThreadExpand) onThreadExpand(displayMessage.id);
         } catch (error) {
             addToast('Error loading thread: ' + error.message, 'error');
         } finally {
@@ -182,11 +236,11 @@ function MessageItem({ message, onEdit, onDelete, isGrouped = false, showAvatar 
     };
 
     // Handle special "Imported from Outlook" message
-    if (message.content.startsWith('RE:')) {
+    if (displayMessage.content.startsWith('RE:')) {
         return (
             <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg my-2 max-w-[90%] mx-auto break-words">
-                <p className="text-sm font-semibold text-blue-800">Imported from Outlook <span className="font-normal text-gray-500 text-xs ml-2">{formatTime(message.created_at)}</span></p>
-                <p className="text-sm text-gray-700 mt-1 whitespace-pre-wrap break-words overflow-wrap-anywhere">{message.content}</p>
+                <p className="text-sm font-semibold text-blue-800">Imported from Outlook <span className="font-normal text-gray-500 text-xs ml-2">{formatTime(displayMessage.created_at)}</span></p>
+                <p className="text-sm text-gray-700 mt-1 whitespace-pre-wrap break-words overflow-wrap-anywhere">{displayMessage.content}</p>
             </div>
         );
     }
@@ -194,11 +248,18 @@ function MessageItem({ message, onEdit, onDelete, isGrouped = false, showAvatar 
     return (
         <div className={`flex items-start gap-3 group ${isGrouped ? 'my-1' : 'my-4'} ${isCurrentUser ? 'flex-row-reverse' : ''}`}>
             {showAvatar && (
-                <img 
-                    src={user?.avatar_url || 'https://i.pravatar.cc/150?u=anonymous'} 
-                    alt={user?.name} 
-                    className="w-10 h-10 rounded-full flex-shrink-0" 
-                />
+                user?.avatar_url ? (
+                    <img 
+                        src={user.avatar_url} 
+                        alt={user?.name || 'User'} 
+                        className="w-10 h-10 rounded-full flex-shrink-0 object-cover" 
+                    />
+                ) : (
+                    <Avatar 
+                        name={user?.name || state.user?.user_metadata?.full_name || state.user?.email || 'User'} 
+                        size="lg" 
+                    />
+                )
             )}
             {!showAvatar && <div className="w-10 flex-shrink-0" />}
             <div className="flex flex-col gap-1 max-w-[70%] min-w-0 flex-1">
@@ -206,8 +267,8 @@ function MessageItem({ message, onEdit, onDelete, isGrouped = false, showAvatar 
                     <div className={`flex items-baseline gap-2 ${isCurrentUser ? 'self-end' : ''}`}>
                         {!isCurrentUser && <span className="font-bold text-sm truncate">{user?.name}</span>}
                         <span className="text-xs text-gray-400 flex-shrink-0">
-                            {formatTime(message.created_at)}
-                            {message.edited_at && (
+                            {formatTime(displayMessage.created_at)}
+                            {displayMessage.edited_at && (
                                 <span className="ml-1 italic text-gray-300">(edited)</span>
                             )}
                         </span>
@@ -235,7 +296,7 @@ function MessageItem({ message, onEdit, onDelete, isGrouped = false, showAvatar 
                                 <button
                                     onClick={() => {
                                         setIsEditing(false);
-                                        setEditContent(message.content || '');
+                                        setEditContent(displayMessage.content || '');
                                     }}
                                     className="px-3 py-1 bg-gray-500 text-white text-sm rounded hover:bg-gray-600"
                                 >
@@ -245,26 +306,26 @@ function MessageItem({ message, onEdit, onDelete, isGrouped = false, showAvatar 
                         </div>
                     ) : (
                         <>
-                            {message.content && (
+                            {displayMessage.content && (
                                 <p className="text-sm whitespace-pre-wrap break-words overflow-wrap-anywhere">
-                                    {renderContentWithMentions(message.content)}
+                                    {renderContentWithMentions(displayMessage.content)}
                                 </p>
                             )}
                             
-                            {message.type === 'image' && message.file_url && (
+                            {displayMessage.type === 'image' && displayMessage.file_url && (
                                 <img 
-                                    src={message.file_url} 
-                                    alt={message.file_name || 'Attached image'} 
+                                    src={displayMessage.file_url} 
+                                    alt={displayMessage.file_name || 'Attached image'} 
                                     className="mt-2 rounded-lg max-w-full cursor-pointer" 
-                                    onClick={() => window.open(message.file_url, '_blank')} 
+                                    onClick={() => window.open(displayMessage.file_url, '_blank')} 
                                 />
                             )}
                             
-                            {message.type === 'file' && message.file_url && (
-                                <a href={message.file_url} target="_blank" rel="noopener noreferrer" 
+                            {displayMessage.type === 'file' && displayMessage.file_url && (
+                                <a href={displayMessage.file_url} target="_blank" rel="noopener noreferrer" 
                                    className={`flex items-center gap-2 mt-2 p-2 rounded-md ${isCurrentUser ? 'bg-blue-700 hover:bg-blue-800' : 'bg-gray-200 hover:bg-gray-300'}`}>
                                     <Icon path="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" className="w-5 h-5 flex-shrink-0" />
-                                    <span className="text-sm font-medium truncate">{message.file_name}</span>
+                                    <span className="text-sm font-medium truncate">{displayMessage.file_name}</span>
                                 </a>
                             )}
 
@@ -272,7 +333,7 @@ function MessageItem({ message, onEdit, onDelete, isGrouped = false, showAvatar 
                             <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
                                 <div className="flex gap-1 bg-black bg-opacity-20 rounded-lg p-1">
                                     <button
-                                        onClick={() => onReply && onReply(message)}
+                                        onClick={() => onReply && onReply(displayMessage)}
                                         className="p-1 hover:bg-white hover:bg-opacity-20 rounded"
                                         title="Reply"
                                     >
@@ -280,11 +341,14 @@ function MessageItem({ message, onEdit, onDelete, isGrouped = false, showAvatar 
                                     </button>
                                     {isCurrentUser && (
                                         <>
-                                            <button
-                                                onClick={() => setIsEditing(true)}
-                                                className="p-1 hover:bg-white hover:bg-opacity-20 rounded"
-                                                title="Edit message"
-                                            >
+                                    <button
+                                        onClick={() => {
+                                            setIsEditing(true);
+                                            setEditContent(displayMessage.content || '');
+                                        }}
+                                        className="p-1 hover:bg-white hover:bg-opacity-20 rounded"
+                                        title="Edit message"
+                                    >
                                                 <Icon path="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10" className="w-4 h-4" />
                                             </button>
                                             <button
@@ -357,7 +421,7 @@ function MessageItem({ message, onEdit, onDelete, isGrouped = false, showAvatar 
                 {/* Read Receipts - Only for current user's messages and only on the very last message in the channel */}
                 {isCurrentUser && isLastInChannel && (
                     <div className="flex items-center gap-1 mt-1">
-                        {message.isRead ? (
+                        {displayMessage.isRead ? (
                             <span className="text-blue-500 text-xs" title="Read">
                                 <Icon path="M4.5 12.75l6 6 9-13.5" className="w-3 h-3" />
                             </span>
@@ -370,7 +434,7 @@ function MessageItem({ message, onEdit, onDelete, isGrouped = false, showAvatar 
                 )}
 
                 {/* Thread Reply Count Badge */}
-                {(message.thread_reply_count > 0 || showThread) && (
+                {(displayMessage.thread_reply_count > 0 || showThread) && (
                     <div className="mt-2">
                         <button
                             onClick={handleLoadThread}
@@ -378,7 +442,7 @@ function MessageItem({ message, onEdit, onDelete, isGrouped = false, showAvatar 
                             className="flex items-center gap-2 text-xs text-blue-600 hover:text-blue-700 hover:underline"
                         >
                             <Icon path="M12 20.25c4.97 0 9-3.694 9-8.25s-4.03-8.25-9-8.25S3 7.444 3 12c0 2.104.859 4.023 2.273 5.488.432.447.74 1.04.586 1.641a4.483 4.483 0 01-.923 1.785A5.969 5.969 0 006 21c1.282 0 2.47-.492 3.337-1.313.379-.38.708-.796.924-1.22a4.801 4.801 0 001.923-1.22 4.705 4.705 0 00.334-1.785c0-.6-.154-1.194-.432-1.641A8.98 8.98 0 0012 20.25z" className="w-3 h-3" />
-                            {loadingThread ? 'Loading...' : `${message.thread_reply_count || threadReplies.length} ${(message.thread_reply_count || threadReplies.length) === 1 ? 'reply' : 'replies'}`}
+                            {loadingThread ? 'Loading...' : `${displayMessage.thread_reply_count || threadReplies.length} ${(displayMessage.thread_reply_count || threadReplies.length) === 1 ? 'reply' : 'replies'}`}
                         </button>
                         
                         {showThread && threadReplies.length > 0 && (

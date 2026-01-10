@@ -148,7 +148,7 @@ export const getCurrentWeatherByCity = async (cityName) => {
 };
 
 /**
- * Fetch weather forecast for the next few days by coordinates
+ * Fetch weather forecast for the next week by coordinates
  */
 export const getWeatherForecast = async (latitude, longitude) => {
   if (!WEATHER_API_KEY) {
@@ -157,7 +157,7 @@ export const getWeatherForecast = async (latitude, longitude) => {
   }
 
   try {
-    const url = `${WEATHER_API_URL}/forecast.json?key=${WEATHER_API_KEY}&q=${latitude},${longitude}&days=5`;
+    const url = `${WEATHER_API_URL}/forecast.json?key=${WEATHER_API_KEY}&q=${latitude},${longitude}&days=7`;
     console.log('Fetching forecast from:', url.replace(WEATHER_API_KEY, '***'));
     
     const response = await fetch(url);
@@ -184,7 +184,7 @@ export const getWeatherForecast = async (latitude, longitude) => {
       };
     });
 
-    return dailyForecasts.slice(0, 5); // Return next 5 days
+    return dailyForecasts.slice(0, 7); // Return next 7 days
   } catch (error) {
     console.error('Error fetching weather forecast:', error);
     throw error;
@@ -192,7 +192,7 @@ export const getWeatherForecast = async (latitude, longitude) => {
 };
 
 /**
- * Fetch weather forecast for the next few days by city name
+ * Fetch weather forecast for the next week by city name
  */
 export const getWeatherForecastByCity = async (cityName) => {
   if (!WEATHER_API_KEY) {
@@ -201,7 +201,7 @@ export const getWeatherForecastByCity = async (cityName) => {
   }
 
   try {
-    const url = `${WEATHER_API_URL}/forecast.json?key=${WEATHER_API_KEY}&q=${encodeURIComponent(cityName)}&days=5`;
+    const url = `${WEATHER_API_URL}/forecast.json?key=${WEATHER_API_KEY}&q=${encodeURIComponent(cityName)}&days=7`;
     
     // Debug logging
     console.log('Weather Forecast API Request:', {
@@ -243,7 +243,7 @@ export const getWeatherForecastByCity = async (cityName) => {
       };
     });
 
-    return dailyForecasts.slice(0, 5); // Return next 5 days
+    return dailyForecasts.slice(0, 7); // Return next 7 days
   } catch (error) {
     console.error('Error fetching weather forecast by city:', error);
     throw error;
@@ -282,9 +282,14 @@ export const getExtendedWeatherForecast = async (cityName, days = 14) => {
     // Map forecast data to expected format with date as key
     const forecastMap = {};
     data.forecast.forecastday.forEach((day) => {
-      const dateKey = new Date(day.date).toDateString();
+      // Parse date string as local date (not UTC) to avoid timezone issues
+      // day.date is in format "YYYY-MM-DD", parse it as local midnight
+      const [year, month, dayOfMonth] = day.date.split('-').map(Number);
+      const date = new Date(year, month - 1, dayOfMonth); // month is 0-indexed
+      const dateKey = date.toDateString();
+      
       forecastMap[dateKey] = {
-        date: new Date(day.date),
+        date: date,
         temperature: Math.round(day.day.avgtemp_f),
         high: Math.round(day.day.maxtemp_f),
         low: Math.round(day.day.mintemp_f),

@@ -102,13 +102,24 @@ export async function getVirtualContacts(supabase, userId, organizationId, userP
 
     // Group B: Project Collaborators (users on same projects as current user)
     if (userProjectIds.length > 0) {
-      const { data: collaborators, error: collabError } = await supabase
+      // Query project_collaborators and then fetch profiles separately
+      // This avoids the foreign key relationship issue since project_collaborators.user_id
+      // references auth.users(id), not profiles directly
+      const { data: collaboratorsData, error: collabError } = await supabase
         .from('project_collaborators')
-        .select(`
-          user_id,
-          project_id,
-          access_level,
-          profiles!project_collaborators_user_id_fkey (
+        .select('user_id, project_id, access_level')
+        .in('project_id', userProjectIds);
+      
+      if (collabError) {
+        console.error('Error fetching project collaborators:', collabError);
+      } else if (collaboratorsData && collaboratorsData.length > 0) {
+        // Get unique user IDs
+        const userIds = [...new Set(collaboratorsData.map(c => c.user_id))];
+        
+        // Fetch profiles with contacts and roles for these users
+        const { data: profilesData, error: profilesError } = await supabase
+          .from('profiles')
+          .select(`
             id,
             organization_id,
             contacts!fk_profiles_contact (
@@ -128,55 +139,65 @@ export async function getVirtualContacts(supabase, userId, organizationId, userP
               name,
               permissions
             )
-          )
-        `)
-        .in('project_id', userProjectIds);
+          `)
+          .in('id', userIds);
+        
+        if (profilesError) {
+          console.error('Error fetching collaborator profiles:', profilesError);
+        } else if (profilesData) {
+          // Create a map of user_id to profile
+          const profileMap = new Map(profilesData.map(p => [p.id, p]));
+          
+          // Combine collaborators with their profiles
+          const collaborators = collaboratorsData.map(collab => ({
+            ...collab,
+            profiles: profileMap.get(collab.user_id)
+          }));
 
-      if (collabError) {
-        console.error('Error fetching project collaborators:', collabError);
-      } else if (collaborators) {
-        collaborators.forEach(collab => {
-          const profile = collab.profiles;
-          if (profile && profile.contacts) {
-            const existingContact = contactMap.get(profile.id);
-            
-            if (existingContact) {
-              // User already in map (internal member), just add project_contact
-              if (!existingContact.project_contacts) {
-                existingContact.project_contacts = [];
-              }
-              existingContact.project_contacts.push({
-                project_id: collab.project_id,
-                access_level: collab.access_level
-              });
-            } else {
-              // New external/guest contact
-              const contact = {
-                id: profile.contacts.id,
-                name: profile.contacts.name,
-                email: profile.contacts.email,
-                role: profile.contacts.role,
-                phone: profile.contacts.phone,
-                avatar_url: profile.contacts.avatar_url,
-                status: profile.contacts.status || 'Available',
-                type: profile.contacts.type || 'Subcontractor',
-                company: profile.contacts.company,
-                trade: profile.contacts.trade,
-                profile_id: profile.id,
-                organization_id: profile.organization_id,
-                role_id: profile.roles?.id,
-                role_name: profile.roles?.name,
-                is_internal: false,
-                is_guest: !profile.organization_id || profile.organization_id !== organizationId,
-                project_contacts: [{
+          // Process collaborators
+          collaborators.forEach(collab => {
+            const profile = collab.profiles;
+            if (profile && profile.contacts) {
+              const existingContact = contactMap.get(profile.id);
+              
+              if (existingContact) {
+                // User already in map (internal member), just add project_contact
+                if (!existingContact.project_contacts) {
+                  existingContact.project_contacts = [];
+                }
+                existingContact.project_contacts.push({
                   project_id: collab.project_id,
                   access_level: collab.access_level
-                }]
-              };
-              contactMap.set(profile.id, contact);
+                });
+              } else {
+                // New external/guest contact
+                const contact = {
+                  id: profile.contacts.id,
+                  name: profile.contacts.name,
+                  email: profile.contacts.email,
+                  role: profile.contacts.role,
+                  phone: profile.contacts.phone,
+                  avatar_url: profile.contacts.avatar_url,
+                  status: profile.contacts.status || 'Available',
+                  type: profile.contacts.type || 'Subcontractor',
+                  company: profile.contacts.company,
+                  trade: profile.contacts.trade,
+                  profile_id: profile.id,
+                  organization_id: profile.organization_id,
+                  role_id: profile.roles?.id,
+                  role_name: profile.roles?.name,
+                  is_internal: false,
+                  is_guest: !profile.organization_id || profile.organization_id !== organizationId,
+                  project_contacts: [{
+                    project_id: collab.project_id,
+                    access_level: collab.access_level
+                  }]
+                };
+                contactMap.set(profile.id, contact);
+              }
             }
-          }
-        });
+          });
+        }
       }
     }
 

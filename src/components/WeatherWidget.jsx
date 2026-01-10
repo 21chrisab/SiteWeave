@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   getCurrentWeather, 
   getWeatherForecast, 
@@ -18,23 +18,41 @@ function WeatherWidget({ compact = false }) {
   const [showCityInput, setShowCityInput] = useState(false);
   const [cityInput, setCityInput] = useState('');
   const [useGeolocation, setUseGeolocation] = useState(true);
+  const inputRef = useRef(null);
+  const widgetRef = useRef(null);
 
   useEffect(() => {
     // Always try to use geolocation first
     loadWeather();
   }, []);
 
-  // Auto-submit when user stops typing (debounced)
+  // Handle click outside to close input
   useEffect(() => {
-    // Only auto-submit if cityInput has a value, we're showing the input, and not currently loading
-    if (showCityInput && cityInput.trim() && !loading) {
-      const timeoutId = setTimeout(() => {
-        loadWeatherByCity(cityInput.trim());
-      }, 800); // Wait 800ms after user stops typing
+    const handleClickOutside = (event) => {
+      if (widgetRef.current && !widgetRef.current.contains(event.target)) {
+        // Only close if we have a valid city or if input is empty
+        if (cityInput.trim() && !loading) {
+          loadWeatherByCity(cityInput.trim());
+        } else if (!cityInput.trim()) {
+          setShowCityInput(false);
+        }
+      }
+    };
 
-      return () => clearTimeout(timeoutId);
+    if (showCityInput) {
+      document.addEventListener('mousedown', handleClickOutside);
+      // Focus the input when it opens
+      setTimeout(() => {
+        if (inputRef.current) {
+          inputRef.current.focus();
+        }
+      }, 0);
     }
-  }, [cityInput, showCityInput, loading]);
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [showCityInput, cityInput, loading]);
 
   const loadWeather = async () => {
     try {
@@ -85,7 +103,7 @@ function WeatherWidget({ compact = false }) {
     }
   };
 
-  const loadWeatherByCity = async (cityName) => {
+  const loadWeatherByCity = async (cityName, keepInputOpen = false) => {
     if (!cityName || cityName.trim() === '') {
       setError('Please enter a city name');
       return;
@@ -94,7 +112,9 @@ function WeatherWidget({ compact = false }) {
     try {
       setLoading(true);
       setError(null);
-      setShowCityInput(false);
+      if (!keepInputOpen) {
+        setShowCityInput(false);
+      }
 
       // Fetch current weather and forecast by city
       const [currentWeather, weatherForecast] = await Promise.all([
@@ -158,7 +178,7 @@ function WeatherWidget({ compact = false }) {
   // Show city input form if geolocation failed or user wants to enter city
   if (showCityInput && !weather) {
     return (
-      <div className="bg-white p-4 rounded-lg border border-gray-200">
+      <div ref={widgetRef} className="bg-white p-4 rounded-lg border border-gray-200">
         {error && !error.includes('API key') && (
           <div className="text-xs text-gray-500 mb-2">
             {error.includes('location') ? 'Unable to get your location. Please enter a city name.' : error}
@@ -166,14 +186,10 @@ function WeatherWidget({ compact = false }) {
         )}
         <form onSubmit={handleCitySubmit} className="relative">
           <input
+            ref={inputRef}
             type="text"
             value={cityInput}
             onChange={(e) => setCityInput(e.target.value)}
-            onBlur={() => {
-              if (cityInput.trim() && !loading) {
-                loadWeatherByCity(cityInput.trim());
-              }
-            }}
             placeholder="Enter city name (e.g., New York)"
             className="w-full px-3 pr-10 py-1.5 text-xs border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
             autoFocus
@@ -223,7 +239,7 @@ function WeatherWidget({ compact = false }) {
   // Compact mode for header
   if (compact) {
     return (
-      <div className="flex items-center gap-2 px-3 py-2 bg-white rounded-lg border border-gray-200 hover:shadow-sm transition-shadow">
+      <div ref={widgetRef} className="relative flex items-center gap-2 px-3 py-2 bg-white rounded-lg border border-gray-200 hover:shadow-sm transition-shadow">
         {weather.icon && (
           <img
             src={getWeatherIconUrl(weather.icon)}
@@ -270,16 +286,15 @@ function WeatherWidget({ compact = false }) {
         </div>
         {showCityInput && (
           <div className="absolute top-full right-0 mt-2 z-50 bg-white p-3 rounded-lg border border-gray-200 shadow-lg min-w-[250px]">
-            <form onSubmit={(e) => { e.preventDefault(); loadWeatherByCity(cityInput); }} className="relative">
+            <form onSubmit={(e) => { 
+              e.preventDefault(); 
+              loadWeatherByCity(cityInput);
+            }} className="relative">
               <input
+                ref={inputRef}
                 type="text"
                 value={cityInput}
                 onChange={(e) => setCityInput(e.target.value)}
-                onBlur={() => {
-                  if (cityInput.trim() && !loading) {
-                    loadWeatherByCity(cityInput.trim());
-                  }
-                }}
                 placeholder="Enter city name (e.g., New York)"
                 className="w-full px-2 pr-8 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
                 autoFocus
@@ -303,7 +318,7 @@ function WeatherWidget({ compact = false }) {
   }
 
   return (
-    <div className="bg-white p-4 rounded-lg border border-gray-200">
+    <div ref={widgetRef} className="bg-white p-4 rounded-lg border border-gray-200">
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2">
           <button
@@ -338,16 +353,15 @@ function WeatherWidget({ compact = false }) {
 
       {showCityInput && (
         <div className="mb-3 p-2 bg-gray-50 rounded border border-gray-200">
-          <form onSubmit={(e) => { e.preventDefault(); loadWeatherByCity(cityInput); }} className="relative">
+          <form onSubmit={(e) => { 
+            e.preventDefault(); 
+            loadWeatherByCity(cityInput);
+          }} className="relative">
             <input
+              ref={inputRef}
               type="text"
               value={cityInput}
               onChange={(e) => setCityInput(e.target.value)}
-              onBlur={() => {
-                if (cityInput.trim() && !loading) {
-                  loadWeatherByCity(cityInput.trim());
-                }
-              }}
               placeholder="Enter city name (e.g., New York)"
               className="w-full px-2 pr-8 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
             />

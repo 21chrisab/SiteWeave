@@ -475,9 +475,23 @@ function ProjectDetailsView() {
                     <p className="text-gray-500">{project.address}</p>
                 </div>
                 <div className="flex items-center gap-4">
-                    <select
-                        value={project.status || ''}
-                        onChange={async (e) => {
+                    <PermissionGuard 
+                        permission="can_edit_projects"
+                        fallback={
+                            <span className={`px-3 py-1 text-sm font-semibold rounded-full ${
+                                project.status?.toLowerCase() === 'planning' ? 'bg-blue-100 text-blue-800' :
+                                project.status?.toLowerCase() === 'in progress' ? 'bg-green-100 text-green-800' :
+                                project.status?.toLowerCase() === 'on hold' ? 'bg-yellow-100 text-yellow-900' :
+                                project.status?.toLowerCase() === 'completed' ? 'bg-gray-100 text-gray-800' :
+                                'bg-gray-100 text-gray-800'
+                            }`}>
+                                {project.status || 'Planning'}
+                            </span>
+                        }
+                    >
+                        <select
+                            value={project.status || ''}
+                            onChange={async (e) => {
                             const newStatus = e.target.value;
                             try {
                                 const { error } = await supabaseClient
@@ -521,6 +535,7 @@ function ProjectDetailsView() {
                         <option value="On Hold">On Hold</option>
                         <option value="Completed">Completed</option>
                     </select>
+                    </PermissionGuard>
                     {crewMembers.length > 0 && (
                         <div className="flex items-center gap-2">
                             <div className="flex -space-x-2">

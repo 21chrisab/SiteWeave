@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useAppContext, supabaseClient } from '../context/AppContext';
 import { formatDateShort, getStatusColor, normalizeStatusDisplay } from '../utils/projectHelpers';
 import { calculateProjectProgress } from '../utils/projectHelpers';
+import PermissionGuard from './PermissionGuard';
 
 function ProjectBoardView({ projects, onEdit, onDelete, onProjectClick }) {
     const { dispatch } = useAppContext();

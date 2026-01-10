@@ -4,6 +4,7 @@ import { useToast } from '../context/ToastContext';
 import MessageItem from '../components/MessageItem';
 import Icon from '../components/Icon';
 import Avatar from '../components/Avatar';
+import { hasPermission } from '../utils/permissions';
 import { 
     fetchChannelMessages, 
     sendMessage, 
@@ -35,6 +36,7 @@ function MessagesView() {
     const [replyingTo, setReplyingTo] = useState(null);
     const [uploadProgress, setUploadProgress] = useState(0);
     const [isDragging, setIsDragging] = useState(false);
+    const [canSendMessages, setCanSendMessages] = useState(true); // Default to true, check on mount
     const debouncedTypingRef = useRef(null);
     const messagesContainerRef = useRef(null);
     const previousMessageCountRef = useRef(0);
@@ -139,6 +141,29 @@ function MessagesView() {
                 .catch(err => console.error('Error fetching unread counts:', err));
         }
     }, [state.messageChannels, state.user?.id, state.messages.length]);
+
+    // Check permission to send messages
+    useEffect(() => {
+        const checkSendPermission = async () => {
+            if (!state.user?.id || !state.currentOrganization?.id) {
+                setCanSendMessages(false);
+                return;
+            }
+            try {
+                const hasSendPermission = await hasPermission(
+                    supabaseClient,
+                    state.user.id,
+                    'can_send_messages',
+                    state.currentOrganization.id
+                );
+                setCanSendMessages(hasSendPermission);
+            } catch (error) {
+                console.error('Error checking send message permission:', error);
+                setCanSendMessages(false);
+            }
+        };
+        checkSendPermission();
+    }, [state.user?.id, state.currentOrganization?.id]);
 
     // Mark messages as read when viewing
     useEffect(() => {
@@ -586,7 +611,7 @@ function MessagesView() {
                                 />
                                 <button 
                                     onClick={() => fileInputRef.current.click()} 
-                                    disabled={isUploading} 
+                                    disabled={!canSendMessages || isUploading} 
                                     className="text-gray-500 hover:text-blue-600 disabled:opacity-50 transition-colors"
                                     title="Attach file"
                                 >
@@ -594,18 +619,24 @@ function MessagesView() {
                                 </button>
                                 
                                 <div className="flex-1 relative">
-                                    <textarea
-                                        ref={messageInputRef}
-                                        value={newMessage}
-                                        onChange={handleInputChange}
-                                        onKeyDown={handleKeyDown}
-                                        placeholder="Type a message... (use @ to mention team members)"
-                                        data-onboarding="message-input"
-                                        className="w-full p-3 border rounded-lg resize-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                                        rows="1"
-                                        disabled={isUploading}
-                                        style={{ minHeight: '44px', maxHeight: '120px' }}
-                                    />
+                                    {canSendMessages ? (
+                                        <textarea
+                                            ref={messageInputRef}
+                                            value={newMessage}
+                                            onChange={handleInputChange}
+                                            onKeyDown={handleKeyDown}
+                                            placeholder="Type a message... (use @ to mention team members)"
+                                            data-onboarding="message-input"
+                                            className="w-full p-3 border rounded-lg resize-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                            rows="1"
+                                            disabled={isUploading}
+                                            style={{ minHeight: '44px', maxHeight: '120px' }}
+                                        />
+                                    ) : (
+                                        <div className="w-full p-3 border border-gray-300 rounded-lg bg-gray-50 text-gray-500 text-sm">
+                                            You don't have permission to send messages. Contact your administrator to update your role permissions.
+                                        </div>
+                                    )}
                                     
                                     {/* Mentions Dropdown */}
                                     {showMentions && (
@@ -639,7 +670,7 @@ function MessagesView() {
                                 
                                 <button 
                                     onClick={() => handleSendMessage()} 
-                                    disabled={!newMessage.trim() || isUploading} 
+                                    disabled={!canSendMessages || !newMessage.trim() || isUploading} 
                                     className="px-6 py-3 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
                                 >
                                     {isUploading ? 'Sending...' : 'Send'}
