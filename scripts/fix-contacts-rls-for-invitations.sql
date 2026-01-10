@@ -23,17 +23,26 @@ WITH CHECK (
       AND organization_id IS NOT NULL
     ))
     OR
-    -- Allow if there's a pending invitation for this user's email to this organization
+    -- Allow if there's a pending invitation for this organization
+    -- We check if the user's profile email (via contacts) matches an invitation
+    -- OR if the contact being created matches an invitation email
     (organization_id IN (
       SELECT organization_id
       FROM public.invitations
-      WHERE email = (
-        SELECT email
-        FROM auth.users
-        WHERE id = auth.uid()
-      )
-      AND status = 'pending'
+      WHERE status = 'pending'
       AND invitation_token IS NOT NULL
+      AND (
+        -- Check if invitation email matches the contact email being created
+        email = contacts.email
+        OR
+        -- Check if invitation email matches user's contact email
+        email IN (
+          SELECT c.email
+          FROM public.profiles p
+          JOIN public.contacts c ON p.contact_id = c.id
+          WHERE p.id = auth.uid()
+        )
+      )
     ))
     OR
     -- Allow if the contact is being created by the user themselves (created_by_user_id matches)
