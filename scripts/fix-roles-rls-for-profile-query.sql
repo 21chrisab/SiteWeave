@@ -2,8 +2,21 @@
 -- This fixes the 403 error when querying profiles with roles relationship
 -- Users should be able to read their own role even if they don't have organization_id yet
 
--- Drop the existing restrictive SELECT policy
-DROP POLICY IF EXISTS "Users can view roles in their organization" ON public.roles;
+-- Drop ALL existing SELECT policies on roles to start fresh
+DO $$
+DECLARE
+  r RECORD;
+BEGIN
+  FOR r IN (
+    SELECT policyname 
+    FROM pg_policies 
+    WHERE schemaname = 'public' 
+    AND tablename = 'roles'
+    AND cmd = 'SELECT'
+  ) LOOP
+    EXECUTE format('DROP POLICY IF EXISTS %I ON public.roles', r.policyname);
+  END LOOP;
+END $$;
 
 -- Create a new policy that allows:
 -- 1. Users to read roles in their organization (existing behavior)
