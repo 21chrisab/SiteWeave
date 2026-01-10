@@ -4,77 +4,39 @@ import { supabase } from '../supabaseClient';
 import LoadingSpinner from './LoadingSpinner';
 
 /**
- * Invitation Acceptance Landing Page
- * Handles invitation acceptance with support for both new and existing users
- * Redirects to org page after successful acceptance
- * 
- * Features:
- * - Auto-accepts if user is already authenticated with matching email
- * - Creates/links contact record when accepting invitations
- * - Supports new user signup and existing user login
- * - Last updated: 2026-01-09
+ * Invitation Acceptance Page
+ * Handles the "One-Time Setup Link" flow where new users set their password
  */
 function InviteAcceptPage() {
   const { token } = useParams();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [invitation, setInvitation] = useState(null);
-  const [userExists, setUserExists] = useState(false);
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-  const [loginPassword, setLoginPassword] = useState('');
   const [accepting, setAccepting] = useState(false);
   const [error, setError] = useState(null);
   const [message, setMessage] = useState(null);
-  const [checkingAuth, setCheckingAuth] = useState(true);
+
+  // Always render something - never return null
+  console.log('InviteAcceptPage render:', { token, loading, hasInvitation: !!invitation, error, message });
 
   useEffect(() => {
     console.log('InviteAcceptPage mounted, token:', token);
-    
     if (!token) {
       console.error('No token found in URL params');
       setError('Invalid invitation link: missing token');
       setLoading(false);
-      setCheckingAuth(false);
       return;
     }
-    
-    checkAuthAndLoadInvitation();
+    // Small delay to ensure component is mounted
+    const timer = setTimeout(() => {
+      loadInvitation();
+    }, 100);
+    return () => clearTimeout(timer);
   }, [token]);
 
-  // Check if user is already authenticated
-  const checkAuthAndLoadInvitation = async () => {
-    setCheckingAuth(true);
-    try {
-      console.log('Checking authentication...');
-      // Check current session
-      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-      
-      if (sessionError) {
-        console.error('Error getting session:', sessionError);
-      }
-      
-      console.log('Session check result:', { hasSession: !!session, hasUser: !!session?.user });
-      
-      if (session?.user) {
-        // User is authenticated, check if they can auto-accept
-        console.log('User is authenticated, loading invitation for auto-accept');
-        await loadInvitation(true, session.user);
-      } else {
-        // User is not authenticated, load invitation normally
-        console.log('User not authenticated, loading invitation normally');
-        await loadInvitation(false);
-      }
-    } catch (error) {
-      console.error('Error checking auth:', error);
-      setError(`Failed to check authentication: ${error.message}`);
-      setLoading(false);
-    } finally {
-      setCheckingAuth(false);
-    }
-  };
-
-  const loadInvitation = async (isAuthenticated = false, currentUser = null) => {
+  const loadInvitation = async () => {
     if (!token) {
       console.error('loadInvitation called without token');
       setError('Invalid invitation link: missing token');
@@ -91,12 +53,12 @@ function InviteAcceptPage() {
         .select(`
           *,
           organizations (name),
-          roles (name)
+          roles!fk_invitations_role_id (name)
         `)
         .eq('invitation_token', token)
         .eq('status', 'pending')
         .single();
-      
+
       console.log('Invitation query result:', { data: !!data, error: error?.message });
 
       if (error) {
@@ -120,26 +82,6 @@ function InviteAcceptPage() {
       }
 
       setInvitation(data);
-
-      // If user is authenticated and email matches, auto-accept
-      if (isAuthenticated && currentUser) {
-        if (currentUser.email?.toLowerCase() === data.email.toLowerCase()) {
-          // Email matches, auto-accept the invitation
-          await autoAcceptInvitation(data, currentUser);
-          return;
-        } else {
-          // User is authenticated but email doesn't match
-          setError(`This invitation was sent to ${data.email}, but you're signed in as ${currentUser.email}. Please sign out and sign in with the correct email, or ask for a new invitation.`);
-          setLoading(false);
-          return;
-        }
-      }
-
-      // Check if user exists by attempting to find their profile
-      // Note: We can't reliably check if a user exists from the client
-      // Default to new user form. If signup fails with "User already registered",
-      // we'll handle it in the error handler
-      setUserExists(false);
     } catch (error) {
       console.error('Error loading invitation:', error);
       console.error('Error details:', {
@@ -147,27 +89,67 @@ function InviteAcceptPage() {
         stack: error.stack,
         name: error.name
       });
-      
-      // Always set error and stop loading
-      if (!invitation) {
-        setError(`Failed to load invitation: ${error.message || 'An unexpected error occurred. Please try again or contact support.'}`);
-      } else {
-        setError(`An error occurred: ${error.message || 'Please try again or contact support.'}`);
-      }
+      setError(`Failed to load invitation: ${error.message || 'An unexpected error occurred. Please try again or contact support.'}`);
+      setLoading(false);
+    } finally {
       setLoading(false);
     }
   };
 
-  // Auto-accept invitation for already authenticated users
-  const autoAcceptInvitation = async (invitationData, user) => {
+  const handleAcceptInvitation = async (e) => {
+    e.preventDefault();
+    
+    if (password !== confirmPassword) {
+      setError('Passwords do not match');
+      return;
+    }
+
+    if (password.length < 8) {
+      setError('Password must be at least 8 characters');
+      return;
+    }
+
     setAccepting(true);
     try {
-      // Step 1: Ensure contact exists and is linked to profile
+      // Step 1: Sign up the user
+      const { data: authData, error: signUpError } = await supabase.auth.signUp({
+        email: invitation.email,
+        password: password,
+        options: {
+          data: {
+            invitation_token: token,
+            organization_id: invitation.organization_id,
+            role_id: invitation.role_id
+          }
+        }
+      });
+
+      if (signUpError) {
+        // If user already exists, they should sign in instead
+        if (signUpError.message.includes('already registered') || signUpError.message.includes('User already registered')) {
+          setError('An account with this email already exists. Please sign in to claim this invitation.');
+          return;
+        }
+        throw signUpError;
+      }
+
+      if (!authData.user) {
+        throw new Error('User account creation failed');
+      }
+
+      // Note: signUp() may not return a session if email confirmation is required
+      // We'll use edge functions for operations that need to bypass RLS
+      // For operations that need a session, we'll handle them after the user confirms email
+      
+      // Wait a moment for profile to be created by Supabase trigger
+      await new Promise(resolve => setTimeout(resolve, 500));
+
+      // Step 2: Ensure contact exists and is linked to profile
       const { data: profile } = await supabase
         .from('profiles')
         .select('contact_id')
-        .eq('id', user.id)
-        .single();
+        .eq('id', authData.user.id)
+        .maybeSingle();
 
       let contactId = profile?.contact_id;
 
@@ -176,361 +158,121 @@ function InviteAcceptPage() {
         const { data: existingContact } = await supabase
           .from('contacts')
           .select('id')
-          .ilike('email', invitationData.email)
-          .eq('organization_id', invitationData.organization_id)
+          .ilike('email', invitation.email)
+          .eq('organization_id', invitation.organization_id)
           .maybeSingle();
 
         if (existingContact) {
           contactId = existingContact.id;
         } else {
-          // Create new contact
-          const { data: newContact, error: contactError } = await supabase
-            .from('contacts')
-            .insert({
-              name: user.user_metadata?.full_name || invitationData.email.split('@')[0] || 'User',
-              email: invitationData.email,
-              role: 'Team Member',
-              type: 'Team',
-              organization_id: invitationData.organization_id,
-              status: 'Available',
-              created_by_user_id: user.id
-            })
-            .select('id')
-            .single();
+          // Create new contact using edge function to bypass RLS
+          // This is needed because the user might not have a session yet
+          const { data: contactResult, error: contactError } = await supabase.functions.invoke('create-contact-for-invitation', {
+            body: {
+              userId: authData.user.id,
+              email: invitation.email,
+              name: authData.user.user_metadata?.full_name || invitation.email.split('@')[0] || 'User',
+              organizationId: invitation.organization_id
+            }
+          });
 
-          if (contactError) throw contactError;
-          contactId = newContact.id;
+          if (contactError) {
+            console.error('Error calling create-contact-for-invitation:', contactError);
+            // Try to get more details from the error
+            const errorMessage = contactError.message || 'Failed to create contact';
+            const errorDetails = contactError.context || contactError;
+            console.error('Error details:', errorDetails);
+            throw new Error(`${errorMessage}. Check Supabase function logs for details.`);
+          }
+
+          if (!contactResult) {
+            throw new Error('Failed to create contact: No response from server');
+          }
+
+          if (!contactResult.success) {
+            const errorMsg = contactResult.error || 'Unknown error';
+            console.error('Function returned error:', contactResult);
+            throw new Error(`Failed to create contact: ${errorMsg}`);
+          }
+
+          if (!contactResult.contactId) {
+            throw new Error('Failed to create contact: Invalid response from server (no contactId)');
+          }
+
+          contactId = contactResult.contactId;
         }
 
-        // Link contact to profile
-        await supabase
-          .from('profiles')
-          .update({ contact_id: contactId })
-          .eq('id', user.id);
+        // Link contact to profile - use edge function if no session, otherwise direct update
+        const { data: sessionData } = await supabase.auth.getSession();
+        if (sessionData?.session) {
+          await supabase
+            .from('profiles')
+            .update({ contact_id: contactId })
+            .eq('id', authData.user.id);
+        } else {
+          // If no session, the profile update will happen when user signs in
+          // The contact is already created, so we can proceed
+          console.log('No session available, contact created via edge function. Profile will be updated on first login.');
+        }
       }
 
-      // Step 2: Update the invitation status
-      const { error: updateError } = await supabase
-        .from('invitations')
-        .update({
-          status: 'accepted',
-          accepted_at: new Date().toISOString()
-        })
-        .eq('id', invitationData.id);
+      // Step 3: Update the invitation status and profile
+      // Use edge function to handle this if no session
+      const { data: sessionCheck } = await supabase.auth.getSession();
+      if (sessionCheck?.session) {
+        // Update invitation status
+        const { error: updateError } = await supabase
+          .from('invitations')
+          .update({
+            status: 'accepted',
+            accepted_at: new Date().toISOString()
+          })
+          .eq('id', invitation.id);
 
-      if (updateError) throw updateError;
+        if (updateError) throw updateError;
 
-      // Step 3: Update the user's profile with organization and role
-      const { error: profileError } = await supabase
-        .from('profiles')
-        .update({
-          organization_id: invitationData.organization_id,
-          role_id: invitationData.role_id
-        })
-        .eq('id', user.id);
+        // Update the user's profile with organization and role
+        const { error: profileError } = await supabase
+          .from('profiles')
+          .update({
+            organization_id: invitation.organization_id,
+            role_id: invitation.role_id,
+            status: 'active',
+            contact_id: contactId
+          })
+          .eq('id', authData.user.id);
 
-      if (profileError) throw profileError;
+        if (profileError) throw profileError;
+      } else {
+        // No session - user needs to confirm email first
+        // The contact is created, but profile updates will happen on first login
+        // For now, show a message that they need to check their email
+        setMessage('Account created! Please check your email to confirm your account, then sign in to complete the invitation.');
+        setTimeout(() => {
+          navigate('/login');
+        }, 3000);
+        return;
+      }
 
-      // Step 4: Redirect to dashboard/org page
-      setMessage('Invitation accepted! Welcome to the organization.');
-      // Reload the page to refresh app context with new organization
+      setMessage(`Welcome to ${invitation.organizations?.name || 'the organization'}!`);
+      
+      // Step 5: Navigate to the main app
       setTimeout(() => {
-        window.location.href = '/';
+        navigate('/');
       }, 1500);
     } catch (error) {
-      console.error('Error auto-accepting invitation:', error);
-      setError(`Failed to accept invitation: ${error.message}`);
+      console.error('Error accepting invitation:', error);
+      setError(error.message || 'Failed to accept invitation. Please try again.');
     } finally {
       setAccepting(false);
     }
   };
 
-  const handleAcceptInvitation = async (e) => {
-    e.preventDefault();
-    
-    if (userExists) {
-      // Existing user: login to claim invite
-      if (!loginPassword) {
-        setError('Please enter your password');
-        return;
-      }
-
-      setAccepting(true);
-      setError(null);
-      try {
-        // Step 1: Sign in the existing user
-        const { data: authData, error: signInError } = await supabase.auth.signInWithPassword({
-          email: invitation.email,
-          password: loginPassword
-        });
-
-        if (signInError) {
-          if (signInError.message.includes('Invalid login credentials')) {
-            setError('Incorrect password. Please try again.');
-          } else {
-            throw signInError;
-          }
-          return;
-        }
-
-        // Step 2: Ensure contact exists and is linked
-        const { data: profile } = await supabase
-          .from('profiles')
-          .select('contact_id')
-          .eq('id', authData.user.id)
-          .single();
-
-        let contactId = profile?.contact_id;
-
-        if (!contactId) {
-          // Check if contact exists with this email in the organization
-          const { data: existingContact } = await supabase
-            .from('contacts')
-            .select('id')
-            .ilike('email', invitation.email)
-            .eq('organization_id', invitation.organization_id)
-            .maybeSingle();
-
-          if (existingContact) {
-            contactId = existingContact.id;
-          } else {
-            // Create new contact
-            const { data: newContact, error: contactError } = await supabase
-              .from('contacts')
-              .insert({
-                name: authData.user.user_metadata?.full_name || invitation.email.split('@')[0] || 'User',
-                email: invitation.email,
-                role: 'Team Member',
-                type: 'Team',
-                organization_id: invitation.organization_id,
-                status: 'Available',
-                created_by_user_id: authData.user.id
-              })
-              .select('id')
-              .single();
-
-            if (contactError) throw contactError;
-            contactId = newContact.id;
-          }
-
-          // Link contact to profile
-          await supabase
-            .from('profiles')
-            .update({ contact_id: contactId })
-            .eq('id', authData.user.id);
-        }
-
-        // Step 3: Update the invitation status
-        const { error: updateError } = await supabase
-          .from('invitations')
-          .update({
-            status: 'accepted',
-            accepted_at: new Date().toISOString()
-          })
-          .eq('id', invitation.id);
-
-        if (updateError) throw updateError;
-
-        // Step 4: Update the user's profile with organization and role
-        const { error: profileError } = await supabase
-          .from('profiles')
-          .update({
-            organization_id: invitation.organization_id,
-            role_id: invitation.role_id
-          })
-          .eq('id', authData.user.id);
-
-        if (profileError) throw profileError;
-
-        // Redirect to dashboard/org page
-        setMessage('Invitation accepted! Welcome to the organization.');
-        // Reload the page to refresh app context with new organization
-        setTimeout(() => {
-          window.location.href = '/';
-        }, 1500);
-      } catch (error) {
-        console.error('Error accepting invitation:', error);
-        setError(`Failed to accept invitation: ${error.message}`);
-      } finally {
-        setAccepting(false);
-      }
-    } else {
-      // New user: create account with password
-      if (password !== confirmPassword) {
-        setError('Passwords do not match');
-        return;
-      }
-
-      if (password.length < 8) {
-        setError('Password must be at least 8 characters');
-        return;
-      }
-
-      setAccepting(true);
-      setError(null);
-      try {
-        // Step 1: Sign up the user
-        const { data: authData, error: signUpError } = await supabase.auth.signUp({
-          email: invitation.email,
-          password: password,
-          options: {
-            data: {
-              invitation_token: token,
-              organization_id: invitation.organization_id,
-              role_id: invitation.role_id
-            }
-          }
-        });
-
-        if (signUpError) {
-          // If user already exists, switch to login mode
-          if (signUpError.message.includes('already registered') || signUpError.message.includes('User already registered')) {
-            setUserExists(true);
-            setError('An account with this email already exists. Please sign in to claim this invitation.');
-            return;
-          }
-          throw signUpError;
-        }
-
-        // Step 2: Ensure contact exists and is linked
-        // Wait a moment for profile to be created by Supabase trigger
-        await new Promise(resolve => setTimeout(resolve, 500));
-        
-        const { data: profile } = await supabase
-          .from('profiles')
-          .select('contact_id')
-          .eq('id', authData.user.id)
-          .maybeSingle();
-
-        let contactId = profile?.contact_id;
-
-        if (!contactId) {
-          // Check if contact exists with this email in the organization
-          const { data: existingContact } = await supabase
-            .from('contacts')
-            .select('id')
-            .ilike('email', invitation.email)
-            .eq('organization_id', invitation.organization_id)
-            .maybeSingle();
-
-          if (existingContact) {
-            contactId = existingContact.id;
-          } else {
-            // Create new contact
-            const { data: newContact, error: contactError } = await supabase
-              .from('contacts')
-              .insert({
-                name: authData.user.user_metadata?.full_name || invitation.email.split('@')[0] || 'User',
-                email: invitation.email,
-                role: 'Team Member',
-                type: 'Team',
-                organization_id: invitation.organization_id,
-                status: 'Available',
-                created_by_user_id: authData.user.id
-              })
-              .select('id')
-              .single();
-
-            if (contactError) throw contactError;
-            contactId = newContact.id;
-          }
-
-          // Link contact to profile
-          await supabase
-            .from('profiles')
-            .update({ contact_id: contactId })
-            .eq('id', authData.user.id);
-        }
-
-        // Step 3: Update the invitation status
-        const { error: updateError } = await supabase
-          .from('invitations')
-          .update({
-            status: 'accepted',
-            accepted_at: new Date().toISOString()
-          })
-          .eq('id', invitation.id);
-
-        if (updateError) throw updateError;
-
-        // Step 4: Update the user's profile with organization and role
-        const { error: profileError } = await supabase
-          .from('profiles')
-          .update({
-            organization_id: invitation.organization_id,
-            role_id: invitation.role_id
-          })
-          .eq('id', authData.user.id);
-
-        if (profileError) throw profileError;
-
-        // Redirect to dashboard/org page
-        setMessage('Account created and invitation accepted! Welcome to SiteWeave.');
-        // Reload the page to refresh app context with new organization
-        setTimeout(() => {
-          window.location.href = '/';
-        }, 1500);
-      } catch (error) {
-        console.error('Error accepting invitation:', error);
-        setError(`Failed to accept invitation: ${error.message}`);
-      } finally {
-        setAccepting(false);
-      }
-    }
-  };
-
-  // Early return if no token
-  if (!token) {
-    console.error('InviteAcceptPage: No token provided in URL');
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4 sm:p-6">
-        <div className="max-w-md w-full bg-white shadow-lg rounded-lg p-6 sm:p-8 text-center">
-          <div className="w-12 h-12 sm:w-16 sm:h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
-            <svg className="w-6 h-6 sm:w-8 sm:h-8 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </div>
-          <h2 className="text-xl sm:text-2xl font-bold text-gray-900 mb-2">Invalid Invitation Link</h2>
-          <p className="text-sm sm:text-base text-gray-600 mb-6">The invitation link is missing a token. Please check the link and try again.</p>
-          <button
-            onClick={() => navigate('/login')}
-            className="px-4 sm:px-6 py-2 text-sm sm:text-base bg-gray-900 text-white rounded-lg hover:bg-gray-800 transition-colors"
-          >
-            Go to Login
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  if (checkingAuth || loading) {
-    console.log('InviteAcceptPage: Loading state', { checkingAuth, loading, hasToken: !!token });
+  if (loading) {
+    console.log('InviteAcceptPage: Loading state', { loading, hasToken: !!token });
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <LoadingSpinner size="lg" text="Loading invitation..." />
-      </div>
-    );
-  }
-
-  if (error && !invitation) {
-    console.error('InviteAcceptPage: Error state without invitation', { error, token });
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4 sm:p-6">
-        <div className="max-w-md w-full bg-white shadow-lg rounded-lg p-6 sm:p-8 text-center">
-          <div className="w-12 h-12 sm:w-16 sm:h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
-            <svg className="w-6 h-6 sm:w-8 sm:h-8 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </div>
-          <h2 className="text-xl sm:text-2xl font-bold text-gray-900 mb-2">Invalid Invitation</h2>
-          <p className="text-sm sm:text-base text-gray-600 mb-6">{error}</p>
-          <button
-            onClick={() => navigate('/login')}
-            className="px-4 sm:px-6 py-2 text-sm sm:text-base bg-gray-900 text-white rounded-lg hover:bg-gray-800 transition-colors"
-          >
-            Go to Login
-          </button>
-        </div>
       </div>
     );
   }
@@ -552,34 +294,37 @@ function InviteAcceptPage() {
     );
   }
 
-  // Don't render form if invitation is not loaded and we're not in an error state
-  // This should not happen if error handling is working correctly, but add as safety
-  if (!invitation && !error && !loading && !checkingAuth) {
-    console.warn('InviteAcceptPage: No invitation, no error, not loading - unexpected state', { token });
+  if (error && !invitation) {
+    console.error('InviteAcceptPage: Error state without invitation', { error, token });
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <div className="max-w-md w-full bg-white shadow-lg rounded-lg p-6 sm:p-8 text-center">
-          <div className="w-12 h-12 sm:w-16 sm:h-16 bg-yellow-100 rounded-full flex items-center justify-center mx-auto mb-4">
-            <svg className="w-6 h-6 sm:w-8 sm:h-8 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+      <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
+        <div className="max-w-md w-full bg-white shadow-lg rounded-lg p-8 text-center">
+          <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+            <svg className="w-8 h-8 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
             </svg>
           </div>
-          <h2 className="text-xl sm:text-2xl font-bold text-gray-900 mb-2">Loading Invitation</h2>
-          <p className="text-sm sm:text-base text-gray-600 mb-6">Please wait while we load your invitation...</p>
-          <LoadingSpinner size="md" text="" />
+          <h2 className="text-2xl font-bold text-gray-900 mb-2">Invalid Invitation</h2>
+          <p className="text-gray-600 mb-6">{error}</p>
+          <button
+            onClick={() => navigate('/login')}
+            className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+          >
+            Go to Login
+          </button>
         </div>
       </div>
     );
   }
 
   // Final fallback - if we still don't have an invitation and no error is set, show error
-  if (!invitation) {
-    console.error('InviteAcceptPage: No invitation loaded and no error state', { token, error, loading, checkingAuth });
+  if (!invitation && !loading) {
+    console.error('InviteAcceptPage: No invitation loaded and no error state', { token, error, loading });
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4 sm:p-6">
+      <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
         <div className="max-w-md w-full bg-white shadow-lg rounded-lg p-6 sm:p-8 text-center">
-          <div className="w-12 h-12 sm:w-16 sm:h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
-            <svg className="w-6 h-6 sm:w-8 sm:h-8 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+            <svg className="w-8 h-8 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
             </svg>
           </div>
@@ -597,8 +342,8 @@ function InviteAcceptPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4 sm:p-6">
-      <div className="max-w-md w-full bg-white shadow-lg rounded-lg p-6 sm:p-8">
+    <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
+      <div className="max-w-md w-full bg-white shadow-lg rounded-lg p-8">
         <div className="text-center mb-6">
           <h2 className="text-xl sm:text-2xl font-bold text-gray-900 mb-2">Welcome to SiteWeave</h2>
           <p className="text-sm sm:text-base text-gray-600">
@@ -615,14 +360,6 @@ function InviteAcceptPage() {
           </div>
         )}
 
-        {!userExists && (
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 sm:p-4 mb-6">
-            <p className="text-xs sm:text-sm text-blue-800 leading-relaxed">
-              <strong>Create your account:</strong> Set a password to get started. You'll be automatically added to the organization.
-            </p>
-          </div>
-        )}
-
         <form onSubmit={handleAcceptInvitation} className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -636,69 +373,46 @@ function InviteAcceptPage() {
             />
           </div>
 
-          {userExists ? (
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Password *
-              </label>
-              <input
-                type="password"
-                value={loginPassword}
-                onChange={(e) => setLoginPassword(e.target.value)}
-                placeholder="Enter your password"
-                className="w-full px-3 py-2 text-sm sm:text-base border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-900"
-                required
-                disabled={accepting}
-              />
-              <p className="mt-1 text-xs text-gray-500">
-                You already have an account. Sign in to claim this invitation.
-              </p>
-            </div>
-          ) : (
-            <>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Create Password *
-                </label>
-                <input
-                  type="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="At least 8 characters"
-                  className="w-full px-3 py-2 text-sm sm:text-base border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-900"
-                  required
-                  minLength={8}
-                  disabled={accepting}
-                />
-              </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Create Password *
+            </label>
+            <input
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="At least 8 characters"
+              className="w-full px-3 py-2 text-sm sm:text-base border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-900"
+              required
+              minLength={8}
+              disabled={accepting}
+              autoComplete="new-password"
+            />
+          </div>
 
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Confirm Password *
-                </label>
-                <input
-                  type="password"
-                  value={confirmPassword}
-                  onChange={(e) => setConfirmPassword(e.target.value)}
-                  placeholder="Re-enter your password"
-                  className="w-full px-3 py-2 text-sm sm:text-base border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-900"
-                  required
-                  minLength={8}
-                  disabled={accepting}
-                />
-              </div>
-            </>
-          )}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Confirm Password *
+            </label>
+            <input
+              type="password"
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
+              placeholder="Re-enter your password"
+              className="w-full px-3 py-2 text-sm sm:text-base border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-900"
+              required
+              minLength={8}
+              disabled={accepting}
+              autoComplete="new-password"
+            />
+          </div>
 
           <button
             type="submit"
             className="w-full px-4 py-3 text-sm sm:text-base bg-gray-900 text-white rounded-lg hover:bg-gray-800 font-medium disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             disabled={accepting}
           >
-            {accepting 
-              ? (userExists ? 'Claiming invitation...' : 'Setting up your account...') 
-              : (userExists ? 'Claim Invitation' : 'Accept Invitation')
-            }
+            {accepting ? 'Setting up your account...' : 'Accept Invitation'}
           </button>
         </form>
       </div>
