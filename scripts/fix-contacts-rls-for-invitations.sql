@@ -5,10 +5,10 @@
 DROP POLICY IF EXISTS "Authenticated users can create contacts" ON public.contacts;
 
 -- Create a new policy that allows:
--- 1. Authenticated users to create contacts (existing behavior)
--- 2. Users to create contacts in organizations they belong to
--- 3. Users to create contacts in organizations they're being invited to (via pending invitation)
-CREATE POLICY "Authenticated users can create contacts in their organization or for invitations"
+-- 1. Authenticated users to create contacts in organizations they belong to
+-- 2. Authenticated users to create contacts for themselves (covers invitation acceptance)
+-- Note: We avoid checking invitations table to prevent recursion issues
+CREATE POLICY "Authenticated users can create contacts in their organization or for themselves"
 ON public.contacts
 FOR INSERT
 WITH CHECK (
@@ -25,18 +25,8 @@ WITH CHECK (
     OR
     -- Allow if the contact is being created by the user themselves
     -- This covers invitation acceptance where user creates their own contact
+    -- This is safe because the user is authenticated and creating their own record
     (created_by_user_id = auth.uid())
-    OR
-    -- Allow if there's a pending invitation for this contact's email to this organization
-    -- In WITH CHECK, reference columns directly (not table.column)
-    EXISTS (
-      SELECT 1
-      FROM public.invitations
-      WHERE invitations.organization_id = organization_id
-      AND LOWER(invitations.email) = LOWER(email)
-      AND invitations.status = 'pending'
-      AND invitations.invitation_token IS NOT NULL
-    )
   )
 );
 
