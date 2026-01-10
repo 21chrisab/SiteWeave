@@ -18,9 +18,9 @@ BEGIN
 END $$;
 
 -- Create a new policy that allows:
--- 1. Authenticated users to create contacts in organizations they belong to
--- 2. Authenticated users to create contacts for themselves (covers invitation acceptance)
--- Note: We avoid checking profiles table in the first condition to prevent potential recursion
+-- 1. Authenticated users to create contacts for themselves (covers invitation acceptance)
+-- 2. Authenticated users to create contacts in organizations they belong to
+-- Note: We check created_by_user_id first to avoid potential recursion from profiles queries
 CREATE POLICY "Authenticated users can create contacts in their organization or for themselves"
 ON public.contacts
 FOR INSERT
@@ -28,13 +28,13 @@ WITH CHECK (
   -- User must be authenticated
   auth.uid() IS NOT NULL
   AND (
-    -- Allow if the contact is being created by the user themselves
+    -- PRIMARY: Allow if the contact is being created by the user themselves
     -- This covers invitation acceptance where user creates their own contact
-    -- This is the primary path for new users joining via invitation
+    -- This is safe because the user is authenticated and creating their own record
     (created_by_user_id = auth.uid())
     OR
-    -- Allow if user belongs to the organization
-    -- Use a simple check that avoids potential recursion
+    -- SECONDARY: Allow if user belongs to the organization
+    -- Only check this if created_by_user_id doesn't match (for existing users)
     (organization_id IN (
       SELECT organization_id
       FROM public.profiles
