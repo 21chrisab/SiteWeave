@@ -2,9 +2,24 @@
 -- This ensures authenticated users can read their organizations
 -- while still allowing public access for invitation pages
 
--- Step 1: Drop any existing restrictive policies that might be blocking access
-DROP POLICY IF EXISTS "Public can read organization names for invitations" ON public.organizations;
-DROP POLICY IF EXISTS "Authenticated users can read their organizations" ON public.organizations;
+-- Step 0: Ensure RLS is enabled on organizations table
+ALTER TABLE public.organizations ENABLE ROW LEVEL SECURITY;
+
+-- Step 1: Drop ALL existing policies that might be blocking access
+-- This ensures we start fresh
+DO $$
+DECLARE
+  r RECORD;
+BEGIN
+  FOR r IN (
+    SELECT policyname 
+    FROM pg_policies 
+    WHERE schemaname = 'public' 
+    AND tablename = 'organizations'
+  ) LOOP
+    EXECUTE format('DROP POLICY IF EXISTS %I ON public.organizations', r.policyname);
+  END LOOP;
+END $$;
 
 -- Step 2: Create a comprehensive policy that allows:
 -- - Authenticated users to read organizations they belong to
