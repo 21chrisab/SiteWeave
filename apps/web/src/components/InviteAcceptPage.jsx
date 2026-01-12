@@ -48,16 +48,53 @@ function InviteAcceptPage() {
     setLoading(true);
     setError(null);
     try {
-      const { data, error } = await supabase
+      // First, get the invitation without joins to avoid RLS issues
+      const { data: invitationData, error: invitationError } = await supabase
         .from('invitations')
-        .select(`
-          *,
-          organizations (name),
-          roles!fk_invitations_role_id (name)
-        `)
+        .select('*')
         .eq('invitation_token', token)
         .eq('status', 'pending')
         .single();
+
+      if (invitationError) {
+        throw invitationError;
+      }
+
+      if (!invitationData) {
+        setError('Invalid or expired invitation link. Please ask your admin for a new one.');
+        setLoading(false);
+        return;
+      }
+
+      // Then fetch organization and role names separately if needed
+      let organizationName = null;
+      let roleName = null;
+
+      if (invitationData.organization_id) {
+        const { data: orgData } = await supabase
+          .from('organizations')
+          .select('name')
+          .eq('id', invitationData.organization_id)
+          .single();
+        organizationName = orgData?.name || null;
+      }
+
+      if (invitationData.role_id) {
+        const { data: roleData } = await supabase
+          .from('roles')
+          .select('name')
+          .eq('id', invitationData.role_id)
+          .single();
+        roleName = roleData?.name || null;
+      }
+
+      // Combine the data
+      const data = {
+        ...invitationData,
+        organizations: organizationName ? { name: organizationName } : null,
+        roles: roleName ? { name: roleName } : null
+      };
+      const error = null;
 
       console.log('Invitation query result:', { data: !!data, error: error?.message });
 
@@ -230,18 +267,92 @@ function InviteAcceptPage() {
         }
       }
 
-      // Step 3: Try to sign in the user to establish a session
-      // This ensures we have a session for subsequent operations
+      // Step 3: Update profile with organization and mark invitation as accepted
+      // Do this BEFORE sign-in attempt so organization is assigned even if sign-in fails
       let session = authData.session;
+      
+      // Try to get session if available
       if (!session) {
-        // Try to sign in with the password they just created
+        const { data: sessionData } = await supabase.auth.getSession();
+        session = sessionData?.session;
+      }
+
+      // Update profile with organization (if we have a session, otherwise use edge function)
+      if (session) {
+        const { error: profileError } = await supabase
+          .from('profiles')
+          .update({
+            organization_id: invitation.organization_id,
+            role_id: invitation.role_id,
+            contact_id: contactId
+          })
+          .eq('id', authData.user.id);
+
+        if (profileError) {
+          console.error('Error updating profile with organization:', profileError);
+          // Don't throw yet - we'll try again after sign-in
+        }
+      } else {
+        // No session - use edge function to update profile
+        try {
+          const { data: updateResult, error: updateError } = await supabase.functions.invoke('update-profile-organization', {
+            body: {
+              userId: authData.user.id,
+              organizationId: invitation.organization_id,
+              roleId: invitation.role_id,
+              contactId: contactId
+            }
+          });
+
+          if (updateError || !updateResult?.success) {
+            console.error('Error updating profile via edge function:', updateError || updateResult);
+            // Continue - we'll try again after sign-in
+          } else {
+            console.log('Profile updated via edge function successfully');
+          }
+        } catch (err) {
+          console.warn('Edge function not available, will update after sign-in:', err);
+          // Continue - we'll update after sign-in succeeds
+        }
+      }
+
+      // Mark invitation as accepted (this should work even without session via RLS)
+      const { error: updateError } = await supabase
+        .from('invitations')
+        .update({
+          status: 'accepted',
+          accepted_at: new Date().toISOString()
+        })
+        .eq('id', invitation.id);
+
+      if (updateError) {
+        console.error('Error updating invitation status:', updateError);
+        // Continue - we'll try again if sign-in succeeds
+      }
+
+      // Step 4: Try to sign in the user to establish a session
+      if (!session) {
         const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
           email: invitation.email,
           password: password
         });
 
         if (signInError) {
-          // If sign-in fails, user might need email confirmation
+          // Organization assignment might have failed if no session
+          // Store invitation data in user metadata so we can complete it on login
+          try {
+            await supabase.auth.updateUser({
+              data: {
+                pending_invitation_id: invitation.id,
+                pending_organization_id: invitation.organization_id,
+                pending_role_id: invitation.role_id,
+                pending_contact_id: contactId
+              }
+            });
+          } catch (metaError) {
+            console.warn('Could not store pending invitation data:', metaError);
+          }
+
           console.warn('Failed to sign in after signup:', signInError);
           setMessage('Account created! Please check your email to confirm your account, then sign in to complete the invitation.');
           setTimeout(() => {
@@ -253,10 +364,24 @@ function InviteAcceptPage() {
         session = signInData?.session;
       }
 
-      // Step 4: Update the invitation status and profile (now that we have a session)
+      // Step 5: Ensure profile is updated with organization (now that we have a session)
       if (session) {
-        // Update invitation status
-        const { error: updateError } = await supabase
+        const { error: profileError } = await supabase
+          .from('profiles')
+          .update({
+            organization_id: invitation.organization_id,
+            role_id: invitation.role_id,
+            contact_id: contactId
+          })
+          .eq('id', authData.user.id);
+
+        if (profileError) {
+          console.error('Error updating profile after sign-in:', profileError);
+          throw new Error(`Failed to assign organization: ${profileError.message}`);
+        }
+
+        // Ensure invitation is marked as accepted
+        const { error: finalUpdateError } = await supabase
           .from('invitations')
           .update({
             status: 'accepted',
@@ -264,22 +389,11 @@ function InviteAcceptPage() {
           })
           .eq('id', invitation.id);
 
-        if (updateError) throw updateError;
-
-        // Update the user's profile with organization and role
-        const { error: profileError } = await supabase
-          .from('profiles')
-          .update({
-            organization_id: invitation.organization_id,
-            role_id: invitation.role_id,
-            status: 'active',
-            contact_id: contactId
-          })
-          .eq('id', authData.user.id);
-
-        if (profileError) throw profileError;
+        if (finalUpdateError) {
+          console.error('Error updating invitation status:', finalUpdateError);
+          // Don't throw - organization assignment succeeded
+        }
       } else {
-        // No session - this shouldn't happen if auto-confirm worked
         throw new Error('Failed to establish session. Please try signing in manually.');
       }
 

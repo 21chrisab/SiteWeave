@@ -1,7 +1,7 @@
 {
-  "name": "siteweave-web",
+  "name": "siteweave",
   "private": true,
-  "version": "0.1.0",
+  "version": "1.0.36",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -10,7 +10,14 @@
   },
   "dependencies": {
     "@siteweave/core-logic": "file:../../packages/core-logic",
+    "@fullcalendar/core": "^6.1.20",
+    "@fullcalendar/daygrid": "^6.1.20",
+    "@fullcalendar/interaction": "^6.1.20",
+    "@fullcalendar/react": "^6.1.20",
+    "@fullcalendar/timegrid": "^6.1.20",
     "@supabase/supabase-js": "^2.45.0",
+    "jspdf": "^4.0.0",
+    "qrcode": "^1.5.4",
     "react": "^19.2.3",
     "react-dom": "^19.2.3",
     "react-router-dom": "^6.26.2"
@@ -19,7 +26,8 @@
     "@vitejs/plugin-react": "^4.3.1",
     "autoprefixer": "^10.4.20",
     "postcss": "^8.4.47",
-    "tailwindcss": "^3.4.13",
+    "tailwindcss": "^3.4.19",
+    "terser": "^5.44.1",
     "vite": "^5.4.6"
   }
 }

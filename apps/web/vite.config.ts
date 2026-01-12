@@ -19,8 +19,14 @@ export default defineConfig({
     emptyOutDir: true,
     commonjsOptions: {
       transformMixedEsModules: true
+    },
+    rollupOptions: {
+      output: {
+        manualChunks: undefined
+      }
     }
   },
+  publicDir: 'public',
   // Vite automatically loads .env files from the project root
   // Environment variables prefixed with VITE_ are automatically exposed
 })

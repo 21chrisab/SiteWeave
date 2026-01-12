@@ -1,5 +1,5 @@
-/assets/*  200
-/*.js      200
-/*.css     200
+# SPA routing: redirect all non-file routes to index.html
+# Netlify automatically serves static files (in /assets/, etc.) if they exist
+# This redirect only applies when the requested path doesn't match a file
 /*    /index.html    200
 

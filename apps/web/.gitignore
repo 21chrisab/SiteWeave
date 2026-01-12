@@ -7,11 +7,30 @@ node_modules/
 dist/
 dist-ssr/
 *.local
+build/
+release/
+# Installers and large bundles
+*.exe
+*.msi
+*.blockmap
+*.dmg
+*.pkg
+*.aab
+*.apk
+*.ipa
+*.appx
+*.appxbundle
+*.msix
+*.msixbundle
+*.appinstaller
+*.xcarchive
+*.crash
 
 # Environment variables
 .env
 .env.local
 .env.*.local
+.env.backup
 .env.production
 .env.development
 

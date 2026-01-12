@@ -1,0 +1,182 @@
+import React, { useState, useEffect } from 'react';
+import LoadingSpinner from './LoadingSpinner';
+
+function AddContactModal({ onClose, onSave, contact = null, isLoading = false }) {
+    const isEditMode = !!contact;
+    
+    const [name, setName] = useState(contact?.name || '');
+    const [role, setRole] = useState(contact?.role || '');
+    const [type, setType] = useState(contact?.type || 'Team');
+    const [company, setCompany] = useState(contact?.company || '');
+    const [trade, setTrade] = useState(contact?.trade || '');
+    const [email, setEmail] = useState(contact?.email || '');
+    const [phone, setPhone] = useState(contact?.phone || '');
+
+    useEffect(() => {
+        if (contact) {
+            setName(contact.name || '');
+            setRole(contact.role || '');
+            setType(contact.type || 'Team');
+            setCompany(contact.company || '');
+            setTrade(contact.trade || '');
+            setEmail(contact.email || '');
+            setPhone(contact.phone || '');
+        }
+    }, [contact]);
+
+    const handleSubmit = (e) => {
+        e.preventDefault();
+        const contactData = {
+            name,
+            role,
+            type,
+            company: type === 'Subcontractor' ? company : 'SiteWeave',
+            trade: type === 'Subcontractor' ? trade : 'Internal',
+            avatar_url: null, // Will use Avatar component with initials
+            email,
+            phone,
+            status: 'Available'
+        };
+        
+        if (isEditMode) {
+            contactData.id = contact.id;
+        }
+        
+        onSave(contactData);
+    };
+
+    return (
+        <div className="fixed inset-0 backdrop-blur-[2px] bg-white/20 flex items-center justify-center z-50">
+            <div className="bg-white rounded-lg shadow-2xl p-8 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+                <h2 className="text-2xl font-bold mb-6">
+                    {isEditMode ? 'Edit Contact' : 'Add New Contact'}
+                </h2>
+                
+                <form onSubmit={handleSubmit} className="space-y-6">
+                    {/* Basic Information */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                            <label className="block text-sm font-semibold mb-1">Name *</label>
+                            <input 
+                                type="text" 
+                                value={name} 
+                                onChange={e => setName(e.target.value)} 
+                                className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent" 
+                                required 
+                            />
+                        </div>
+                        
+                        <div>
+                            <label className="block text-sm font-semibold mb-1">Role *</label>
+                            <input 
+                                type="text" 
+                                value={role} 
+                                onChange={e => setRole(e.target.value)} 
+                                className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent" 
+                                required 
+                            />
+                        </div>
+                    </div>
+
+                    {/* Contact Type */}
+                    <div>
+                        <label className="block text-sm font-semibold mb-1">Contact Type</label>
+                        <select 
+                            value={type} 
+                            onChange={e => setType(e.target.value)} 
+                            className="w-full p-3 border rounded-lg bg-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        >
+                            <option value="Team">Team Member</option>
+                            <option value="Subcontractor">Subcontractor</option>
+                        </select>
+                    </div>
+
+                    {/* Company and Trade (for Subcontractors) */}
+                    {type === 'Subcontractor' && (
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <label className="block text-sm font-semibold mb-1">Company</label>
+                                <input 
+                                    type="text" 
+                                    value={company} 
+                                    onChange={e => setCompany(e.target.value)} 
+                                    className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent" 
+                                />
+                            </div>
+                            
+                            <div>
+                                <label className="block text-sm font-semibold mb-1">Trade</label>
+                                <input 
+                                    type="text" 
+                                    value={trade} 
+                                    onChange={e => setTrade(e.target.value)} 
+                                    className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent" 
+                                />
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Contact Information */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                            <label className="block text-sm font-semibold mb-1">Email</label>
+                            <input 
+                                type="email" 
+                                value={email} 
+                                onChange={e => setEmail(e.target.value)} 
+                                className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent" 
+                            />
+                        </div>
+                        
+                        <div>
+                            <label className="block text-sm font-semibold mb-1">Phone</label>
+                            <input 
+                                type="tel" 
+                                value={phone} 
+                                onChange={e => {
+                                    const value = e.target.value.replace(/\D/g, '');
+                                    if (value.length <= 10) {
+                                        const formatted = value.replace(/(\d{3})(\d{3})(\d{4})/, '($1) $2-$3');
+                                        setPhone(value.length > 6 ? formatted : value.length > 3 ? value.replace(/(\d{3})(\d{0,3})/, '($1) $2') : value);
+                                    }
+                                }}
+                                placeholder="(555) 123-4567"
+                                maxLength="14"
+                                className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent" 
+                            />
+                        </div>
+                    </div>
+
+
+                    {/* Action Buttons */}
+                    <div className="flex justify-end gap-4 pt-4 border-t">
+                        <button 
+                            type="button" 
+                            onClick={onClose} 
+                            disabled={isLoading} 
+                            className="px-6 py-3 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 disabled:opacity-50 transition-colors"
+                        >
+                            Cancel
+                        </button>
+                        <button 
+                            type="submit" 
+                            disabled={isLoading} 
+                            className="px-6 py-3 text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2 transition-colors"
+                        >
+                            {isLoading ? (
+                                <>
+                                    <LoadingSpinner size="sm" text="" />
+                                    {isEditMode ? 'Updating...' : 'Adding...'}
+                                </>
+                            ) : (
+                                isEditMode ? 'Update Contact' : 'Add Contact'
+                            )}
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    );
+}
+
+export default AddContactModal;
