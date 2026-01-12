@@ -69,7 +69,26 @@ serve(async (req) => {
     
     console.log('Processing entries for project:', projectId)
 
+    // Get the project's organization_id (required for project_contacts)
+    const { data: projectData, error: projectError } = await supabaseAdmin
+      .from('projects')
+      .select('organization_id')
+      .eq('id', projectId)
+      .single()
+
+    if (projectError || !projectData?.organization_id) {
+      console.error('Error fetching project or missing organization_id:', projectError)
+      return new Response(
+        JSON.stringify({ error: 'Project not found or missing organization', details: projectError }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
+    }
+
+    const organizationId = projectData.organization_id
+    console.log('Project organization_id:', organizationId)
+
     const results: Array<{ email: string; action: 'added' | 'invited' | 'skipped'; reason?: string }> = []
+    const emailsToSend: Array<{ from: string; to: string[]; subject: string; html: string }> = []
 
     for (const entry of entries as Entry[]) {
       const email = normalizeEmail(entry.email || '')
@@ -88,21 +107,59 @@ serve(async (req) => {
         console.log('Processing contact for email:', email)
 
         // Ensure a contact exists for this email
-        console.log('Checking for existing contact with email:', email)
-        const { data: existingContact, error: contactLookupError } = await supabaseAdmin
+        // First, look for a contact in THIS organization
+        console.log('Checking for existing contact with email in organization:', email, organizationId)
+        let contactId: string | undefined = undefined
+        
+        // Try to find contact in the same organization first
+        const { data: orgContact, error: orgContactError } = await supabaseAdmin
           .from('contacts')
           .select('id')
           .ilike('email', email)
+          .eq('organization_id', organizationId)
           .maybeSingle()
 
-        if (contactLookupError) {
-          console.error('Error looking up contact:', contactLookupError)
-          results.push({ email, action: 'skipped', reason: 'contact_lookup_failed' })
-          continue
+        if (orgContactError) {
+          console.warn('Error looking up contact in org:', orgContactError)
+        } else if (orgContact) {
+          contactId = orgContact.id
+          console.log('Found contact in organization:', contactId)
         }
 
-        let contactId = existingContact?.id as string | undefined
-        console.log('Existing contact ID:', contactId)
+        // If not found in org, look for any contact with this email
+        if (!contactId) {
+          const { data: anyContacts, error: anyContactError } = await supabaseAdmin
+            .from('contacts')
+            .select('id, organization_id')
+            .ilike('email', email)
+            .limit(1)
+
+          if (anyContactError) {
+            console.error('Error looking up any contact:', anyContactError)
+            results.push({ email, action: 'skipped', reason: `contact_lookup_failed: ${anyContactError.message}` })
+            continue
+          }
+          
+          if (anyContacts && anyContacts.length > 0) {
+            contactId = anyContacts[0].id
+            console.log('Found contact (different org or null org):', contactId, 'org:', anyContacts[0].organization_id)
+            
+            // Update contact's organization_id if it's null
+            if (!anyContacts[0].organization_id) {
+              console.log('Updating contact organization_id to:', organizationId)
+              const { error: updateOrgError } = await supabaseAdmin
+                .from('contacts')
+                .update({ organization_id: organizationId })
+                .eq('id', contactId)
+              
+              if (updateOrgError) {
+                console.warn('Failed to update contact org:', updateOrgError)
+              }
+            }
+          }
+        }
+        
+        console.log('Final contact ID after lookup:', contactId)
 
         if (!contactId) {
           console.log('Creating new contact for:', email)
@@ -112,7 +169,8 @@ serve(async (req) => {
             type: mapContactType(role),
             role: role,
             status: 'Available',
-            created_by_user_id: addedByUserId || null
+            created_by_user_id: addedByUserId || null,
+            organization_id: organizationId
           }
           console.log('Contact data to insert:', contactData)
           
@@ -142,10 +200,10 @@ serve(async (req) => {
         }
 
         // Link to project via project_contacts (idempotent)
-        console.log('Linking contact to project:', { projectId, contactId, role })
+        console.log('Linking contact to project:', { projectId, contactId, role, organizationId })
         const { error: pcError } = await supabaseAdmin
           .from('project_contacts')
-          .insert({ project_id: projectId, contact_id: contactId, role })
+          .insert({ project_id: projectId, contact_id: contactId, role, organization_id: organizationId })
 
         if (pcError) {
           console.error('Error linking to project:', pcError)
@@ -170,81 +228,248 @@ serve(async (req) => {
         // Successfully added contact to project
         console.log('Successfully added contact to project')
         
-        // Send notification email
-        let emailSent = false
+        // Fetch project and organization details for email
+        const { data: project } = await supabaseAdmin
+          .from('projects')
+          .select('name, organization_id')
+          .eq('id', projectId)
+          .single()
+
+        const projectName = project?.name || 'a project'
         
+        // Get organization name
+        let organizationName = 'an organization'
+        if (project?.organization_id) {
+          const { data: organization } = await supabaseAdmin
+            .from('organizations')
+            .select('name')
+            .eq('id', project.organization_id)
+            .maybeSingle()
+          
+          if (organization?.name) {
+            organizationName = organization.name
+          }
+        }
+        
+        // Get inviter name
+        let inviterName = 'A team member'
+        if (addedByUserId) {
+          const { data: inviterProfile } = await supabaseAdmin
+            .from('profiles')
+            .select(`
+              contacts!fk_profiles_contact (
+                name
+              )
+            `)
+            .eq('id', addedByUserId)
+            .maybeSingle()
+          
+          inviterName = inviterProfile?.contacts?.name || inviterName
+        }
+
+        // Get client name (optional) - check if project has a client contact
+        let clientName: string | null = null
+        const { data: clientContacts } = await supabaseAdmin
+          .from('project_contacts')
+          .select(`
+            contacts!fk_project_contacts_contact (
+              name,
+              type
+            )
+          `)
+          .eq('project_id', projectId)
+          .limit(10)
+        
+        if (clientContacts && clientContacts.length > 0) {
+          const client = clientContacts.find((pc: any) => pc.contacts?.type === 'Client')
+          if (client?.contacts?.name) {
+            clientName = client.contacts.name
+          }
+        }
+
+        // Construct dashboard URL
+        const baseUrl = (Deno.env.get('APP_URL') || 
+                         Deno.env.get('VITE_APP_URL') || 
+                         'https://app.siteweave.org').replace(/\/+$/, '')
+        const dashboardUrl = `${baseUrl}/projects/${projectId}`
+        
+        // Prepare notification email (will be sent in batch later)
         if (RESEND_API_KEY) {
           try {
-            console.log('Sending notification email to:', email)
+            console.log('Preparing notification email for:', email)
             const emailHtml = `
-              <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
-                <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 30px; border-radius: 10px 10px 0 0; text-align: center;">
-                  <h1 style="color: white; margin: 0; font-size: 28px;">SiteWeave</h1>
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; 
+            line-height: 1.6; 
+            color: #1a1a1a; 
+            background: #f6f9fc; 
+            padding: 40px 20px; 
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+        }
+        .email-wrapper { 
+            max-width: 600px; 
+            margin: 0 auto; 
+        }
+        .card { 
+            background: #ffffff; 
+            border-radius: 8px; 
+            border: 1px solid #e6ebf1;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+            overflow: hidden;
+        }
+        .header { 
+            background: #ffffff; 
+            padding: 32px 40px 24px 40px; 
+            text-align: center; 
+        }
+        .logo-img {
+            height: 120px;
+            width: auto;
+            margin: 0 auto;
+            display: block;
+        }
+        .content { 
+            padding: 32px 40px 40px 40px; 
+        }
+        .headline { 
+            font-size: 24px; 
+            font-weight: 600; 
+            color: #1a1a1a; 
+            margin: 0 0 24px 0;
+            line-height: 1.3;
+        }
+        .job-details {
+            background: #f3f4f6;
+            border-radius: 4px;
+            padding: 20px;
+            margin: 24px 0;
+        }
+        .detail-row {
+            display: flex;
+            margin-bottom: 12px;
+        }
+        .detail-row:last-child {
+            margin-bottom: 0;
+        }
+        .detail-label {
+            font-size: 13px;
+            color: #6b7280;
+            font-weight: 500;
+            min-width: 100px;
+            flex-shrink: 0;
+        }
+        .detail-value {
+            font-size: 15px;
+            color: #1a1a1a;
+            font-weight: 600;
+        }
+        .cta-container {
+            text-align: center;
+            margin: 32px 0;
+        }
+        .cta-button { 
+            display: inline-block; 
+            padding: 12px 24px; 
+            background: #2563EB; 
+            color: #ffffff !important; 
+            text-decoration: none; 
+            border-radius: 6px; 
+            font-weight: 600; 
+            font-size: 15px; 
+            letter-spacing: -0.2px;
+            transition: background-color 0.2s;
+        }
+        .cta-button:hover {
+            background: #1d4ed8;
+            color: #ffffff !important;
+        }
+        .footer { 
+            background: #f9fafb; 
+            padding: 24px 40px; 
+            text-align: center; 
+            border-top: 1px solid #e5e7eb;
+        }
+        .footer-text {
+            font-size: 12px; 
+            color: #6b7280; 
+            line-height: 1.6;
+            margin: 0;
+        }
+        @media only screen and (max-width: 600px) {
+            body { padding: 20px 12px; }
+            .header { padding: 24px 24px 0 24px; }
+            .content { padding: 24px 24px 32px 24px; }
+            .footer { padding: 20px 24px; }
+            .headline { font-size: 20px; }
+        }
+    </style>
+</head>
+<body>
+    <div class="email-wrapper">
+        <div class="card">
+            <div class="header">
+                <img src="https://app.siteweave.org/logo.svg" alt="SiteWeave" class="logo-img" />
+            </div>
+            <div class="content">
+                <h2 class="headline">${inviterName} added you to ${projectName}.</h2>
+                
+                <div class="job-details">
+                    <div class="detail-row">
+                        <span class="detail-label">Project</span>
+                        <span class="detail-value">${projectName}</span>
+                    </div>
+                    <div class="detail-row">
+                        <span class="detail-label">Your Role</span>
+                        <span class="detail-value">${role}</span>
+                    </div>
+                    ${clientName ? `
+                    <div class="detail-row">
+                        <span class="detail-label">Client</span>
+                        <span class="detail-value">${clientName}</span>
+                    </div>
+                    ` : ''}
                 </div>
-                <div style="background: white; padding: 30px; border: 1px solid #e5e7eb; border-top: none; border-radius: 0 0 10px 10px;">
-                  <h2 style="color: #1f2937; margin-top: 0;">You've been added to a project! 🎉</h2>
-                  <p style="color: #4b5563; font-size: 16px; line-height: 1.6;">
-                    Great news! You've been added to a project on SiteWeave with the role: <strong style="color: #2563eb;">${role}</strong>
-                  </p>
-                  <p style="color: #4b5563; font-size: 16px; line-height: 1.6;">
-                    To access the project and start collaborating with your team, please sign in or create an account:
-                  </p>
-                  <div style="text-align: center; margin: 30px 0;">
-                    <a href="https://siteweave.netlify.app" style="display: inline-block; padding: 14px 32px; background-color: #2563eb; color: white; text-decoration: none; border-radius: 8px; font-weight: 600; font-size: 16px;">Access SiteWeave</a>
-                  </div>
-                  <div style="background: #f3f4f6; padding: 20px; border-radius: 8px; margin-top: 20px;">
-                    <p style="color: #6b7280; font-size: 14px; margin: 0; line-height: 1.5;">
-                      <strong>What's SiteWeave?</strong><br>
-                      SiteWeave is your all-in-one project management platform for construction and field work. Manage tasks, track progress, and collaborate with your team in real-time.
-                    </p>
-                  </div>
-                  <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 30px 0;">
-                  <p style="color: #9ca3af; font-size: 12px; text-align: center; margin: 0;">
-                    If you have any questions, please contact your project manager.<br>
-                    This is an automated message from SiteWeave.
-                  </p>
+                
+                <div class="cta-container">
+                    <a href="${dashboardUrl}" class="cta-button">View Project Dashboard</a>
                 </div>
-              </div>
-            `
+            </div>
+            <div class="footer">
+                <p class="footer-text">
+                    You received this email because you are a member of ${organizationName}.
+                </p>
+            </div>
+        </div>
+    </div>
+</body>
+</html>
+            `.trim()
 
-            const resendResponse = await fetch('https://api.resend.com/emails', {
-              method: 'POST',
-              headers: {
-                'Authorization': `Bearer ${RESEND_API_KEY}`,
-                'Content-Type': 'application/json'
-              },
-              body: JSON.stringify({
-                from: 'SiteWeave <noreply@siteweave.org>',
-                to: [email],
-                subject: 'You\'ve been added to a project on SiteWeave',
-                html: emailHtml
-              })
+            // Add to batch email queue
+            emailsToSend.push({
+              from: 'SiteWeave <noreply@siteweave.org>',
+              to: [email],
+              subject: `${inviterName} added you to ${projectName}`,
+              html: emailHtml
             })
-
-            const resendData = await resendResponse.json()
-
-            if (resendResponse.ok) {
-              console.log('Email sent successfully to:', email, 'ID:', resendData.id)
-              emailSent = true
-            } else {
-              console.error('Resend API error response:', {
-                status: resendResponse.status,
-                statusText: resendResponse.statusText,
-                data: resendData
-              })
-            }
+            
+            console.log('Email prepared for batch sending to:', email)
+            results.push({ email, action: 'added' })
           } catch (emailError) {
-            console.error('Error sending email:', emailError)
+            console.error('Error preparing email:', emailError)
+            results.push({ email, action: 'added', reason: 'email_prep_failed' })
           }
         } else {
           console.log('RESEND_API_KEY not configured, skipping email')
-        }
-
-        // Add result based on email status
-        if (emailSent) {
-          results.push({ email, action: 'added' })
-        } else {
-          results.push({ email, action: 'added', reason: 'email_failed' })
+          results.push({ email, action: 'added', reason: 'email_not_configured' })
         }
       } catch (entryError) {
         console.error('Error processing entry:', entryError)
@@ -258,6 +483,42 @@ serve(async (req) => {
           action: 'skipped', 
           reason: `processing_error: ${entryError.message}` 
         })
+      }
+    }
+
+    // Send all emails in a single batch request
+    if (RESEND_API_KEY && emailsToSend.length > 0) {
+      try {
+        console.log(`Sending ${emailsToSend.length} emails in batch`)
+        const batchResponse = await fetch('https://api.resend.com/emails/batch', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${RESEND_API_KEY}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(emailsToSend)
+        })
+
+        const batchData = await batchResponse.json()
+
+        if (batchResponse.ok) {
+          console.log('Batch emails sent successfully:', batchData)
+        } else {
+          console.error('Batch email error:', {
+            status: batchResponse.status,
+            statusText: batchResponse.statusText,
+            data: batchData
+          })
+          // Mark failed batch emails in results
+          emailsToSend.forEach((emailPayload) => {
+            const resultIndex = results.findIndex(r => r.email === emailPayload.to[0])
+            if (resultIndex !== -1 && results[resultIndex].action === 'added') {
+              results[resultIndex].reason = 'batch_email_failed'
+            }
+          })
+        }
+      } catch (batchError) {
+        console.error('Error sending batch emails:', batchError)
       }
     }
 

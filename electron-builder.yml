@@ -1,6 +1,7 @@
 directories:
   output: release
   buildResources: build
+  app: .
 appId: com.siteweave.app
 productName: SiteWeave
 files:
@@ -13,6 +14,7 @@ files:
       - '!**/win-unpacked/**'
       - '!**/.DS_Store'
       - '!**/Thumbs.db'
+      - '!apps/**'
   # Include electron-updater in the package
   - 'node_modules/electron-updater/**/*'
 win:

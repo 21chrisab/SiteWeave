@@ -36,20 +36,56 @@ serve(async (req) => {
     }
 
     // Verify user has can_manage_team permission
-    const { data: profile } = await supabaseAdmin
+    const { data: profile, error: profileError } = await supabaseAdmin
       .from('profiles')
       .select(`
         role_id,
+        organization_id,
         roles (
-          permissions
+          permissions,
+          name
         )
       `)
       .eq('id', user.id)
       .eq('organization_id', organizationId)
       .single()
 
-    if (!profile?.roles?.permissions?.can_manage_team) {
-      throw new Error('Not authorized - can_manage_team permission required')
+    if (profileError) {
+      console.error('Error fetching profile:', profileError)
+      throw new Error(`Failed to verify permissions: ${profileError.message}`)
+    }
+
+    if (!profile) {
+      throw new Error('User profile not found or not in this organization')
+    }
+
+    // Check if user has can_manage_team permission
+    const hasPermission = profile?.roles?.permissions?.can_manage_team === true
+    
+    // Fallback: If user created the organization, allow them to manage team
+    // (useful for initial setup when roles might not be configured yet)
+    let isOrgCreator = false
+    if (!hasPermission) {
+      const { data: org } = await supabaseAdmin
+        .from('organizations')
+        .select('created_by_user_id')
+        .eq('id', organizationId)
+        .single()
+      
+      isOrgCreator = org?.created_by_user_id === user.id
+    }
+
+    if (!hasPermission && !isOrgCreator) {
+      console.error('Permission check failed:', {
+        userId: user.id,
+        organizationId,
+        roleId: profile.role_id,
+        roleName: profile.roles?.name,
+        permissions: profile.roles?.permissions,
+        hasPermission,
+        isOrgCreator
+      })
+      throw new Error('Not authorized - can_manage_team permission required. Please ensure your role has the can_manage_team permission enabled.')
     }
 
     // Generate invitation token
@@ -101,10 +137,11 @@ serve(async (req) => {
 
     // Construct invitation URL
     // Priority: APP_URL env var > VITE_APP_URL > production fallback
-    const appUrl = Deno.env.get('APP_URL') || 
-                   Deno.env.get('VITE_APP_URL') || 
-                   'https://app.siteweave.org'
-    const setupUrl = `${appUrl}/invite/${invitationToken}`
+    // Remove trailing slashes to prevent double slashes
+    const baseUrl = (Deno.env.get('APP_URL') || 
+                     Deno.env.get('VITE_APP_URL') || 
+                     'https://app.siteweave.org').replace(/\/+$/, '')
+    const setupUrl = `${baseUrl}/invite/${invitationToken}`
 
     // Send invitation email via Resend
     const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY')
@@ -156,7 +193,7 @@ serve(async (req) => {
             border-bottom: 1px solid #e5e7eb;
         }
         .logo-img {
-            height: 40px;
+            height: 120px;
             width: auto;
             margin: 0 auto 32px auto;
             display: block;
