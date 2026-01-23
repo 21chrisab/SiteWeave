@@ -30,10 +30,12 @@ function ProjectModal({ onClose, onSave, isLoading = false, project = null }) {
     // Get all team members
     const allTeamMembers = state.contacts.filter(c => c.type === 'Team');
     
-    // Find the owner's contact ID if editing
+    // Determine owner contact:
+    // - Edit mode: created_by_user_id from project
+    // - Create mode: current signed-in user's contact
     const ownerContactId = isEditMode && project?.created_by_user_id
       ? (state.profiles?.find(p => p.id === project.created_by_user_id)?.contact_id || null)
-      : null;
+      : (state.profiles?.find(p => p.id === state.user?.id)?.contact_id || null);
     
     // Filter out the owner from selectable team members (owner is always on the team)
     const teamMembers = ownerContactId
@@ -67,6 +69,11 @@ function ProjectModal({ onClose, onSave, isLoading = false, project = null }) {
 
     const handleSubmit = (e) => {
         e.preventDefault();
+        // Always ensure owner is part of the team without showing them in the selector
+        const ownerAugmentedContacts = ownerContactId && !selectedContacts.includes(ownerContactId)
+            ? [...selectedContacts, ownerContactId]
+            : selectedContacts;
+
         const projectData = {
             name,
             address,
@@ -74,7 +81,7 @@ function ProjectModal({ onClose, onSave, isLoading = false, project = null }) {
             status,
             due_date: due_date || null,
             next_milestone: next_milestone || null,
-            selectedContacts: selectedContacts,
+            selectedContacts: ownerAugmentedContacts,
             emailAddresses: emailAddresses
         };
         

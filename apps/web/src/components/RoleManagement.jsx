@@ -15,7 +15,6 @@ const DEFAULT_PERMISSIONS = {
   can_manage_users: false,
   can_delete_projects: false,
   can_assign_tasks: false,
-  can_view_reports: false,
   can_manage_contacts: false,
   can_create_projects: false,
   can_edit_projects: false
@@ -26,20 +25,15 @@ const PERMISSION_LABELS = {
   can_create_projects: 'Create Projects',
   can_edit_projects: 'Edit Projects',
   can_delete_projects: 'Delete Projects',
-  read_projects: 'View Projects',
   can_create_tasks: 'Create Tasks',
   can_edit_tasks: 'Edit Tasks',
   can_delete_tasks: 'Delete Tasks',
   can_assign_tasks: 'Assign Tasks',
   can_view_financials: 'View Financials',
-  can_view_reports: 'View Reports',
   can_manage_team: 'Manage Organization Directory',
   can_manage_roles: 'Manage Roles',
   can_manage_contacts: 'Manage Contacts',
   can_manage_users: 'Manage Users',
-  can_send_messages: 'Send Messages',
-  // Backward compatibility for old permission name
-  create_comments: 'Send Messages',
 };
 
 // Helper function to get permission label
@@ -181,10 +175,10 @@ function RoleManagement() {
           <h3 className="text-lg font-semibold">Roles</h3>
         </div>
         <div className="divide-y divide-gray-200">
-          {roles.length === 0 ? (
+          {roles.filter(role => role.name !== 'Org Admin').length === 0 ? (
             <div className="p-6 text-center text-gray-500">No roles found</div>
           ) : (
-            roles.map(role => (
+            roles.filter(role => role.name !== 'Org Admin').map(role => (
               <div key={role.id} className="p-6">
                 <div className="flex items-center justify-between mb-2">
                   <div>

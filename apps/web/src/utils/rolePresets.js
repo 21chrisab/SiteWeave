@@ -18,13 +18,10 @@ export const ROLE_PRESETS = [
       can_delete_projects: false,
       can_view_financials: true,
       can_assign_tasks: false,
-      can_view_reports: true,
       can_manage_contacts: true,
       can_create_tasks: false,
       can_edit_tasks: false,
       can_delete_tasks: false,
-      read_projects: true,
-      can_send_messages: true
     }
   },
   {
@@ -40,13 +37,10 @@ export const ROLE_PRESETS = [
       can_delete_projects: false,
       can_view_financials: false,
       can_assign_tasks: true,
-      can_view_reports: true,
       can_manage_contacts: false,
       can_create_tasks: true,
       can_edit_tasks: true,
       can_delete_tasks: false,
-      read_projects: true,
-      can_send_messages: true
     }
   },
   {
@@ -62,13 +56,10 @@ export const ROLE_PRESETS = [
       can_delete_projects: false,
       can_view_financials: false,
       can_assign_tasks: true,
-      can_view_reports: true,
       can_manage_contacts: false,
       can_create_tasks: true,
       can_edit_tasks: true,
       can_delete_tasks: false,
-      read_projects: true,
-      can_send_messages: true
     }
   },
   {
@@ -84,13 +75,10 @@ export const ROLE_PRESETS = [
       can_delete_projects: false,
       can_view_financials: true,
       can_assign_tasks: true,
-      can_view_reports: true,
       can_manage_contacts: true,
       can_create_tasks: true,
       can_edit_tasks: true,
       can_delete_tasks: true,
-      read_projects: true,
-      can_send_messages: true
     }
   },
   {
@@ -106,13 +94,10 @@ export const ROLE_PRESETS = [
       can_delete_projects: false,
       can_view_financials: true,
       can_assign_tasks: false,
-      can_view_reports: true,
       can_manage_contacts: false,
       can_create_tasks: false,
       can_edit_tasks: false,
       can_delete_tasks: false,
-      read_projects: true,
-      can_send_messages: false
     }
   },
   {
@@ -128,13 +113,10 @@ export const ROLE_PRESETS = [
       can_delete_projects: false,
       can_view_financials: false,
       can_assign_tasks: false,
-      can_view_reports: false,
       can_manage_contacts: false,
       can_create_tasks: false,
       can_edit_tasks: true,
       can_delete_tasks: false,
-      read_projects: true,
-      can_send_messages: true
     }
   }
 ];

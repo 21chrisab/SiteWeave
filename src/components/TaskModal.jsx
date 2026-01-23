@@ -3,6 +3,7 @@ import { useAppContext } from '../context/AppContext';
 import LoadingSpinner from './LoadingSpinner';
 import DateDropdown from './DateDropdown';
 import { parseRecurrence, validateRecurrence } from '../utils/recurrenceService';
+import PermissionGuard from './PermissionGuard';
 
 function TaskModal({ project, onClose, onSave, isLoading = false }) {
     const { state } = useAppContext();
@@ -120,27 +121,29 @@ function TaskModal({ project, onClose, onSave, isLoading = false }) {
                             <option>High</option>
                         </select>
                     </div>
-                    <div className="mb-6">
-                        <label className="block text-sm font-semibold mb-1 text-gray-600">Assignee</label>
-                        <select value={assigneeId} onChange={e => setAssigneeId(e.target.value)} className="w-full p-2 border rounded-lg bg-white">
-                            <option value="">Unassigned</option>
-                            {allAssignableContacts.length > 0 ? (
-                                allAssignableContacts.map(contact => (
-                                    <option key={contact.id} value={contact.id}>
-                                        {contact.name}
-                                        {orgAdmins.some(admin => admin.id === contact.id) && !projectContacts.some(pc => pc.id === contact.id) && ' (Admin)'}
-                                    </option>
-                                ))
-                            ) : (
-                                <option value="" disabled>No team members assigned to this project</option>
+                    <PermissionGuard permission="can_assign_tasks">
+                        <div className="mb-6">
+                            <label className="block text-sm font-semibold mb-1 text-gray-600">Assignee</label>
+                            <select value={assigneeId} onChange={e => setAssigneeId(e.target.value)} className="w-full p-2 border rounded-lg bg-white">
+                                <option value="">Unassigned</option>
+                                {allAssignableContacts.length > 0 ? (
+                                    allAssignableContacts.map(contact => (
+                                        <option key={contact.id} value={contact.id}>
+                                            {contact.name}
+                                            {orgAdmins.some(admin => admin.id === contact.id) && !projectContacts.some(pc => pc.id === contact.id) && ' (Admin)'}
+                                        </option>
+                                    ))
+                                ) : (
+                                    <option value="" disabled>No team members assigned to this project</option>
+                                )}
+                            </select>
+                            {allAssignableContacts.length === 0 && (
+                                <p className="text-xs text-gray-500 mt-1">
+                                    Add team members to this project first using the "+ Add Team Member" button
+                                </p>
                             )}
-                        </select>
-                        {allAssignableContacts.length === 0 && (
-                            <p className="text-xs text-gray-500 mt-1">
-                                Add team members to this project first using the "+ Add Team Member" button
-                            </p>
-                        )}
-                    </div>
+                        </div>
+                    </PermissionGuard>
                     
                     {/* Recurrence Section */}
                     <div className="mb-6 space-y-4 pt-4 border-t">

@@ -14,8 +14,6 @@ import { supabaseClient } from '../context/AppContext';
  */
 function PermissionGuard({ permission, children, fallback = null }) {
   const context = useAppContext();
-  const [hasAccess, setHasAccess] = useState(false);
-  const [loading, setLoading] = useState(true);
 
   // Handle case where context might not be available yet
   if (!context || !context.state) {
@@ -24,42 +22,24 @@ function PermissionGuard({ permission, children, fallback = null }) {
 
   const { state } = context;
 
-  useEffect(() => {
-    async function checkPermission() {
-      if (!state.user || !state.currentOrganization?.id) {
-        setHasAccess(false);
-        setLoading(false);
-        return;
-      }
-
-      try {
-        const access = await hasPermission(
-          supabaseClient,
-          state.user.id,
-          permission,
-          state.currentOrganization.id
-        );
-        setHasAccess(access);
-      } catch (error) {
-        console.error('Error checking permission:', error);
-        setHasAccess(false);
-      } finally {
-        setLoading(false);
-      }
+  // Fast path: Check cached permissions synchronously (no async delay)
+  if (state.userRole?.permissions) {
+    const hasAccess = state.userRole.permissions[permission] === true;
+    if (!hasAccess) {
+      return fallback;
     }
-
-    checkPermission();
-  }, [permission, state.user, state.currentOrganization]);
-
-  if (loading) {
-    return null; // Don't show anything while loading
+    return children;
   }
 
-  if (!hasAccess) {
+  // Fallback: If role not loaded yet, show nothing (will update when role loads)
+  // This prevents the 3-second delay by not making async calls
+  if (!state.user || !state.currentOrganization?.id) {
     return fallback;
   }
 
-  return children;
+  // While role is loading, don't block rendering - show fallback
+  // The component will re-render when userRole is set
+  return fallback;
 }
 
 export default PermissionGuard;

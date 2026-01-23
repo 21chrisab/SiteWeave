@@ -73,7 +73,7 @@ function WeatherWidget({ compact = false }) {
       if (!currentWeather) {
         // Fall back to saved city or default
         const savedLocation = localStorage.getItem(STORAGE_KEY);
-        const fallbackCity = savedLocation || 'New York';
+        const fallbackCity = savedLocation || 'Austin';
         await loadWeatherByCity(fallbackCity);
         return;
       }
@@ -83,11 +83,14 @@ function WeatherWidget({ compact = false }) {
       setUseGeolocation(true);
       setShowCityInput(false);
     } catch (err) {
-      console.error('Error loading weather:', err);
+      // Geolocation errors are common (permissions, network issues, etc.) - handle gracefully
+      // Only log if it's not a geolocation error (code 1 = permission denied, code 2 = position unavailable, code 3 = timeout)
+      if (err.code !== 1 && err.code !== 2 && err.code !== 3) {
+        console.error('Error loading weather:', err);
+      }
       // If geolocation fails, try saved location preference first, then default city
       const savedLocation = localStorage.getItem(STORAGE_KEY);
-      const fallbackCity = savedLocation || 'New York';
-      console.log('Geolocation failed, falling back to:', fallbackCity);
+      const fallbackCity = savedLocation || 'Austin';
       try {
         await loadWeatherByCity(fallbackCity);
       } catch (cityErr) {
@@ -190,7 +193,7 @@ function WeatherWidget({ compact = false }) {
             type="text"
             value={cityInput}
             onChange={(e) => setCityInput(e.target.value)}
-            placeholder="Enter city name (e.g., New York)"
+            placeholder="Enter city name (e.g., Austin)"
             className="w-full px-3 pr-10 py-1.5 text-xs border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
             autoFocus
           />
@@ -295,7 +298,7 @@ function WeatherWidget({ compact = false }) {
                 type="text"
                 value={cityInput}
                 onChange={(e) => setCityInput(e.target.value)}
-                placeholder="Enter city name (e.g., New York)"
+                placeholder="Enter city name (e.g., Austin)"
                 className="w-full px-2 pr-8 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
                 autoFocus
               />
@@ -362,7 +365,7 @@ function WeatherWidget({ compact = false }) {
               type="text"
               value={cityInput}
               onChange={(e) => setCityInput(e.target.value)}
-              placeholder="Enter city name (e.g., New York)"
+              placeholder="Enter city name (e.g., Austin)"
               className="w-full px-2 pr-8 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
             />
             <button

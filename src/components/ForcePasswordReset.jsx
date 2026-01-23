@@ -35,8 +35,8 @@ function ForcePasswordReset({ show, onComplete }) {
       return;
     }
 
-    if (newPassword.length < 4) {
-      addToast('Password must be at least 4 characters', 'error');
+    if (newPassword.length < 6) {
+      addToast('Password must be at least 6 characters', 'error');
       return;
     }
 
@@ -163,10 +163,10 @@ function ForcePasswordReset({ show, onComplete }) {
                 type={showNewPassword ? 'text' : 'password'}
                 value={newPassword}
                 onChange={(e) => setNewPassword(e.target.value)}
-                placeholder="Create a new PIN (minimum 4 characters)"
+                placeholder="Create a new PIN (minimum 6 characters)"
                 className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 pr-10"
                 required
-                minLength={4}
+                minLength={6}
               />
               <button
                 type="button"
@@ -194,7 +194,7 @@ function ForcePasswordReset({ show, onComplete }) {
                 placeholder="Re-enter your new PIN"
                 className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 pr-10"
                 required
-                minLength={4}
+                minLength={6}
               />
               <button
                 type="button"

@@ -174,7 +174,7 @@ function Sidebar() {
                                     {state.user?.user_metadata?.full_name || state.user?.email}
                                 </p>
                                 <p className="text-xs text-gray-500 truncate">
-                                    {state.userRole?.name || (state.isProjectCollaborator ? 'Guest Collaborator' : state.user?.user_metadata?.title || 'User')}
+                                    {state.userRole?.name || (state.isProjectCollaborator ? 'Guest Collaborator' : 'User')}
                                 </p>
                             </div>
                         </div>

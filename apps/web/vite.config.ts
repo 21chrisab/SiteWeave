@@ -10,7 +10,7 @@ export default defineConfig({
   plugins: [react()],
   resolve: {
     alias: {
-      '@siteweave/core-logic': path.resolve(__dirname, '../../packages/core-logic/src/index.js')
+      '@siteweave/core-logic': path.resolve(__dirname, './packages/core-logic/src/index.js')
     }
   },
   build: {

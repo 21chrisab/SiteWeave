@@ -874,8 +874,6 @@ export const AppProvider = ({ children }) => {
                 return contact;
               });
             }
-            
-            console.log('Loaded virtual contacts:', finalContacts.length);
           } catch (error) {
             console.error('Error fetching virtual contacts:', error);
             finalContacts = [];
@@ -921,13 +919,13 @@ export const AppProvider = ({ children }) => {
           dispatch({ type: 'DELETE_PROJECT', payload: payload.old.id });
         }
       })
-      .subscribe();
+      .subscribe(() => {}); // Silently handle subscription status
 
     const filesSubscription = supabaseClient.channel('public:files')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'files' }, (payload) => {
         dispatch({ type: 'ADD_FILE', payload: payload.new });
       })
-      .subscribe();
+      .subscribe(() => {}); // Silently handle subscription status
 
     const calendarEventsSubscription = supabaseClient.channel('public:calendar_events')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'calendar_events' }, (payload) => {
@@ -939,7 +937,7 @@ export const AppProvider = ({ children }) => {
       .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'calendar_events' }, (payload) => {
         dispatch({ type: 'DELETE_EVENT', payload: payload.old.id });
       })
-      .subscribe();
+      .subscribe(() => {}); // Silently handle subscription status
 
     const contactsSubscription = supabaseClient.channel('public:contacts')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'contacts' }, async (payload) => {
@@ -973,7 +971,7 @@ export const AppProvider = ({ children }) => {
       .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'contacts' }, (payload) => {
         dispatch({ type: 'DELETE_CONTACT', payload: payload.old.id });
       })
-      .subscribe();
+      .subscribe(() => {}); // Silently handle subscription status
 
     const projectContactsSubscription = supabaseClient.channel('public:project_contacts')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'project_contacts' }, async (payload) => {
@@ -996,7 +994,7 @@ export const AppProvider = ({ children }) => {
       .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'project_contacts' }, (payload) => {
         dispatch({ type: 'REMOVE_PROJECT_CONTACT', payload: payload.old });
       })
-      .subscribe();
+      .subscribe(() => {}); // Silently handle subscription status
     
     const tasksSubscription = supabaseClient.channel('public:tasks')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'tasks' }, async (payload) => {
@@ -1010,7 +1008,7 @@ export const AppProvider = ({ children }) => {
           dispatch({ type: 'DELETE_TASK', payload: payload.old.id });
         }
       })
-      .subscribe();
+      .subscribe(() => {}); // Silently handle subscription status
 
     // Messages are now loaded per-channel in MessagesView component (MVP pattern)
     // This global subscription is kept for backwards compatibility but MessagesView handles its own subscription
@@ -1036,13 +1034,13 @@ export const AppProvider = ({ children }) => {
         }
         dispatch({ type: 'UPDATE_MESSAGE', payload: updatedMessage });
       })
-      .subscribe();
+      .subscribe(() => {}); // Silently handle subscription status
 
     const messageChannelsSubscription = supabaseClient.channel('public:message_channels')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'message_channels' }, (payload) => {
         dispatch({ type: 'ADD_CHANNEL', payload: payload.new });
       })
-      .subscribe();
+      .subscribe(() => {}); // Silently handle subscription status
 
     const userPreferencesSubscription = supabaseClient.channel('public:user_preferences')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'user_preferences' }, (payload) => {
@@ -1050,13 +1048,13 @@ export const AppProvider = ({ children }) => {
           dispatch({ type: 'SET_USER_PREFERENCES', payload: payload.new });
         }
       })
-      .subscribe();
+      .subscribe(() => {}); // Silently handle subscription status
 
     const activityLogSubscription = supabaseClient.channel('public:activity_log')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'activity_log' }, (payload) => {
         dispatch({ type: 'ADD_ACTIVITY', payload: payload.new });
       })
-      .subscribe();
+      .subscribe(() => {}); // Silently handle subscription status
 
       return () => supabaseClient.removeAllChannels();
     }

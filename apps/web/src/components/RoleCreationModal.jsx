@@ -16,7 +16,6 @@ const PERMISSION_GROUPS = [
       { key: 'can_create_projects', label: 'Create Projects', description: 'Create new projects' },
       { key: 'can_edit_projects', label: 'Edit Projects', description: 'Modify existing projects' },
       { key: 'can_delete_projects', label: 'Delete Projects', description: 'Remove projects' },
-      { key: 'read_projects', label: 'View Projects', description: 'View project details' },
       { key: 'can_create_tasks', label: 'Create Tasks', description: 'Create new tasks' },
       { key: 'can_edit_tasks', label: 'Edit Tasks', description: 'Modify existing tasks' },
       { key: 'can_delete_tasks', label: 'Delete Tasks', description: 'Remove tasks' },
@@ -28,7 +27,6 @@ const PERMISSION_GROUPS = [
     icon: 'M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z',
     permissions: [
       { key: 'can_view_financials', label: 'View Financials', description: 'View financial information and reports' },
-      { key: 'can_view_reports', label: 'View Reports', description: 'Access project and financial reports' },
     ]
   },
   {
@@ -38,7 +36,7 @@ const PERMISSION_GROUPS = [
       { key: 'can_manage_team', label: 'Manage Organization Directory', description: 'Add or remove employees from your company account' },
       { key: 'can_manage_roles', label: 'Manage Roles', description: 'Create and edit custom roles' },
       { key: 'can_manage_contacts', label: 'Manage Contacts', description: 'Add and edit contact information' },
-      { key: 'can_send_messages', label: 'Send Messages', description: 'Send messages in project channels' },
+      { key: 'can_manage_users', label: 'Manage Users', description: 'Manage user accounts and permissions' },
     ]
   }
 ];
@@ -48,17 +46,15 @@ const DEFAULT_PERMISSIONS = {
   can_create_projects: false,
   can_edit_projects: false,
   can_delete_projects: false,
-  read_projects: true, // Default to true for basic access
   can_create_tasks: false,
   can_edit_tasks: false,
   can_delete_tasks: false,
   can_assign_tasks: false,
   can_view_financials: false,
-  can_view_reports: false,
   can_manage_team: false,
   can_manage_roles: false,
   can_manage_contacts: false,
-  can_send_messages: true, // Default to true for basic access
+  can_manage_users: false,
 };
 
 function RoleCreationModal({ show, onClose, onSave, existingRole = null, isLoading = false }) {

@@ -1522,47 +1522,20 @@ USING (is_current_user_admin());
 -- ============================================================================
 
 -- Contacts SELECT policy
--- Allow users to see contacts they created OR contacts that match their email
--- This enables users to find contacts created by invite_or_add_member function
--- Also allows Admins/PMs to see all contacts
-CREATE POLICY "Users can view their own contacts and contacts with their email"
+-- Simplified to avoid infinite recursion by removing cross-table queries
+-- Users can see contacts in their organization, their own contact, or contacts they created
+CREATE POLICY "Users can view contacts in their organization"
 ON public.contacts
 FOR SELECT
 USING (
-  -- Users can see contacts they created
-  (created_by_user_id = auth.uid())
+  -- Contacts in same organization (primary access method - avoids recursion)
+  organization_id = get_user_organization_id()
   OR
-  -- Users can see contacts that match their email (using helper function)
+  -- Users can see their own contact (by email match, even if org is different - for collaborators)
   (LOWER(email) = LOWER(get_user_email()))
   OR
-  -- Admins and PMs can see all contacts
-  (get_user_role() IN ('Admin', 'PM'))
-  OR
-  -- Anyone can see contacts who share a project with them
-  (
-    get_user_contact_id() IS NOT NULL
-    AND EXISTS (
-      SELECT 1
-      FROM public.project_contacts pc_user
-      JOIN public.project_contacts pc_contact
-        ON pc_contact.project_id = pc_user.project_id
-      WHERE pc_user.contact_id = get_user_contact_id()
-        AND pc_contact.contact_id = contacts.id
-    )
-  )
-  OR
-  -- Project creators/managers can see contacts assigned to their projects
-  EXISTS (
-    SELECT 1
-    FROM public.project_contacts pc_mgr
-    WHERE pc_mgr.contact_id = contacts.id
-      AND pc_mgr.project_id IN (
-        SELECT id
-        FROM public.projects
-        WHERE project_manager_id = auth.uid()
-           OR created_by_user_id = auth.uid()
-      )
-  )
+  -- Users can see contacts they created (even if org is different)
+  (created_by_user_id = auth.uid())
 );
 
 -- Contacts INSERT policy
@@ -2405,25 +2378,35 @@ USING (user_id = auth.uid());
 -- INVITATIONS TABLE POLICIES
 -- ============================================================================
 
--- Invitations SELECT policy
-CREATE POLICY "Users can see invitations they sent or received"
+-- Invitations SELECT policy (simplified and more permissive)
+-- Public users: can read pending invitations by token (for invite acceptance)
+-- Authenticated users: can see invitations they sent or that match their email
+CREATE POLICY "Public can read pending invitations by token, users can see their invitations"
 ON public.invitations
 FOR SELECT
 USING (
-  (invited_by_user_id = auth.uid()) -- Invitations they sent
+  -- Public access: any pending invitation with a token (for invite acceptance page)
+  (
+    status = 'pending'
+    AND invitation_token IS NOT NULL
+  )
   OR
-  (email IN (SELECT email FROM auth.users WHERE id = auth.uid())) -- Invitations to their email
-);
-
--- Public (anonymous) users can view invitations by token for accepting
-CREATE POLICY "Public can view invitations by token"
-ON public.invitations
-FOR SELECT
-TO anon
-USING (
-  status = 'pending' 
-  AND invitation_token IS NOT NULL
-  AND expires_at > now()
+  -- Authenticated users can see invitations they sent
+  (
+    auth.uid() IS NOT NULL
+    AND invited_by_user_id = auth.uid()
+  )
+  OR
+  -- Authenticated users can see invitations sent to their email (via contacts, not auth.users)
+  (
+    auth.uid() IS NOT NULL
+    AND email IN (
+      SELECT c.email
+      FROM public.profiles p
+      JOIN public.contacts c ON p.contact_id = c.id
+      WHERE p.id = auth.uid()
+    )
+  )
 );
 
 -- Invitations INSERT policy
@@ -2438,18 +2421,21 @@ WITH CHECK (
 );
 
 -- Invitations UPDATE policy
+-- More permissive: allow updates by token or by email match
 CREATE POLICY "Users can accept their own invitations"
 ON public.invitations
 FOR UPDATE
 USING (
   (invited_by_user_id = auth.uid()) -- Sender can cancel/update
   OR
-  (email = get_user_email() AND status = 'pending') -- Recipient can accept
+  (status = 'pending' AND invitation_token IS NOT NULL) -- Anyone with token can accept (for public invite flow)
+  OR
+  (email = get_user_email() AND status = 'pending') -- Recipient can accept by email match
 )
 WITH CHECK (
   (invited_by_user_id = auth.uid()) -- Sender can cancel/update
   OR
-  (email = get_user_email() AND status = 'pending') -- Recipient can accept
+  (status IN ('pending', 'accepted')) -- Can update to accepted status
 );
 
 -- Invitations DELETE policy

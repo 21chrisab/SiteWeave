@@ -3,7 +3,7 @@ import FullCalendar from '@fullcalendar/react';
 import dayGridPlugin from '@fullcalendar/daygrid';
 import timeGridPlugin from '@fullcalendar/timegrid';
 import interactionPlugin from '@fullcalendar/interaction';
-import { useAppContext, supabaseClient } from '../context/AppContext';
+import { useAppContext, useLazyDataLoader, supabaseClient } from '../context/AppContext';
 import { useToast } from '../context/ToastContext';
 import { 
     parseOAuthCallback, 
@@ -118,6 +118,7 @@ function MiniCalendar({ currentDate, setCurrentDate }) {
 // --- Main Calendar View Component ---
 function CalendarView() {
     const { state, dispatch } = useAppContext();
+    const { loadCalendarEventsIfNeeded } = useLazyDataLoader();
     const { addToast } = useToast();
     const [showModal, setShowModal] = useState(false);
     const [modalDate, setModalDate] = useState(null);
@@ -142,6 +143,8 @@ function CalendarView() {
     useEffect(() => {
         loadCategories();
         loadWeatherForCalendar();
+        // Lazy load calendar events when calendar view opens
+        loadCalendarEventsIfNeeded();
     }, []);
 
     // Sync visible categories when categories list changes (e.g., after adding new categories)
@@ -191,7 +194,7 @@ function CalendarView() {
     const loadWeatherForCalendar = async () => {
         try {
             // Get saved city preference or use default
-            const savedCity = localStorage.getItem('weather_location_preference') || 'New York';
+            const savedCity = localStorage.getItem('weather_location_preference') || 'Austin';
             setWeatherCity(savedCity);
             
             // Fetch extended forecast (14 days)

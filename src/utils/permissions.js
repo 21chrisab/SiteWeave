@@ -12,23 +12,30 @@
  */
 export async function getUserRole(supabase, userId, organizationId) {
   try {
-    const { data, error } = await supabase
+    // First, get the profile to check if user has a role_id
+    const { data: profile, error: profileError } = await supabase
       .from('profiles')
-      .select(`
-        role_id,
-        roles (
-          id,
-          name,
-          permissions,
-          is_system_role
-        )
-      `)
+      .select('role_id')
       .eq('id', userId)
       .eq('organization_id', organizationId)
-      .single();
+      .maybeSingle();
 
-    if (error) throw error;
-    return data?.roles || null;
+    if (profileError) throw profileError;
+    
+    // If no profile or no role_id, return null
+    if (!profile || !profile.role_id) {
+      return null;
+    }
+
+    // Now fetch the role details
+    const { data: role, error: roleError } = await supabase
+      .from('roles')
+      .select('id, name, permissions, is_system_role')
+      .eq('id', profile.role_id)
+      .maybeSingle();
+
+    if (roleError) throw roleError;
+    return role || null;
   } catch (error) {
     console.error('Error fetching user role:', error);
     return null;
@@ -145,13 +152,25 @@ export async function canViewFinancials(supabase, userId, organizationId) {
 }
 
 /**
- * Check if user can view reports
+ * Check if user can edit tasks
  * @param {import('@supabase/supabase-js').SupabaseClient} supabase - Supabase client
  * @param {string} userId - User ID
  * @param {string} organizationId - Organization ID
- * @returns {Promise<boolean>} True if user can view reports
+ * @returns {Promise<boolean>} True if user can edit tasks
  */
-export async function canViewReports(supabase, userId, organizationId) {
-  return hasPermission(supabase, userId, 'can_view_reports', organizationId);
+export async function canEditTasks(supabase, userId, organizationId) {
+  return hasPermission(supabase, userId, 'can_edit_tasks', organizationId);
 }
+
+/**
+ * Check if user can delete tasks
+ * @param {import('@supabase/supabase-js').SupabaseClient} supabase - Supabase client
+ * @param {string} userId - User ID
+ * @param {string} organizationId - Organization ID
+ * @returns {Promise<boolean>} True if user can delete tasks
+ */
+export async function canDeleteTasks(supabase, userId, organizationId) {
+  return hasPermission(supabase, userId, 'can_delete_tasks', organizationId);
+}
+
 

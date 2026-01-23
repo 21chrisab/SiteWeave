@@ -125,37 +125,37 @@ function TeamView() {
       <TeamDirectory />
 
       {/* Roles & Permissions Section */}
-      <div className="mt-12 pt-8 border-t border-gray-200">
-        <div className="flex items-center justify-between mb-6">
-          <div>
-            <h2 className="text-2xl font-bold text-gray-900">Roles & Permissions</h2>
-            <p className="text-gray-500 text-sm mt-1">Manage role permissions and see member assignments</p>
+      <PermissionGuard permission="can_manage_roles">
+        <div className="mt-12 pt-8 border-t border-gray-200">
+          <div className="flex items-center justify-between mb-6">
+            <div>
+              <h2 className="text-2xl font-bold text-gray-900">Roles & Permissions</h2>
+              <p className="text-gray-500 text-sm mt-1">Manage role permissions and see member assignments</p>
+            </div>
           </div>
-        </div>
 
-        {loadingRoles ? (
-          <LoadingSpinner />
-        ) : (
-          <div className="overflow-x-auto pb-4">
-            <div className="flex gap-4 min-w-max">
-              {roles.map(role => (
-                <RoleSummaryCard
-                  key={role.id}
-                  role={role}
-                  memberCount={roleMemberCounts[role.id] || 0}
-                  onEdit={() => handleEditRole(role)}
-                />
-              ))}
-              <PermissionGuard permission="can_manage_roles">
+          {loadingRoles ? (
+            <LoadingSpinner />
+          ) : (
+            <div className="overflow-x-auto pb-4">
+              <div className="flex gap-4 min-w-max">
+                {roles.map(role => (
+                  <RoleSummaryCard
+                    key={role.id}
+                    role={role}
+                    memberCount={roleMemberCounts[role.id] || 0}
+                    onEdit={() => handleEditRole(role)}
+                  />
+                ))}
                 <RoleSummaryCard
                   isCreateCard={true}
                   onEdit={handleCreateRole}
                 />
-              </PermissionGuard>
+              </div>
             </div>
-          </div>
-        )}
-      </div>
+          )}
+        </div>
+      </PermissionGuard>
 
       <DirectoryManagementModal 
         show={showDirectoryModal} 

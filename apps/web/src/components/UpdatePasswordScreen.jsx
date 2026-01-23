@@ -94,8 +94,8 @@ function UpdatePasswordScreen() {
       return;
     }
 
-    if (password.length < 8) {
-      setError('Password must be at least 8 characters');
+    if (password.length < 6) {
+      setError('Password must be at least 6 characters');
       return;
     }
 
@@ -187,10 +187,10 @@ function UpdatePasswordScreen() {
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              placeholder="At least 8 characters"
+              placeholder="At least 6 characters"
               className="w-full px-3 py-2 text-sm sm:text-base border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-900"
               required
-              minLength={8}
+              minLength={6}
               disabled={submitting}
               autoComplete="new-password"
             />
@@ -207,7 +207,7 @@ function UpdatePasswordScreen() {
               placeholder="Re-enter your password"
               className="w-full px-3 py-2 text-sm sm:text-base border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-900"
               required
-              minLength={8}
+              minLength={6}
               disabled={submitting}
               autoComplete="new-password"
             />

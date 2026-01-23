@@ -10,6 +10,7 @@ import SetupWizardModal from './components/SetupWizardModal'
 import DirectoryManagementModal from './components/DirectoryManagementModal'
 import PermissionGuard from './components/PermissionGuard'
 import ForcePasswordReset from './components/ForcePasswordReset'
+import UpdateNotification from './components/UpdateNotification'
 import { LazyViewWrapper, DashboardView, ProjectDetailsView, CalendarView, MessagesView, ContactsView, TeamView, SettingsView } from './components/LazyViews'
 import NoOrganizationView from './views/NoOrganizationView'
 
@@ -123,17 +124,28 @@ function App() {
   // Check if user needs to see setup wizard (first login for Org Admins ONLY)
   React.useEffect(() => {
     const checkSetupWizard = async () => {
-      if (!state.user || !state.currentOrganization || state.mustChangePassword) return // Don't show setup wizard if password reset is needed
+      // Don't show wizard if:
+      // 1. No user logged in
+      // 2. No organization assigned
+      // 3. Password reset is required
+      // 4. User role is not loaded yet
+      if (!state.user || !state.currentOrganization || state.mustChangePassword || !state.userRole) {
+        return
+      }
 
       // ONLY show setup wizard if user has the exact "Org Admin" role name
       // This prevents regular members from seeing the setup wizard
       const isOrgAdmin = state.userRole?.name === 'Org Admin';
       
+      // Only show wizard for Org Admins who haven't completed setup
       if (isOrgAdmin) {
         const setupComplete = localStorage.getItem(`setup_complete_${state.user.id}`)
         if (!setupComplete) {
           setShowSetupWizard(true)
         }
+      } else {
+        // Not an Org Admin - hide wizard if it was showing
+        setShowSetupWizard(false)
       }
     }
 
@@ -308,6 +320,9 @@ function App() {
           onComplete={handlePasswordResetComplete}
         />
       )}
+
+      {/* Update Notification - Shows in Electron app when updates are available */}
+      <UpdateNotification />
     </div>
   )
 }

@@ -23,7 +23,6 @@ function SettingsView() {
   
   // Form states
   const [fullName, setFullName] = useState(state.user?.user_metadata?.full_name || '');
-  const [title, setTitle] = useState(state.user?.user_metadata?.title || '');
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -72,8 +71,7 @@ function SettingsView() {
     try {
       const { error } = await supabaseClient.auth.updateUser({
         data: {
-          full_name: fullName,
-          title: title
+          full_name: fullName
         }
       });
 
@@ -88,8 +86,7 @@ function SettingsView() {
             ...state.user,
             user_metadata: {
               ...state.user.user_metadata,
-              full_name: fullName,
-              title: title
+              full_name: fullName
             }
           }
         });
@@ -243,19 +240,6 @@ function SettingsView() {
                 onChange={(e) => setFullName(e.target.value)}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 placeholder="Enter your full name"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Job Title
-              </label>
-              <input
-                type="text"
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                placeholder="e.g., Project Manager"
               />
             </div>
 

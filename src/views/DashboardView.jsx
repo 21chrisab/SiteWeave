@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { useAppContext, supabaseClient } from '../context/AppContext';
+import React, { useState, useEffect } from 'react';
+import { useAppContext, useLazyDataLoader, supabaseClient } from '../context/AppContext';
 import { useToast } from '../context/ToastContext';
 import ProjectCard from '../components/ProjectCard';
 import ProjectModal from '../components/ProjectModal';
@@ -14,7 +14,13 @@ import { useProjectShortcuts } from '../hooks/useKeyboardShortcuts';
 
 function DashboardView() {
     const { state, dispatch } = useAppContext();
+    const { loadTasksIfNeeded } = useLazyDataLoader();
     const { addToast } = useToast();
+    
+    // Lazy load tasks when dashboard loads
+    useEffect(() => {
+        loadTasksIfNeeded();
+    }, []);
     const [showModal, setShowModal] = useState(false);
     const [isCreatingProject, setIsCreatingProject] = useState(false);
     const [isUpdatingProject, setIsUpdatingProject] = useState(false);
@@ -111,12 +117,16 @@ function DashboardView() {
                         if (contactsToAdd.length > 0) {
                             const projectContactsData = contactsToAdd.map(contactId => ({
                                 project_id: editingProject.id,
-                                contact_id: contactId
+                                contact_id: contactId,
+                                organization_id: editingProject.organization_id || state.currentOrganization?.id
                             }));
                             const { error: contactsError } = await supabaseClient
                                 .from('project_contacts')
-                                .insert(projectContactsData);
-                            if (contactsError) {
+                                .upsert(projectContactsData, {
+                                    onConflict: 'project_id,contact_id',
+                                    ignoreDuplicates: true
+                                });
+                            if (contactsError && contactsError.code !== '23505') {
                                 console.error('Error adding contacts to project:', contactsError);
                                 addToast('Project updated, but some contacts could not be added', 'warning');
                             }
@@ -290,16 +300,19 @@ function DashboardView() {
                     
                     for (const contactId of contactsToAdd) {
                         try {
-                            const { data: insertedContact, error: contactError } = await supabaseClient
+                            const { error: contactError } = await supabaseClient
                                 .from('project_contacts')
-                                .insert({
+                                .upsert({
                                     project_id: createdProject.id,
-                                    contact_id: contactId
-                                })
-                                .select()
-                                .single();
+                                    contact_id: contactId,
+                                    organization_id: state.currentOrganization?.id
+                                }, { 
+                                    onConflict: 'project_id,contact_id',
+                                    ignoreDuplicates: true 
+                                });
                             
-                            if (contactError) {
+                            // Ignore duplicate errors (23505) and empty result errors (PGRST116)
+                            if (contactError && contactError.code !== '23505' && contactError.code !== 'PGRST116') {
                                 console.error(`Error adding contact ${contactId} to project:`, contactError);
                                 failedContacts.push(contactId);
                             } else {

@@ -208,31 +208,7 @@ function SetupWizard({ show, onComplete }) {
             </div>
 
             <div className="space-y-3">
-              <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                <div>
-                  <label className="font-medium text-gray-900">Read Projects</label>
-                  <p className="text-sm text-gray-600">View project details and information</p>
-                </div>
-                <input
-                  type="checkbox"
-                  checked={permissions.read_projects || false}
-                  onChange={(e) => handlePermissionChange('read_projects', e.target.checked)}
-                  className="w-5 h-5 text-blue-600 rounded focus:ring-blue-500"
-                />
-              </div>
 
-              <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                <div>
-                  <label className="font-medium text-gray-900">Send Messages</label>
-                  <p className="text-sm text-gray-600">Add comments to projects and tasks</p>
-                </div>
-                <input
-                  type="checkbox"
-                  checked={permissions.can_send_messages || false}
-                  onChange={(e) => handlePermissionChange('can_send_messages', e.target.checked)}
-                  className="w-5 h-5 text-blue-600 rounded focus:ring-blue-500"
-                />
-              </div>
 
               <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
                 <div>
@@ -341,7 +317,7 @@ function SetupWizard({ show, onComplete }) {
                     onChange={(e) => setCreateUserData({ ...createUserData, password: e.target.value })}
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
                     required
-                    minLength={8}
+                    minLength={6}
                   />
                   <button
                     type="submit"

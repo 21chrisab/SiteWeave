@@ -91,7 +91,6 @@ serve(async (req) => {
           can_delete_projects: true,
           can_view_financials: true,
           can_assign_tasks: true,
-          can_view_reports: true,
           can_manage_contacts: true,
           can_create_tasks: true,
           can_edit_tasks: true,

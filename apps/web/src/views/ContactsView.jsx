@@ -255,12 +255,16 @@ function ContactsView() {
             // project_id is a UUID, not an integer, so use it directly as a string
             const { error } = await supabaseClient
                 .from('project_contacts')
-                .insert({
+                .upsert({
                     project_id: selectedAssignProject,
-                    contact_id: assignContact.id
+                    contact_id: assignContact.id,
+                    organization_id: state.currentOrganization?.id
+                }, {
+                    onConflict: 'project_id,contact_id',
+                    ignoreDuplicates: true
                 });
 
-            if (error) {
+            if (error && error.code !== '23505') {
                 addToast('Error assigning contact: ' + error.message, 'error');
             } else {
                 dispatch({ 

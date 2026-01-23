@@ -13,7 +13,9 @@ function ProjectModal({ onClose, onSave, isLoading = false, project = null }) {
     const { addToast } = useToast();
     const [name, setName] = useState('');
     const [address, setAddress] = useState('');
+    const [project_number, setProjectNumber] = useState('');
     const [project_type, setProjectType] = useState('Residential');
+    const [project_type_custom, setProjectTypeCustom] = useState('');
     const [status, setStatus] = useState('Planning');
     const [due_date, setDueDate] = useState('');
     const [next_milestone, setNextMilestone] = useState('');
@@ -34,7 +36,17 @@ function ProjectModal({ onClose, onSave, isLoading = false, project = null }) {
         if (project) {
             setName(project.name || '');
             setAddress(project.address || '');
-            setProjectType(project.project_type || 'Residential');
+            setProjectNumber(project.project_number || '');
+            const projectType = project.project_type || 'Residential';
+            // Check if project_type is one of the predefined options
+            const predefinedTypes = ['Residential', 'Commercial', 'Industrial', 'Infrastructure', 'Multi-family'];
+            if (predefinedTypes.includes(projectType)) {
+                setProjectType(projectType);
+                setProjectTypeCustom('');
+            } else {
+                setProjectType('Other');
+                setProjectTypeCustom(projectType);
+            }
             setStatus(project.status || 'Planning');
             setDueDate(project.due_date || '');
             setNextMilestone(project.next_milestone || '');
@@ -50,6 +62,9 @@ function ProjectModal({ onClose, onSave, isLoading = false, project = null }) {
             setSelectedContacts(existingContacts);
         } else {
             // Reset when creating new project
+            setProjectNumber('');
+            setProjectType('Residential');
+            setProjectTypeCustom('');
             setSelectedContacts([]);
             setEmailAddresses([]);
         }
@@ -57,10 +72,14 @@ function ProjectModal({ onClose, onSave, isLoading = false, project = null }) {
 
     const handleSubmit = (e) => {
         e.preventDefault();
+        // Determine the final project_type value
+        const finalProjectType = project_type === 'Other' ? project_type_custom : project_type;
+        
         const projectData = {
             name,
             address,
-            project_type,
+            project_number: project_number || null,
+            project_type: finalProjectType || null,
             status,
             due_date: due_date || null,
             next_milestone: next_milestone || null,
@@ -233,13 +252,28 @@ function ProjectModal({ onClose, onSave, isLoading = false, project = null }) {
                         <input type="text" value={address} onChange={e => setAddress(e.target.value)} className="w-full p-2 border rounded-lg" />
                     </div>
                     <div className="mb-4">
+                        <label className="block text-sm font-semibold mb-1 text-gray-600">Project Number</label>
+                        <input type="text" value={project_number} onChange={e => setProjectNumber(e.target.value)} className="w-full p-2 border rounded-lg" placeholder="Optional" />
+                    </div>
+                    <div className="mb-4">
                         <label className="block text-sm font-semibold mb-1 text-gray-600">Project Type</label>
                         <select value={project_type} onChange={e => setProjectType(e.target.value)} className="w-full p-2 border rounded-lg bg-white">
                             <option value="Residential">Residential</option>
                             <option value="Commercial">Commercial</option>
                             <option value="Industrial">Industrial</option>
                             <option value="Infrastructure">Infrastructure</option>
+                            <option value="Multi-family">Multi-family</option>
+                            <option value="Other">Other</option>
                         </select>
+                        {project_type === 'Other' && (
+                            <input
+                                type="text"
+                                value={project_type_custom}
+                                onChange={e => setProjectTypeCustom(e.target.value)}
+                                placeholder="Enter project type"
+                                className="w-full p-2 border rounded-lg mt-2"
+                            />
+                        )}
                     </div>
                     <div className="mb-4">
                         <label className="block text-sm font-semibold mb-1 text-gray-600">Status</label>

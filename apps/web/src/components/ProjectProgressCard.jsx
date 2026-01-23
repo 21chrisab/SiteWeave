@@ -74,13 +74,29 @@ function ProjectProgressCard({ project }) {
     };
 
 
-    const getProgressColor = (progress) => {
+    const getProgressColor = (progress, totalBudget, spentAmount, dueDate) => {
+        // Check if over budget
+        const isOverBudget = totalBudget > 0 && spentAmount > totalBudget;
+        
+        // Check if behind schedule (if due date exists and progress is low)
+        const isBehindSchedule = dueDate && new Date(dueDate) < new Date() && progress < 50;
+        
+        // Use red if over budget or behind schedule
+        if (isOverBudget || isBehindSchedule) {
+            return 'bg-red-500';
+        }
+        
+        // Use green if progress is high (>= 75%), blue otherwise
+        if (progress >= 75) {
+            return 'bg-green-500';
+        }
+        
         return 'bg-blue-500';
     };
 
     if (isLoading) {
         return (
-            <div className="p-4 bg-white rounded-xl shadow-sm border border-gray-200">
+            <div className="p-4 bg-white rounded-xl" style={{ boxShadow: '0px 4px 12px rgba(0,0,0,0.05)' }}>
                 <div className="animate-pulse">
                     <div className="h-4 bg-gray-200 rounded w-3/4 mb-2"></div>
                     <div className="h-3 bg-gray-200 rounded w-full mb-2"></div>
@@ -95,7 +111,7 @@ function ProjectProgressCard({ project }) {
     const spentAmount = calculateSpentAmount();
 
     return (
-        <div className="p-4 bg-white rounded-xl shadow-sm border border-gray-200">
+        <div className="p-4 bg-white rounded-xl" style={{ boxShadow: '0px 4px 12px rgba(0,0,0,0.05)' }}>
             <div className="flex justify-between items-center mb-3">
                 <h3 className="font-semibold text-sm text-gray-700">Progress Status</h3>
                 <span className="text-sm font-bold text-gray-900">{overallProgress}%</span>
@@ -104,7 +120,7 @@ function ProjectProgressCard({ project }) {
             {/* Progress Bar */}
             <div className="w-full bg-gray-200 rounded-full h-2 mb-3 overflow-hidden">
                 <div 
-                    className={`h-2 rounded-full transition-all duration-300 ${getProgressColor(overallProgress)}`}
+                    className={`h-2 rounded-full transition-all duration-300 ${getProgressColor(overallProgress, totalBudget, spentAmount, project.due_date)}`}
                     style={{ 
                         width: `${Math.max(0, Math.min(100, overallProgress))}%`,
                         minWidth: overallProgress > 0 ? '2px' : '0px'

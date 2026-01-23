@@ -16,7 +16,6 @@ const PERMISSION_GROUPS = [
       { key: 'can_create_projects', label: 'Create Projects', description: 'Create new projects' },
       { key: 'can_edit_projects', label: 'Edit Projects', description: 'Modify existing projects' },
       { key: 'can_delete_projects', label: 'Delete Projects', description: 'Remove projects' },
-      { key: 'read_projects', label: 'View Projects', description: 'View project details' },
       { key: 'can_create_tasks', label: 'Create Tasks', description: 'Create new tasks' },
       { key: 'can_edit_tasks', label: 'Edit Tasks', description: 'Modify existing tasks' },
       { key: 'can_delete_tasks', label: 'Delete Tasks', description: 'Remove tasks' },
@@ -28,7 +27,6 @@ const PERMISSION_GROUPS = [
     icon: 'M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z',
     permissions: [
       { key: 'can_view_financials', label: 'View Financials', description: 'View financial information and reports' },
-      { key: 'can_view_reports', label: 'View Reports', description: 'Access project and financial reports' },
     ]
   },
   {
@@ -38,7 +36,7 @@ const PERMISSION_GROUPS = [
       { key: 'can_manage_team', label: 'Manage Organization Directory', description: 'Add or remove employees from your company account' },
       { key: 'can_manage_roles', label: 'Manage Roles', description: 'Create and edit custom roles' },
       { key: 'can_manage_contacts', label: 'Manage Contacts', description: 'Add and edit contact information' },
-      { key: 'can_send_messages', label: 'Send Messages', description: 'Send messages in project channels' },
+      { key: 'can_manage_users', label: 'Manage Users', description: 'Manage user accounts and permissions' },
     ]
   }
 ];
@@ -48,22 +46,23 @@ const DEFAULT_PERMISSIONS = {
   can_create_projects: false,
   can_edit_projects: false,
   can_delete_projects: false,
-  read_projects: true, // Default to true for basic access
   can_create_tasks: false,
   can_edit_tasks: false,
   can_delete_tasks: false,
   can_assign_tasks: false,
   can_view_financials: false,
-  can_view_reports: false,
   can_manage_team: false,
   can_manage_roles: false,
   can_manage_contacts: false,
-  can_send_messages: true, // Default to true for basic access
+  can_manage_users: false,
 };
 
 function RoleCreationModal({ show, onClose, onSave, existingRole = null, isLoading = false }) {
   const [roleName, setRoleName] = useState(existingRole?.name || '');
   const [permissions, setPermissions] = useState(existingRole?.permissions || { ...DEFAULT_PERMISSIONS });
+
+  // Check if this is the Org Admin role
+  const isOrgAdmin = existingRole?.name === 'Org Admin';
 
   // Reset form when modal opens/closes or existingRole changes
   React.useEffect(() => {
@@ -74,6 +73,9 @@ function RoleCreationModal({ show, onClose, onSave, existingRole = null, isLoadi
   }, [show, existingRole]);
 
   const handlePermissionToggle = (permissionKey) => {
+    // Prevent toggling if Org Admin
+    if (isOrgAdmin) return;
+    
     setPermissions(prev => ({
       ...prev,
       [permissionKey]: !prev[permissionKey]
@@ -83,6 +85,10 @@ function RoleCreationModal({ show, onClose, onSave, existingRole = null, isLoadi
   const handleSubmit = (e) => {
     e.preventDefault();
     if (!roleName.trim()) {
+      return;
+    }
+    // Prevent saving changes to Org Admin
+    if (isOrgAdmin) {
       return;
     }
     onSave({
@@ -110,7 +116,13 @@ function RoleCreationModal({ show, onClose, onSave, existingRole = null, isLoadi
             className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
             required
             autoFocus
+            disabled={isOrgAdmin}
           />
+          {isOrgAdmin && (
+            <p className="mt-2 text-sm text-amber-600">
+              Organization Admin role cannot be modified. This role has all permissions by default.
+            </p>
+          )}
         </div>
 
         {/* Permission Groups */}
@@ -125,13 +137,18 @@ function RoleCreationModal({ show, onClose, onSave, existingRole = null, isLoadi
                 {group.permissions.map(perm => (
                   <label
                     key={perm.key}
-                    className="flex items-start space-x-3 p-3 rounded-lg hover:bg-white cursor-pointer transition-colors"
+                    className={`flex items-start space-x-3 p-3 rounded-lg transition-colors ${
+                      isOrgAdmin 
+                        ? 'cursor-not-allowed opacity-60' 
+                        : 'hover:bg-white cursor-pointer'
+                    }`}
                   >
                     <input
                       type="checkbox"
                       checked={permissions[perm.key] || false}
                       onChange={() => handlePermissionToggle(perm.key)}
-                      className="mt-1 h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                      disabled={isOrgAdmin}
+                      className="mt-1 h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
                     />
                     <div className="flex-1">
                       <div className="font-medium text-sm text-gray-900">{perm.label}</div>
@@ -157,7 +174,7 @@ function RoleCreationModal({ show, onClose, onSave, existingRole = null, isLoadi
           <button
             type="submit"
             className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:opacity-50"
-            disabled={isLoading || !roleName.trim()}
+            disabled={isLoading || !roleName.trim() || isOrgAdmin}
           >
             {isLoading ? 'Saving...' : existingRole ? 'Update Role' : 'Create Role'}
           </button>

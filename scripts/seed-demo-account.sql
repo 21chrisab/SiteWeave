@@ -53,7 +53,6 @@ BEGIN
             "can_manage_users": true,
             "can_delete_projects": true,
             "can_assign_tasks": true,
-            "can_view_reports": true,
             "can_manage_contacts": true,
             "can_create_projects": true,
             "can_edit_projects": true

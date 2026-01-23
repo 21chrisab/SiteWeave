@@ -42,16 +42,53 @@ function InviteAcceptPage() {
     setLoading(true);
     setError(null);
     try {
-      const { data, error } = await supabaseClient
+      // First, get the invitation without joins to avoid RLS issues
+      const { data: invitationData, error: invitationError } = await supabaseClient
         .from('invitations')
-        .select(`
-          *,
-          organizations (name),
-          roles (name)
-        `)
+        .select('*')
         .eq('invitation_token', token)
         .eq('status', 'pending')
         .single();
+
+      if (invitationError) {
+        throw invitationError;
+      }
+
+      if (!invitationData) {
+        setError('Invalid or expired invitation link. Please ask your admin for a new one.');
+        setLoading(false);
+        return;
+      }
+
+      // Then fetch organization and role names separately if needed
+      let organizationName = null;
+      let roleName = null;
+
+      if (invitationData.organization_id) {
+        const { data: orgData } = await supabaseClient
+          .from('organizations')
+          .select('name')
+          .eq('id', invitationData.organization_id)
+          .single();
+        organizationName = orgData?.name || null;
+      }
+
+      if (invitationData.role_id) {
+        const { data: roleData } = await supabaseClient
+          .from('roles')
+          .select('name')
+          .eq('id', invitationData.role_id)
+          .single();
+        roleName = roleData?.name || null;
+      }
+
+      // Combine the data
+      const data = {
+        ...invitationData,
+        organizations: organizationName ? { name: organizationName } : null,
+        roles: roleName ? { name: roleName } : null
+      };
+      const error = null;
 
       console.log('Invitation query result:', { data: !!data, error: error?.message });
 
@@ -98,8 +135,8 @@ function InviteAcceptPage() {
       return;
     }
 
-    if (password.length < 8) {
-      addToast('Password must be at least 8 characters', 'error');
+    if (password.length < 6) {
+      addToast('Password must be at least 6 characters', 'error');
       return;
     }
 
@@ -248,10 +285,10 @@ function InviteAcceptPage() {
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              placeholder="At least 8 characters"
+              placeholder="At least 6 characters"
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
               required
-              minLength={8}
+              minLength={6}
               disabled={accepting}
             />
           </div>
@@ -267,7 +304,7 @@ function InviteAcceptPage() {
               placeholder="Re-enter your password"
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
               required
-              minLength={8}
+              minLength={6}
               disabled={accepting}
             />
           </div>

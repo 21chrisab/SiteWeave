@@ -99,6 +99,10 @@ const getInitialState = () => {
     organizationLoading: false, // Loading state for organization check
     isProjectCollaborator: false, // User is a guest collaborator
     collaborationProjects: [], // Projects user can access as collaborator
+    // Lazy loading flags
+    tasksLoaded: false,
+    filesLoaded: false,
+    calendarEventsLoaded: false,
   };
   
   // Try to restore from sessionStorage (will be null if no user or different user)
@@ -162,8 +166,28 @@ function appReducer(state, action) {
       ...state, 
       calendarEvents: state.calendarEvents.filter(event => event.id !== action.payload) 
     };
-    case 'ADD_MESSAGE': return { ...state, messages: [...state.messages, action.payload] };
-    case 'UPDATE_MESSAGE': return { ...state, messages: state.messages.map(m => m.id === action.payload.id ? action.payload : m) };
+    case 'ADD_MESSAGE': {
+      // Prevent duplicates
+      const exists = state.messages.some(m => m.id === action.payload.id);
+      if (exists) return state;
+      return { ...state, messages: [...state.messages, action.payload] };
+    }
+    case 'UPDATE_MESSAGE': {
+      return { 
+        ...state, 
+        messages: state.messages.map(msg => 
+          msg.id === action.payload.id ? action.payload : msg
+        ) 
+      };
+    }
+    case 'SET_CHANNEL_MESSAGES': {
+      // Set messages for a specific channel (replaces existing messages for that channel)
+      const channelId = action.payload.channelId;
+      const newMessages = action.payload.messages;
+      // Remove existing messages for this channel and add new ones
+      const filteredMessages = state.messages.filter(m => m.channel_id !== channelId);
+      return { ...state, messages: [...filteredMessages, ...newMessages] };
+    }
     case 'ADD_CHANNEL': return { ...state, messageChannels: [...state.messageChannels, action.payload] };
     case 'ADD_ACTIVITY': return { ...state, activityLog: [action.payload, ...state.activityLog].slice(0, 50) }; // Keep latest 50
     case 'ADD_CONTACT': {
@@ -218,6 +242,9 @@ function appReducer(state, action) {
       isProjectCollaborator: action.payload.isCollaborator,
       collaborationProjects: action.payload.projects || []
     };
+    case 'SET_TASKS_LOADED': return { ...state, tasks: action.payload, tasksLoaded: true };
+    case 'SET_FILES_LOADED': return { ...state, files: action.payload, filesLoaded: true };
+    case 'SET_CALENDAR_EVENTS_LOADED': return { ...state, calendarEvents: action.payload, calendarEventsLoaded: true };
     default: return state;
   }
 }
@@ -470,6 +497,8 @@ export const AppProvider = ({ children }) => {
     if (!state.authLoading && state.user) {
       // Only fetch data if user is authenticated
       async function fetchInitialData() {
+        const startTime = performance.now();
+        
         try {
           // First, check if user has a profile
           const { data: profile, error: profileError } = await supabaseClient
@@ -478,7 +507,6 @@ export const AppProvider = ({ children }) => {
             .eq('id', state.user.id)
             .maybeSingle();
           
-          console.log('User profile:', profile);
           if (profileError) {
             console.error('Profile error:', profileError);
           }
@@ -699,28 +727,26 @@ export const AppProvider = ({ children }) => {
             dispatch({ type: 'SET_MUST_CHANGE_PASSWORD', payload: true });
           }
 
-          // Fetch projects - RLS policy handles filtering automatically by organization_id
-          // The RLS policy allows:
-          // - Organization members: projects in their organization
-          // - Project collaborators: specific projects they're invited to
-          const [{ data: projects }, { data: tasks }, { data: files }, {data: calendarEvents}, {data: messageChannels}, {data: messages}, { data: userPreferences, error: userPrefsError }, { data: activityLog }] = await Promise.all([
-            supabaseClient.from('projects').select('*'),
-            supabaseClient.from('tasks').select('*'),
-            supabaseClient.from('files').select('*'),
-            supabaseClient.from('calendar_events').select('*'),
+          // === PHASE 1: Critical Data (Projects) - Load first for fast UI render ===
+          const { data: projects } = await supabaseClient.from('projects').select('*');
+          const finalProjects = projects || [];
+          
+          // Dispatch projects immediately so UI can render
+          dispatch({ type: 'SET_DATA', payload: { 
+            projects: finalProjects,
+            activeView: currentActiveViewRef.current || state.activeView
+          }});
+          
+          // === PHASE 2: Essential Secondary Data (NOT tasks/files/events - loaded on demand) ===
+          const [{ data: messageChannels }, { data: userPreferences, error: userPrefsError }, { data: activityLog }] = await Promise.all([
             supabaseClient.from('message_channels').select('*'),
-            supabaseClient.from('messages').select('*').order('created_at', { ascending: true }),
             supabaseClient.from('user_preferences').select('*').eq('user_id', state.user.id).maybeSingle(),
             supabaseClient.from('activity_log').select('*').order('created_at', { ascending: false }).limit(50)
           ]);
           
-          // RLS policy automatically filters projects based on user role
-          // No need for manual filtering - RLS handles it
-          const finalProjects = projects || [];
-          console.log('Loaded projects:', finalProjects.length);
+          // Tasks, Files, and Calendar Events will be loaded on-demand when user navigates to those views
           
-          // Fetch virtual contacts (Organization Directory + Project Collaborators)
-          // Import virtual contacts service
+          // === PHASE 3: Contacts (slower query) - Load last ===
           const { getVirtualContacts, getProjectContactsForContacts } = await import('../utils/virtualContactsService');
           const userProjectIds = finalProjects.map(p => p.id);
           const organizationId = organization?.id || null;
@@ -767,22 +793,22 @@ export const AppProvider = ({ children }) => {
                 return contact;
               });
             }
-            
-            console.log('Loaded virtual contacts:', finalContacts.length);
           } catch (error) {
             console.error('Error fetching virtual contacts:', error);
             finalContacts = [];
           }
           
-          // Preserve current activeView when fetching data
+          // Final dispatch with critical data (tasks/files/events loaded on-demand)
+          const endTime = performance.now();
+          
           dispatch({ type: 'SET_DATA', payload: { 
             projects: finalProjects, 
             contacts: finalContacts, 
-            tasks: tasks || [], 
-            files: files || [], 
-            calendarEvents: calendarEvents || [], 
+            tasks: [], // Loaded on-demand
+            files: [], // Loaded on-demand
+            calendarEvents: [], // Loaded on-demand
             messageChannels: messageChannels || [], 
-            messages: messages || [],
+            messages: [],
             activityLog: activityLog || [],
             activeView: currentActiveViewRef.current || state.activeView
           } });
@@ -804,6 +830,8 @@ export const AppProvider = ({ children }) => {
     fetchInitialData();
 
     // --- REAL-TIME SUBSCRIPTIONS ---
+    // Note: Subscriptions will fail silently if realtime is not enabled for a table
+    // This is expected behavior - WebSocket errors can be ignored
     const projectsSubscription = supabaseClient.channel('public:projects')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'projects' }, (payload) => {
         if (payload.eventType === 'INSERT') {
@@ -814,13 +842,15 @@ export const AppProvider = ({ children }) => {
           dispatch({ type: 'DELETE_PROJECT', payload: payload.old.id });
         }
       })
-      .subscribe();
+      .subscribe((status) => {
+        // Silently handle subscription status - errors are expected if realtime is disabled
+      });
 
     const filesSubscription = supabaseClient.channel('public:files')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'files' }, (payload) => {
         dispatch({ type: 'ADD_FILE', payload: payload.new });
       })
-      .subscribe();
+      .subscribe(() => {}); // Silently handle subscription status
 
     const calendarEventsSubscription = supabaseClient.channel('public:calendar_events')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'calendar_events' }, (payload) => {
@@ -832,7 +862,7 @@ export const AppProvider = ({ children }) => {
       .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'calendar_events' }, (payload) => {
         dispatch({ type: 'DELETE_EVENT', payload: payload.old.id });
       })
-      .subscribe();
+      .subscribe(() => {}); // Silently handle subscription status
 
     const contactsSubscription = supabaseClient.channel('public:contacts')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'contacts' }, async (payload) => {
@@ -866,7 +896,7 @@ export const AppProvider = ({ children }) => {
       .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'contacts' }, (payload) => {
         dispatch({ type: 'DELETE_CONTACT', payload: payload.old.id });
       })
-      .subscribe();
+      .subscribe(() => {}); // Silently handle subscription status
 
     const projectContactsSubscription = supabaseClient.channel('public:project_contacts')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'project_contacts' }, (payload) => {
@@ -875,7 +905,7 @@ export const AppProvider = ({ children }) => {
       .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'project_contacts' }, (payload) => {
         dispatch({ type: 'REMOVE_PROJECT_CONTACT', payload: payload.old });
       })
-      .subscribe();
+      .subscribe(() => {}); // Silently handle subscription status
     
     const tasksSubscription = supabaseClient.channel('public:tasks')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'tasks' }, async (payload) => {
@@ -889,36 +919,21 @@ export const AppProvider = ({ children }) => {
           dispatch({ type: 'DELETE_TASK', payload: payload.old.id });
         }
       })
-      .subscribe();
+      .subscribe(() => {}); // Silently handle subscription status
 
+    // Messages are now loaded per-channel in MessagesView component (MVP pattern)
+    // This global subscription is kept for backwards compatibility but MessagesView handles its own subscription
     const messagesSubscription = supabaseClient.channel('public:messages')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, async (payload) => {
-        const { data: newMessage } = await supabaseClient.from('messages').select('*').eq('id', payload.new.id).single();
-        if (newMessage && newMessage.user_id) {
-          // Fetch user info from contacts via profiles (using separate queries to avoid relationship ambiguity)
-          const { data: profile } = await supabaseClient
-            .from('profiles')
-            .select('id, contact_id')
-            .eq('id', newMessage.user_id)
-            .maybeSingle();
-          
-          if (profile?.contact_id) {
-            const { data: contact } = await supabaseClient
-              .from('contacts')
-              .select('id, name, avatar_url')
-              .eq('id', profile.contact_id)
-              .maybeSingle();
-            
-            if (contact) {
-              newMessage.user = {
-                id: profile.id,
-                name: contact.name,
-                avatar_url: contact.avatar_url
-              };
-            }
-          }
+        // MessagesView handles its own subscription with fetchMessageWithUserInfo
+        // This global subscription is kept minimal for other components that might need it
+        const { fetchMessageWithUserInfo } = await import('@siteweave/core-logic');
+        try {
+          const enrichedMessage = await fetchMessageWithUserInfo(supabaseClient, payload.new);
+          dispatch({ type: 'ADD_MESSAGE', payload: enrichedMessage });
+        } catch (error) {
+          console.error('Error processing message in global subscription:', error);
         }
-        if (newMessage) dispatch({ type: 'ADD_MESSAGE', payload: newMessage });
       })
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'messages' }, async (payload) => {
         // Update message instantly when edited
@@ -930,13 +945,13 @@ export const AppProvider = ({ children }) => {
         }
         dispatch({ type: 'UPDATE_MESSAGE', payload: updatedMessage });
       })
-      .subscribe();
+      .subscribe(() => {}); // Silently handle subscription status
 
     const messageChannelsSubscription = supabaseClient.channel('public:message_channels')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'message_channels' }, (payload) => {
         dispatch({ type: 'ADD_CHANNEL', payload: payload.new });
       })
-      .subscribe();
+      .subscribe(() => {}); // Silently handle subscription status
 
     const userPreferencesSubscription = supabaseClient.channel('public:user_preferences')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'user_preferences' }, (payload) => {
@@ -944,20 +959,104 @@ export const AppProvider = ({ children }) => {
           dispatch({ type: 'SET_USER_PREFERENCES', payload: payload.new });
         }
       })
-      .subscribe();
+      .subscribe(() => {}); // Silently handle subscription status
 
     const activityLogSubscription = supabaseClient.channel('public:activity_log')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'activity_log' }, (payload) => {
         dispatch({ type: 'ADD_ACTIVITY', payload: payload.new });
       })
-      .subscribe();
+      .subscribe(() => {}); // Silently handle subscription status
 
-      return () => supabaseClient.removeAllChannels();
+    // CRITICAL: Subscribe to profiles table for organization member updates
+    // This ensures the UI updates immediately when users are added/removed/updated
+    const profilesSubscription = supabaseClient.channel('public:profiles')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, async (payload) => {
+        // Only process if it's related to the current organization
+        const profileOrgId = payload.new?.organization_id || payload.old?.organization_id;
+        if (profileOrgId && profileOrgId === state.currentOrganization?.id) {
+          // Refresh contacts list to include new org members
+          try {
+            const { getVirtualContacts } = await import('../utils/virtualContactsService');
+            const userProjectIds = state.projects.map(p => p.id);
+            const organizationId = state.currentOrganization?.id || null;
+            
+            const updatedContacts = await getVirtualContacts(
+              supabaseClient,
+              state.user.id,
+              organizationId,
+              userProjectIds
+            );
+            
+            // Update contacts in state
+            dispatch({ type: 'SET_DATA', payload: { 
+              contacts: updatedContacts,
+              activeView: state.activeView // Preserve current view
+            }});
+          } catch (error) {
+            console.error('Error refreshing contacts after profile change:', error);
+          }
+        }
+      })
+      .subscribe((status) => {
+        // Handle subscription status changes silently
+        if (status === 'SUBSCRIBED') {
+          // Successfully subscribed
+        } else if (status === 'CHANNEL_ERROR') {
+          // Channel error - realtime may not be enabled for this table
+          // Silently fail - this is expected if realtime is not enabled
+        }
+      });
+
+      return () => {
+        // Clean up subscriptions
+        supabaseClient.removeAllChannels();
+      };
     }
-  }, [state.authLoading, state.user]);
+  }, [state.authLoading, state.user?.id, state.currentOrganization?.id]);
 
   return <AppContext.Provider value={{ state, dispatch }}>{children}</AppContext.Provider>;
 };
 
 export const useAppContext = () => useContext(AppContext);
+
+// Custom hook for lazy loading data
+export const useLazyDataLoader = () => {
+  const { state, dispatch } = useAppContext();
+  
+  const loadTasksIfNeeded = async () => {
+    if (state.tasksLoaded) return;
+    
+    const { loadTasksIfNeeded: loadTasks } = await import('../utils/lazyDataLoader');
+    await loadTasks(supabaseClient, dispatch, state);
+  };
+  
+  const loadFilesIfNeeded = async () => {
+    if (state.filesLoaded) return;
+    
+    const { loadFilesIfNeeded: loadFiles } = await import('../utils/lazyDataLoader');
+    await loadFiles(supabaseClient, dispatch, state);
+  };
+  
+  const loadCalendarEventsIfNeeded = async () => {
+    if (state.calendarEventsLoaded) return;
+    
+    const { loadCalendarEventsIfNeeded: loadEvents } = await import('../utils/lazyDataLoader');
+    await loadEvents(supabaseClient, dispatch, state);
+  };
+  
+  const loadProjectTasks = async (projectId) => {
+    const { loadProjectTasks: loadTasks } = await import('../utils/lazyDataLoader');
+    return await loadTasks(supabaseClient, dispatch, projectId, state);
+  };
+  
+  return {
+    loadTasksIfNeeded,
+    loadFilesIfNeeded,
+    loadCalendarEventsIfNeeded,
+    loadProjectTasks,
+    tasksLoaded: state.tasksLoaded,
+    filesLoaded: state.filesLoaded,
+    calendarEventsLoaded: state.calendarEventsLoaded
+  };
+};
 

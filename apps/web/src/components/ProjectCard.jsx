@@ -100,7 +100,8 @@ const ProjectCard = memo(function ProjectCard({ project, onEdit, onDelete }) {
             onClick={handleCardClick} 
             onMouseEnter={() => setShowActions(true)}
             onMouseLeave={() => setShowActions(false)}
-            className="bg-white p-4 rounded-xl shadow-sm border border-gray-200 space-y-3 cursor-pointer hover:border-blue-500 transition-all hover-lift animate-slide-in relative group"
+            className="bg-white p-4 rounded-xl space-y-3 cursor-pointer transition-all hover-lift animate-slide-in relative group"
+            style={{ boxShadow: '0px 4px 12px rgba(0,0,0,0.05)' }}
             role="button"
             tabIndex={0}
             aria-label={`Project: ${project.name}, Status: ${project.status}, Due: ${formatDate(project.due_date)}`}
@@ -113,7 +114,7 @@ const ProjectCard = memo(function ProjectCard({ project, onEdit, onDelete }) {
         >
             <div className="flex justify-between items-start">
                 <div className="flex-1 pr-2">
-                    <h3 className="font-bold">{project.name}</h3>
+                    <h3 className="text-xl font-bold">{project.name}</h3>
                     <p className="text-xs text-gray-500">{project.project_type}</p>
                 </div>
                 <div className="flex items-center gap-2 flex-shrink-0">

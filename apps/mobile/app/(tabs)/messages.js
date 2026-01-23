@@ -1,7 +1,7 @@
-import { View, Text, StyleSheet, FlatList, TextInput, ScrollView, KeyboardAvoidingView, Platform, Pressable, Alert } from 'react-native';
+import { View, Text, StyleSheet, FlatList, TextInput, ScrollView, KeyboardAvoidingView, Platform, Pressable, Alert, Image } from 'react-native';
 import { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../../context/AuthContext';
-import { fetchMessageChannels, fetchChannelMessages, sendMessage } from '@siteweave/core-logic';
+import { fetchMessageChannels, fetchChannelMessages, sendMessage, fetchMessageWithUserInfo } from '@siteweave/core-logic';
 import PressableWithFade from '../../components/PressableWithFade';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -17,6 +17,7 @@ export default function MessagesScreen() {
   const [messages, setMessages] = useState([]);
   const [messageText, setMessageText] = useState('');
   const subscriptionRef = useRef(null);
+  const flatListRef = useRef(null);
   const [showReportModal, setShowReportModal] = useState(false);
   const [selectedMessage, setSelectedMessage] = useState(null);
 
@@ -57,6 +58,10 @@ export default function MessagesScreen() {
     try {
       const data = await fetchChannelMessages(supabase, selectedChannel.id, user?.id);
       setMessages(data);
+      // Auto-scroll to bottom to show newest message
+      setTimeout(() => {
+        flatListRef.current?.scrollToEnd({ animated: false });
+      }, 100);
     } catch (error) {
       console.error('Error loading messages:', error);
     }
@@ -78,12 +83,21 @@ export default function MessagesScreen() {
         table: 'messages',
         filter: `channel_id=eq.${selectedChannel.id}`,
       }, async (payload) => {
-        // Fetch full message with user info
+        // Fetch user info for the new message and append directly
         try {
-          const data = await fetchChannelMessages(supabase, selectedChannel.id, user?.id);
-          setMessages(data);
+          const enrichedMessage = await fetchMessageWithUserInfo(supabase, payload.new);
+          setMessages(prev => {
+            // Prevent duplicates
+            if (prev.some(m => m.id === enrichedMessage.id)) return prev;
+            const updated = [...prev, enrichedMessage];
+            // Auto-scroll to bottom when new message arrives
+            setTimeout(() => {
+              flatListRef.current?.scrollToEnd({ animated: true });
+            }, 100);
+            return updated;
+          });
         } catch (error) {
-          console.error('Error loading new message:', error);
+          console.error('Error processing new message:', error);
         }
       })
       .subscribe();
@@ -100,21 +114,25 @@ export default function MessagesScreen() {
   const handleSendMessage = async () => {
     if (!messageText.trim() || !selectedChannel || !user) return;
 
+    const messageContent = messageText.trim();
+    
     try {
       haptics.light();
       await sendMessage(supabase, {
         channel_id: selectedChannel.id,
         user_id: user.id,
-        content: messageText,
+        content: messageContent,
         topic: 'text',
         extension: 'txt',
         type: 'text',
       });
       haptics.success();
+      // Only clear input after successful send - realtime subscription will update UI
       setMessageText('');
     } catch (error) {
       console.error('Error sending message:', error);
       haptics.error();
+      // Don't clear input on error - user can retry
     }
   };
 
@@ -187,27 +205,68 @@ export default function MessagesScreen() {
         {selectedChannel ? (
           <>
             <FlatList
+              ref={flatListRef}
               data={messages}
               keyExtractor={(item) => item.id}
               contentContainerStyle={styles.messagesList}
-              renderItem={({ item }) => (
-                <Pressable
-                  style={[
-                    styles.messageItem,
-                    item.user_id === user?.id && styles.myMessage
-                  ]}
-                  onLongPress={() => handleMessageLongPress(item)}
-                  disabled={item.user_id === user?.id}
-                >
-                  <Text style={styles.messageUser}>
-                    {item.user?.name || 'Unknown'}
-                  </Text>
-                  <Text style={styles.messageText}>{item.content}</Text>
-                  <Text style={styles.messageTime}>
-                    {new Date(item.created_at).toLocaleTimeString()}
-                  </Text>
-                </Pressable>
-              )}
+              inverted={false}
+              renderItem={({ item }) => {
+                const isCurrentUser = item.user_id === user?.id;
+                const avatarUrl = item.user?.avatar_url;
+                return (
+                  <View style={[
+                    styles.messageContainer,
+                    isCurrentUser && styles.myMessageContainer
+                  ]}>
+                    {!isCurrentUser && (
+                      <View style={styles.avatarContainer}>
+                        {avatarUrl ? (
+                          <Image
+                            source={{ uri: avatarUrl }}
+                            style={styles.avatar}
+                          />
+                        ) : (
+                          <View style={[styles.avatar, styles.avatarPlaceholder]}>
+                            <Ionicons name="person" size={18} color="#9CA3AF" />
+                          </View>
+                        )}
+                      </View>
+                    )}
+                    <Pressable
+                      style={[
+                        styles.messageItem,
+                        isCurrentUser && styles.myMessage
+                      ]}
+                      onLongPress={() => handleMessageLongPress(item)}
+                      disabled={isCurrentUser}
+                    >
+                      {!isCurrentUser && (
+                        <Text style={styles.messageUser}>
+                          {item.user?.name || 'Unknown'}
+                        </Text>
+                      )}
+                      <Text style={styles.messageText}>{item.content}</Text>
+                      <Text style={styles.messageTime}>
+                        {new Date(item.created_at).toLocaleTimeString()}
+                      </Text>
+                    </Pressable>
+                    {isCurrentUser && (
+                      <View style={styles.avatarContainer}>
+                        {avatarUrl ? (
+                          <Image
+                            source={{ uri: avatarUrl }}
+                            style={styles.avatar}
+                          />
+                        ) : (
+                          <View style={[styles.avatar, styles.avatarPlaceholder]}>
+                            <Ionicons name="person" size={18} color="#9CA3AF" />
+                          </View>
+                        )}
+                      </View>
+                    )}
+                  </View>
+                );
+              }}
               ListEmptyComponent={
                 <View style={styles.emptyMessagesContainer}>
                   <Ionicons name="chatbubbles-outline" size={48} color="#9CA3AF" />
@@ -317,21 +376,42 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     flexGrow: 1,
   },
+  messageContainer: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    marginHorizontal: 16,
+    marginTop: 8,
+    gap: 8,
+  },
+  myMessageContainer: {
+    flexDirection: 'row-reverse',
+  },
   messageItem: {
     backgroundColor: '#fff',
     padding: 12,
-    marginHorizontal: 16,
-    marginTop: 8,
     borderRadius: 8,
     borderWidth: 1,
     borderColor: '#E5E7EB',
-    maxWidth: '80%',
+    maxWidth: '75%',
+    flexShrink: 1,
   },
   myMessage: {
     backgroundColor: '#DBEAFE',
-    alignSelf: 'flex-end',
-    marginRight: 16,
-    marginLeft: 'auto',
+  },
+  avatarContainer: {
+    width: 32,
+    height: 32,
+  },
+  avatar: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#E5E7EB',
+  },
+  avatarPlaceholder: {
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#E5E7EB',
   },
   messageUser: {
     fontSize: 12,

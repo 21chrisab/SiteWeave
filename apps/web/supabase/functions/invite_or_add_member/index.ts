@@ -107,21 +107,59 @@ serve(async (req) => {
         console.log('Processing contact for email:', email)
 
         // Ensure a contact exists for this email
-        console.log('Checking for existing contact with email:', email)
-        const { data: existingContact, error: contactLookupError } = await supabaseAdmin
+        // First, look for a contact in THIS organization
+        console.log('Checking for existing contact with email in organization:', email, organizationId)
+        let contactId: string | undefined = undefined
+        
+        // Try to find contact in the same organization first
+        const { data: orgContact, error: orgContactError } = await supabaseAdmin
           .from('contacts')
           .select('id')
           .ilike('email', email)
+          .eq('organization_id', organizationId)
           .maybeSingle()
 
-        if (contactLookupError) {
-          console.error('Error looking up contact:', contactLookupError)
-          results.push({ email, action: 'skipped', reason: 'contact_lookup_failed' })
-          continue
+        if (orgContactError) {
+          console.warn('Error looking up contact in org:', orgContactError)
+        } else if (orgContact) {
+          contactId = orgContact.id
+          console.log('Found contact in organization:', contactId)
         }
 
-        let contactId = existingContact?.id as string | undefined
-        console.log('Existing contact ID:', contactId)
+        // If not found in org, look for any contact with this email
+        if (!contactId) {
+          const { data: anyContacts, error: anyContactError } = await supabaseAdmin
+            .from('contacts')
+            .select('id, organization_id')
+            .ilike('email', email)
+            .limit(1)
+
+          if (anyContactError) {
+            console.error('Error looking up any contact:', anyContactError)
+            results.push({ email, action: 'skipped', reason: `contact_lookup_failed: ${anyContactError.message}` })
+            continue
+          }
+          
+          if (anyContacts && anyContacts.length > 0) {
+            contactId = anyContacts[0].id
+            console.log('Found contact (different org or null org):', contactId, 'org:', anyContacts[0].organization_id)
+            
+            // Update contact's organization_id if it's null
+            if (!anyContacts[0].organization_id) {
+              console.log('Updating contact organization_id to:', organizationId)
+              const { error: updateOrgError } = await supabaseAdmin
+                .from('contacts')
+                .update({ organization_id: organizationId })
+                .eq('id', contactId)
+              
+              if (updateOrgError) {
+                console.warn('Failed to update contact org:', updateOrgError)
+              }
+            }
+          }
+        }
+        
+        console.log('Final contact ID after lookup:', contactId)
 
         if (!contactId) {
           console.log('Creating new contact for:', email)
@@ -199,7 +237,7 @@ serve(async (req) => {
             const emailHtml = `
               <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
                 <div style="background: #ffffff; padding: 32px 40px 24px 40px; border-radius: 10px 10px 0 0; text-align: center; border: 1px solid #e5e7eb; border-bottom: none;">
-                  <img src="https://app.siteweave.org/logo.svg" alt="SiteWeave" style="height: 80px; width: auto; margin: 0 auto; display: block;" />
+                  <img src="https://app.siteweave.org/logo.svg" alt="SiteWeave" style="height: 120px; width: auto; margin: 0 auto; display: block;" />
                 </div>
                 <div style="background: white; padding: 30px; border: 1px solid #e5e7eb; border-top: none; border-radius: 0 0 10px 10px;">
                   <h2 style="color: #1f2937; margin-top: 0;">You've been added to a project! 🎉</h2>

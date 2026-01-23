@@ -29,7 +29,6 @@ const STANDARD_ROLES = [
       can_delete_projects: true,
       can_view_financials: true,
       can_assign_tasks: true,
-      can_view_reports: true,
       can_manage_contacts: true,
       can_create_tasks: true,
       can_edit_tasks: true,
@@ -47,7 +46,6 @@ const STANDARD_ROLES = [
       can_delete_projects: false,
       can_view_financials: true,
       can_assign_tasks: true,
-      can_view_reports: true,
       can_manage_contacts: true,
       can_create_tasks: true,
       can_edit_tasks: true,
@@ -65,7 +63,6 @@ const STANDARD_ROLES = [
       can_delete_projects: false,
       can_view_financials: false,
       can_assign_tasks: false,
-      can_view_reports: true,
       can_manage_contacts: false,
       can_create_tasks: false,
       can_edit_tasks: true,
@@ -90,7 +87,6 @@ const ALL_PERMISSIONS = [
   { key: 'can_delete_projects', label: 'Delete Projects', description: 'Remove projects' },
   { key: 'can_view_financials', label: 'View Financials', description: 'Access financial data' },
   { key: 'can_assign_tasks', label: 'Assign Tasks', description: 'Assign tasks to team members' },
-  { key: 'can_view_reports', label: 'View Reports', description: 'Access reports and analytics' },
   { key: 'can_manage_contacts', label: 'Manage Contacts', description: 'Add and edit contacts' },
   { key: 'can_create_tasks', label: 'Create Tasks', description: 'Create new tasks' },
   { key: 'can_edit_tasks', label: 'Edit Tasks', description: 'Modify existing tasks' },
@@ -726,8 +722,19 @@ function SetupWizardModal({ show, onComplete }) {
   const canGoBack = currentRoleIndex > 0;
   const isLastRole = currentRoleIndex === allRoles.length - 1;
 
+  // Allow closing the modal with confirmation
+  const handleClose = () => {
+    if (window.confirm('Are you sure you want to skip the setup wizard? You can access team management from the Organization menu later.')) {
+      // Mark setup as complete even if skipped
+      if (user?.id) {
+        localStorage.setItem(`setup_complete_${user.id}`, 'true');
+      }
+      onComplete();
+    }
+  };
+
   return (
-    <Modal show={show} onClose={() => {}} title="Welcome! Set Up Your Organization" size="xlarge">
+    <Modal show={show} onClose={handleClose} title="Welcome! Set Up Your Organization" size="xlarge">
       <div className="flex flex-col h-full max-h-[80vh]">
         {/* Progress Indicator - Refactored with pinned button */}
         <div className="flex items-center justify-between mb-6 pb-4 border-b">

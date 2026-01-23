@@ -51,7 +51,10 @@ let oauthServer = null;
 const OAUTH_PORT = 5000;
 
 // Configure auto-updater
-autoUpdater.checkForUpdatesAndNotify();
+// Check for updates 5 seconds after app starts (gives UI time to load)
+setTimeout(() => {
+  autoUpdater.checkForUpdatesAndNotify();
+}, 5000);
 
 // OAuth Server for loopback method
 function startOAuthServer() {

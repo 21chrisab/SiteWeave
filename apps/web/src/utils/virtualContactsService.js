@@ -263,7 +263,6 @@ export async function getVirtualContacts(supabase, userId, organizationId, userP
 
     // Convert Map to Array
     const result = Array.from(contactMap.values());
-    console.log('Total virtual contacts loaded:', result.length);
     return result;
   } catch (error) {
     console.error('Error fetching virtual contacts:', error);
