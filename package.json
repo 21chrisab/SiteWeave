@@ -1,14 +1,16 @@
 {
   "name": "siteweave",
   "private": true,
-  "version": "1.0.41",
+  "version": "1.0.43",
   "main": "dist-electron/main.cjs",
   "scripts": {
     "dev": "vite",
     "dev:electron": "vite --config vite.config.mjs",
     "build": "vite build",
     "preview": "vite preview",
-    "build:win": "npm run build && electron-builder --win --publish never"
+    "build:win": "vite build --config vite.config.mjs && electron-builder --win --publish never",
+    "build:win:appx": "vite build --config vite.config.mjs && electron-builder --win --config.win.target=appx --publish never",
+    "build:win:msix": "npm run build:win:appx"
   },
   "dependencies": {
     "@fullcalendar/core": "^6.1.20",
@@ -18,10 +20,13 @@
     "@fullcalendar/timegrid": "^6.1.20",
     "@supabase/supabase-js": "^2.45.0",
     "electron-updater": "^6.7.3",
+    "i18next": "^23.16.8",
+    "i18next-browser-languagedetector": "^7.2.2",
     "jspdf": "^4.0.0",
     "qrcode": "^1.5.4",
     "react": "^19.2.3",
     "react-dom": "^19.2.3",
+    "react-i18next": "^14.1.3",
     "react-router-dom": "^6.26.2"
   },
   "devDependencies": {
