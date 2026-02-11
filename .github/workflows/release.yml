@@ -16,14 +16,16 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
       with:
-        # Ensure we get a clean checkout with no extra files
         clean: true
+        # Full clone - avoids shallow clone possibly missing files
+        fetch-depth: 0
       
     - name: Setup Node.js
       uses: actions/setup-node@v4
       with:
         node-version: '22.x'
-        cache: 'npm'
+        # Disable cache to rule out stale dependency issues
+        cache: ''
 
     - name: Verify source code is current
       shell: bash
@@ -100,6 +102,14 @@ jobs:
         echo ""
         echo "=== latest.yml content ==="
         cat release/latest.yml || echo "WARNING: latest.yml not found"
+        echo ""
+        echo "=== CRITICAL: Verify new code is in the built bundle ==="
+        if ! grep -ql "ProgressReportBuilder\|createProgressReportSchedule" dist/assets/*.js 2>/dev/null; then
+          echo "ERROR: Built bundle does NOT contain ProgressReport code! Build is stale or wrong."
+          echo "This would ship old app content. Failing the workflow."
+          exit 1
+        fi
+        echo "OK: Built bundle contains ProgressReport code - fresh build verified."
       
     - name: Create Release
       uses: softprops/action-gh-release@v2
