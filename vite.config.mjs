@@ -17,7 +17,7 @@ export default defineConfig(({ mode }) => {
     root: process.cwd(),
     resolve: {
       alias: {
-        '@siteweave/core-logic': path.resolve(__dirname, 'packages/core-logic/src')
+        '@siteweave/core-logic': path.resolve(__dirname, './packages/core-logic/src/index.js')
       }
     },
     publicDir: 'public',
