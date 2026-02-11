@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useAppContext, supabaseClient } from '../context/AppContext';
 import { useToast } from '../context/ToastContext';
 import Icon from './Icon';
@@ -6,8 +7,11 @@ import Avatar from './Avatar';
 import { fetchThreadReplies, getThreadReplyCount, fetchMessageWithUserInfo } from '@siteweave/core-logic';
 
 function MessageItem({ message, onEdit, onDelete, isGrouped = false, showAvatar = true, showTimestamp = false, isLastInChannel = false, onReply, onThreadExpand }) {
+    const { i18n } = useTranslation();
     const { state } = useAppContext();
     const { addToast } = useToast();
+
+    const contacts = state.contacts || [];
     const [isEditing, setIsEditing] = useState(false);
     const [editContent, setEditContent] = useState(message.content || '');
     const [isUpdatingMessage, setIsUpdatingMessage] = useState(false);
@@ -45,8 +49,8 @@ function MessageItem({ message, onEdit, onDelete, isGrouped = false, showAvatar 
     // Always use the sender's user info (with avatar_url)
     const user = messageWithUser.user || null;
 
-    const formatTime = (isoString) => new Date(isoString).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
-    const formatDate = (isoString) => new Date(isoString).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    const formatTime = (isoString) => new Date(isoString).toLocaleTimeString(i18n.language, { hour: 'numeric', minute: '2-digit' });
+    const formatDate = (isoString) => new Date(isoString).toLocaleDateString(i18n.language, { month: 'short', day: 'numeric' });
 
     const handleEditMessage = async () => {
         if (!editContent.trim()) return;
@@ -123,7 +127,7 @@ function MessageItem({ message, onEdit, onDelete, isGrouped = false, showAvatar 
         return parts.map((part, index) => {
             if (index % 2 === 1) {
                 // This is a mention
-                const contact = state.contacts.find(c => c.name.toLowerCase().includes(part.toLowerCase()));
+                const contact = contacts.find(c => c.name.toLowerCase().includes(part.toLowerCase()));
                 return (
                     <span key={index} className="bg-blue-100 text-blue-800 px-1 rounded font-medium">
                         @{part}

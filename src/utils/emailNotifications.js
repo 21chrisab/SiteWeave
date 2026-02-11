@@ -1,4 +1,5 @@
 import { supabaseClient } from '../context/AppContext';
+import i18n from '../i18n/config';
 
 /**
  * Send task assignment email to external contact
@@ -63,7 +64,7 @@ export async function sendTaskAssignmentEmail(contactEmail, taskDetails, project
                 ${taskDetails.dueDate ? `
                 <div class="info-row">
                     <span class="label">Due Date:</span> 
-                    <span class="value">${new Date(taskDetails.dueDate).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}</span>
+                    <span class="value">${new Date(taskDetails.dueDate).toLocaleDateString(i18n.language || 'en', { month: 'long', day: 'numeric', year: 'numeric' })}</span>
                 </div>` : ''}
             </div>
 
@@ -99,7 +100,7 @@ ${assignerName} has assigned you a new task on the ${projectDetails.name} projec
 
 TASK DETAILS:
 ${taskDetails.issueTitle ? `Issue: ${taskDetails.issueTitle}\n` : ''}Step: ${taskDetails.description}
-${taskDetails.priority ? `Priority: ${taskDetails.priority}\n` : ''}${taskDetails.dueDate ? `Due Date: ${new Date(taskDetails.dueDate).toLocaleDateString()}\n` : ''}
+${taskDetails.priority ? `Priority: ${taskDetails.priority}\n` : ''}${taskDetails.dueDate ? `Due Date: ${new Date(taskDetails.dueDate).toLocaleDateString(i18n.language || 'en')}\n` : ''}
 Project: ${projectDetails.name}
 ${projectDetails.address ? `Location: ${projectDetails.address}\n` : ''}
 
@@ -222,7 +223,7 @@ export async function sendCalendarInvitationEmail(attendeeEmail, eventDetails, o
         const formatDate = (dateTimeString) => {
             if (!dateTimeString) return 'TBD';
             const date = new Date(dateTimeString);
-            return date.toLocaleDateString('en-US', { 
+            return date.toLocaleDateString(i18n.language || 'en', { 
                 weekday: 'long', 
                 year: 'numeric', 
                 month: 'short', 
@@ -233,7 +234,7 @@ export async function sendCalendarInvitationEmail(attendeeEmail, eventDetails, o
         const formatTime = (dateTimeString) => {
             if (!dateTimeString) return 'TBD';
             const date = new Date(dateTimeString);
-            return date.toLocaleTimeString('en-US', { 
+            return date.toLocaleTimeString(i18n.language || 'en', { 
                 hour: 'numeric',
                 minute: '2-digit',
                 hour12: true

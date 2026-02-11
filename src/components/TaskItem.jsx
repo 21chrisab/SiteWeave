@@ -1,9 +1,11 @@
 import React, { useState, memo } from 'react';
+import { useTranslation } from 'react-i18next';
 import Icon from './Icon';
 import DateDropdown from './DateDropdown';
 import PermissionGuard from './PermissionGuard';
 
 const TaskItem = memo(function TaskItem({ task, onToggle, onEdit, onDelete, isSelected, onSelect }) {
+    const { i18n } = useTranslation();
     const [isEditing, setIsEditing] = useState(false);
     const [editText, setEditText] = useState(task.text);
     const [editDueDate, setEditDueDate] = useState(task.due_date || '');
@@ -18,7 +20,7 @@ const TaskItem = memo(function TaskItem({ task, onToggle, onEdit, onDelete, isSe
     
     const formatDate = (dateString) => {
         if (!dateString) return 'No due date';
-        return new Date(dateString).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+        return new Date(dateString).toLocaleDateString(i18n.language, { month: 'long', day: 'numeric', year: 'numeric' });
     };
 
     const handleSaveEdit = () => {
@@ -122,7 +124,7 @@ const TaskItem = memo(function TaskItem({ task, onToggle, onEdit, onDelete, isSe
             </div>
             <div className="flex items-center gap-4">
                 <span className={`px-2 py-1 text-xs font-bold rounded-full ${priorityClasses[task.priority]}`}>{task.priority}</span>
-                {task.contacts && <img src={task.contacts.avatar_url} title={task.contacts.name} className="w-8 h-8 rounded-full" />}
+                {task.contacts && <img src={task.contacts?.avatar_url} title={task.contacts?.name} className="w-8 h-8 rounded-full" />}
                 <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity" role="group" aria-label="Task actions">
                     <PermissionGuard permission="can_edit_tasks">
                         <button

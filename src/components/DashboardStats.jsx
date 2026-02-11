@@ -3,13 +3,16 @@ import { useAppContext } from '../context/AppContext';
 
 const DashboardStats = memo(function DashboardStats() {
     const { state } = useAppContext();
+
+    const projects = state.projects || [];
+    const tasks = state.tasks || [];
     
     // Calculate statistics
-    const totalProjects = state.projects.length;
-    const activeProjects = state.projects.filter(p => p.status !== 'completed').length;
-    const totalTasks = state.tasks.length;
-    const completedTasks = state.tasks.filter(t => t.completed).length;
-    const overdueTasks = state.tasks.filter(task => {
+    const totalProjects = projects.length;
+    const activeProjects = projects.filter(p => p.status !== 'completed').length;
+    const totalTasks = tasks.length;
+    const completedTasks = tasks.filter(t => t.completed).length;
+    const overdueTasks = tasks.filter(task => {
         if (!task.due_date || task.completed) return false;
         return new Date(task.due_date) < new Date();
     }).length;

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useAppContext, supabaseClient } from '../context/AppContext';
 import LoadingSpinner from './LoadingSpinner';
 import Icon from './Icon';
@@ -14,12 +15,12 @@ const DEFAULT_CATEGORIES = [
 ];
 
 // Generate time options for dropdown (15-minute intervals)
-const generateTimeOptions = () => {
+const generateTimeOptions = (locale = 'en') => {
     const options = [];
     for (let hour = 0; hour < 24; hour++) {
         for (let minute = 0; minute < 60; minute += 15) {
             const timeString = `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
-            const displayTime = new Date(`2000-01-01T${timeString}`).toLocaleTimeString('en-US', {
+            const displayTime = new Date(`2000-01-01T${timeString}`).toLocaleTimeString(locale, {
                 hour: 'numeric',
                 minute: '2-digit',
                 hour12: true
@@ -30,10 +31,12 @@ const generateTimeOptions = () => {
     return options;
 };
 
-const TIME_OPTIONS = generateTimeOptions();
-
 function EventModal({ onClose, onSave, onDelete, event = null, date, isLoading = false }) {
+    const { i18n } = useTranslation();
+    const TIME_OPTIONS = useMemo(() => generateTimeOptions(i18n.language || 'en'), [i18n.language]);
     const { state } = useAppContext();
+    const contacts = state.contacts || [];
+    const projects = state.projects || [];
     const isEditMode = !!event;
     
     // Parse initial times
@@ -181,8 +184,8 @@ function EventModal({ onClose, onSave, onDelete, event = null, date, isLoading =
     
     // Helper functions for attendees
     const availableContacts = useMemo(() => {
-        return state.contacts.filter(c => c.email && !attendeeEmails.includes(c.email.toLowerCase()));
-    }, [state.contacts, attendeeEmails]);
+        return contacts.filter(c => c.email && !attendeeEmails.includes(c.email.toLowerCase()));
+    }, [contacts, attendeeEmails]);
 
     const addAttendeeFromContact = (contact) => {
         if (contact.email && !attendeeEmails.includes(contact.email.toLowerCase())) {
@@ -521,7 +524,7 @@ function EventModal({ onClose, onSave, onDelete, event = null, date, isLoading =
                                     className="w-full p-2 text-sm border rounded-lg bg-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                                 >
                                     <option value="">None</option>
-                                    {state.projects.map(p => (
+                                    {projects.map(p => (
                                         <option key={p.id} value={p.id}>{p.name}</option>
                                     ))}
                                 </select>

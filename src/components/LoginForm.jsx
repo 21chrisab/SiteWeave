@@ -1,9 +1,11 @@
 import React, { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { supabaseClient } from '../context/AppContext';
 import { useToast } from '../context/ToastContext';
 import LoadingSpinner from './LoadingSpinner';
 
 function LoginForm() {
+  const { t } = useTranslation();
   const { addToast } = useToast();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -19,9 +21,9 @@ function LoginForm() {
     });
 
     if (error) {
-      addToast('Login failed: ' + error.message, 'error');
+      addToast(t('auth.login_failed', { message: error.message }), 'error');
     } else {
-      addToast('Login successful!', 'success');
+      addToast(t('auth.login_successful'), 'success');
     }
     setIsLoading(false);
   };
@@ -42,7 +44,7 @@ function LoginForm() {
     });
 
     if (error) {
-      addToast('Google login failed: ' + error.message, 'error');
+      addToast(t('auth.google_login_failed', { message: error.message }), 'error');
       setIsLoading(false);
     }
   };
@@ -64,7 +66,7 @@ function LoginForm() {
     });
 
     if (error) {
-      addToast('Microsoft login failed: ' + error.message, 'error');
+      addToast(t('auth.microsoft_login_failed', { message: error.message }), 'error');
       setIsLoading(false);
     }
   };
@@ -74,10 +76,10 @@ function LoginForm() {
       <div className="max-w-md w-full space-y-8">
         <div>
           <h2 className="text-center text-3xl font-extrabold text-gray-900">
-            Sign in to SiteWeave
+            {t('auth.sign_in_to_siteweave')}
           </h2>
           <p className="mt-2 text-center text-sm text-gray-600">
-            Access your organization account
+            {t('auth.access_organization_account')}
           </p>
         </div>
         
@@ -85,7 +87,7 @@ function LoginForm() {
           <div className="space-y-4">
             <div>
               <label htmlFor="email" className="sr-only">
-                Email address
+                {t('auth.email_address')}
               </label>
               <input
                 id="email"
@@ -96,12 +98,12 @@ function LoginForm() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 className="relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500 focus:z-10 sm:text-sm"
-                placeholder="Email address"
+                placeholder={t('auth.email_address')}
               />
             </div>
             <div>
               <label htmlFor="password" className="sr-only">
-                Password
+                {t('auth.password')}
               </label>
               <input
                 id="password"
@@ -112,7 +114,7 @@ function LoginForm() {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 className="relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500 focus:z-10 sm:text-sm"
-                placeholder="Password"
+                placeholder={t('auth.password')}
               />
             </div>
           </div>
@@ -126,7 +128,7 @@ function LoginForm() {
               {isLoading ? (
                 <LoadingSpinner size="sm" text="" />
               ) : (
-                'Sign In'
+                t('auth.sign_in')
               )}
             </button>
           </div>
@@ -137,7 +139,7 @@ function LoginForm() {
                 <div className="w-full border-t border-gray-300" />
               </div>
               <div className="relative flex justify-center text-sm">
-                <span className="px-2 bg-gray-50 text-gray-500">Or continue with</span>
+                <span className="px-2 bg-gray-50 text-gray-500">{t('auth.or_continue_with')}</span>
               </div>
             </div>
 
@@ -167,7 +169,7 @@ function LoginForm() {
                     d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
                   />
                 </svg>
-                <span className="ml-2">Google</span>
+                <span className="ml-2">{t('auth.google')}</span>
               </button>
 
               {/* Microsoft Login */}
@@ -183,7 +185,7 @@ function LoginForm() {
                   <path fill="#7fba00" d="M1 13h10v10H1z"/>
                   <path fill="#ffb900" d="M13 13h10v10H13z"/>
                 </svg>
-                <span className="ml-2">Microsoft</span>
+                <span className="ml-2">{t('auth.microsoft')}</span>
               </button>
             </div>
           </div>

@@ -1,10 +1,12 @@
 import React, { useState, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useAppContext, supabaseClient } from '../context/AppContext';
 import { useToast } from '../context/ToastContext';
 import LoadingSpinner from './LoadingSpinner';
 import { startOutlookCalendarOAuth, prepareCalendarEventsForInsert } from '../utils/calendarIntegration';
 
 const CalendarImportModal = ({ onClose, importType = 'file' }) => {
+    const { i18n } = useTranslation();
     const { state, dispatch } = useAppContext();
     const { addToast } = useToast();
     const [isImporting, setIsImporting] = useState(false);
@@ -379,7 +381,7 @@ const CalendarImportModal = ({ onClose, importType = 'file' }) => {
                                             <div className="flex-1">
                                                 <h4 className="font-semibold text-sm">{event.title}</h4>
                                                 <p className="text-xs text-gray-600 mt-1">
-                                                    {new Date(event.start_time).toLocaleDateString()} - {new Date(event.end_time).toLocaleDateString()}
+                                                    {new Date(event.start_time).toLocaleDateString(i18n.language)} - {new Date(event.end_time).toLocaleDateString(i18n.language)}
                                                 </p>
                                                 {event.location && (
                                                     <p className="text-xs text-gray-500 mt-1">📍 {event.location}</p>

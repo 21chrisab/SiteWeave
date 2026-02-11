@@ -91,6 +91,7 @@ const getInitialState = () => {
     selectedChannelId: null,
     projects: [], contacts: [], tasks: [], files: [], calendarEvents: [], messageChannels: [], messages: [], activityLog: [],
     user: null, // Changed from hardcoded user to null for proper auth
+    userContactId: null, // The user's linked contact_id (from profiles table) — used for matching assignee_id on tasks
     userPreferences: null, // Add user preferences for onboarding
     currentOrganization: null, // Current organization context
     userRole: null, // User's role with permissions
@@ -136,7 +137,10 @@ function appReducer(state, action) {
       return newState;
     case 'SET_PROJECT': return { ...state, selectedProjectId: action.payload };
     case 'SET_CHANNEL': return { ...state, selectedChannelId: action.payload, activeView: 'Messages' };
-    case 'SET_USER': return { ...state, user: action.payload };
+    case 'SET_USER': 
+      // When user is cleared (logout), also clear userContactId to prevent stale data
+      return { ...state, user: action.payload, userContactId: action.payload ? state.userContactId : null };
+    case 'SET_USER_CONTACT_ID': return { ...state, userContactId: action.payload };
     case 'SET_AUTH_LOADING': return { ...state, authLoading: action.payload };
     case 'ADD_PROJECT': 
       newState = { ...state, projects: [...state.projects, action.payload] };
@@ -644,6 +648,11 @@ export const AppProvider = ({ children }) => {
             contactId = finalProfile.contact_id;
           }
           
+          // Store the user's contact_id in global state so components can match against assignee_id
+          if (contactId) {
+            dispatch({ type: 'SET_USER_CONTACT_ID', payload: contactId });
+          }
+          
           // Load organization and user role
           const { data: profileWithOrg } = await supabaseClient
             .from('profiles')
@@ -866,31 +875,39 @@ export const AppProvider = ({ children }) => {
 
     const contactsSubscription = supabaseClient.channel('public:contacts')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'contacts' }, async (payload) => {
-        // Re-fetch the contact with relationships to match initial load structure
-        const { data: fullContact } = await supabaseClient
-          .from('contacts')
-          .select('*, project_contacts!fk_project_contacts_contact_id(project_id)')
-          .eq('id', payload.new.id)
-          .single();
-        if (fullContact) {
-          dispatch({ type: 'ADD_CONTACT', payload: fullContact });
-        } else {
-          // Fallback to payload.new if re-fetch fails
-          dispatch({ type: 'ADD_CONTACT', payload: payload.new });
+        try {
+          // Re-fetch the contact with relationships to match initial load structure
+          const { data: fullContact } = await supabaseClient
+            .from('contacts')
+            .select('*, project_contacts!fk_project_contacts_contact_id(project_id)')
+            .eq('id', payload.new.id)
+            .single();
+          if (fullContact) {
+            dispatch({ type: 'ADD_CONTACT', payload: fullContact });
+          } else {
+            // Fallback to payload.new if re-fetch fails
+            dispatch({ type: 'ADD_CONTACT', payload: payload.new });
+          }
+        } catch (error) {
+          console.error('Error processing contact INSERT in subscription:', error);
         }
       })
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'contacts' }, async (payload) => {
-        // Re-fetch the contact with relationships
-        const { data: fullContact } = await supabaseClient
-          .from('contacts')
-          .select('*, project_contacts!fk_project_contacts_contact_id(project_id)')
-          .eq('id', payload.new.id)
-          .single();
-        if (fullContact) {
-          dispatch({ type: 'UPDATE_CONTACT', payload: fullContact });
-        } else {
-          // Fallback to payload.new if re-fetch fails
-          dispatch({ type: 'UPDATE_CONTACT', payload: payload.new });
+        try {
+          // Re-fetch the contact with relationships
+          const { data: fullContact } = await supabaseClient
+            .from('contacts')
+            .select('*, project_contacts!fk_project_contacts_contact_id(project_id)')
+            .eq('id', payload.new.id)
+            .single();
+          if (fullContact) {
+            dispatch({ type: 'UPDATE_CONTACT', payload: fullContact });
+          } else {
+            // Fallback to payload.new if re-fetch fails
+            dispatch({ type: 'UPDATE_CONTACT', payload: payload.new });
+          }
+        } catch (error) {
+          console.error('Error processing contact UPDATE in subscription:', error);
         }
       })
       .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'contacts' }, (payload) => {
@@ -909,14 +926,18 @@ export const AppProvider = ({ children }) => {
     
     const tasksSubscription = supabaseClient.channel('public:tasks')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'tasks' }, async (payload) => {
-        if (payload.eventType === 'INSERT') {
-          const { data: updatedTask } = await supabaseClient.from('tasks').select('*, contacts(name, avatar_url)').eq('id', payload.new.id).single();
-          if (updatedTask) dispatch({ type: 'ADD_TASK', payload: updatedTask });
-        } else if (payload.eventType === 'UPDATE') {
-          const { data: updatedTask } = await supabaseClient.from('tasks').select('*, contacts(name, avatar_url)').eq('id', payload.new.id).single();
-          if (updatedTask) dispatch({ type: 'UPDATE_TASK', payload: updatedTask });
-        } else if (payload.eventType === 'DELETE') {
-          dispatch({ type: 'DELETE_TASK', payload: payload.old.id });
+        try {
+          if (payload.eventType === 'INSERT') {
+            const { data: updatedTask } = await supabaseClient.from('tasks').select('*, contacts(name, avatar_url)').eq('id', payload.new.id).single();
+            if (updatedTask) dispatch({ type: 'ADD_TASK', payload: updatedTask });
+          } else if (payload.eventType === 'UPDATE') {
+            const { data: updatedTask } = await supabaseClient.from('tasks').select('*, contacts(name, avatar_url)').eq('id', payload.new.id).single();
+            if (updatedTask) dispatch({ type: 'UPDATE_TASK', payload: updatedTask });
+          } else if (payload.eventType === 'DELETE') {
+            dispatch({ type: 'DELETE_TASK', payload: payload.old.id });
+          }
+        } catch (error) {
+          console.error('Error processing task change in subscription:', error);
         }
       })
       .subscribe(() => {}); // Silently handle subscription status
@@ -971,30 +992,31 @@ export const AppProvider = ({ children }) => {
     // This ensures the UI updates immediately when users are added/removed/updated
     const profilesSubscription = supabaseClient.channel('public:profiles')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, async (payload) => {
-        // Only process if it's related to the current organization
-        const profileOrgId = payload.new?.organization_id || payload.old?.organization_id;
-        if (profileOrgId && profileOrgId === state.currentOrganization?.id) {
-          // Refresh contacts list to include new org members
-          try {
+        try {
+          // Only process if it's related to the current organization
+          const profileOrgId = payload.new?.organization_id || payload.old?.organization_id;
+          if (profileOrgId && profileOrgId === state.currentOrganization?.id) {
+            // Refresh contacts list to include new org members
             const { getVirtualContacts } = await import('../utils/virtualContactsService');
-            const userProjectIds = state.projects.map(p => p.id);
+            const projects = state.projects || [];
+            const userProjectIds = projects.map(p => p.id);
             const organizationId = state.currentOrganization?.id || null;
-            
+
             const updatedContacts = await getVirtualContacts(
               supabaseClient,
-              state.user.id,
+              state.user?.id,
               organizationId,
               userProjectIds
             );
-            
+
             // Update contacts in state
-            dispatch({ type: 'SET_DATA', payload: { 
+            dispatch({ type: 'SET_DATA', payload: {
               contacts: updatedContacts,
               activeView: state.activeView // Preserve current view
             }});
-          } catch (error) {
-            console.error('Error refreshing contacts after profile change:', error);
           }
+        } catch (error) {
+          console.error('Error processing profiles subscription:', error);
         }
       })
       .subscribe((status) => {

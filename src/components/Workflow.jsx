@@ -1,9 +1,11 @@
 import React, { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useAppContext, supabaseClient } from '../context/AppContext';
 import { useToast } from '../context/ToastContext';
 import Icon from './Icon';
 
 const Workflow = ({ projectId }) => {
+    const { i18n } = useTranslation();
     const { state } = useAppContext();
     const { addToast } = useToast();
     const [workflows, setWorkflows] = useState([]);
@@ -12,8 +14,10 @@ const Workflow = ({ projectId }) => {
     const [isCreating, setIsCreating] = useState(false);
     const [expandedWorkflow, setExpandedWorkflow] = useState(null);
 
+    const contacts = state.contacts || [];
+
     // Get project team members
-    const projectTeamMembers = state.contacts.filter(contact => {
+    const projectTeamMembers = contacts.filter(contact => {
         const hasProjectAccess = contact.project_contacts?.some(pc => 
             pc.project_id === projectId || 
             pc.project_id === String(projectId) || 
@@ -204,7 +208,7 @@ const Workflow = ({ projectId }) => {
     const formatDate = (dateString) => {
         if (!dateString) return '';
         const date = new Date(dateString);
-        return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+        return date.toLocaleDateString(i18n.language, { month: 'short', day: 'numeric' });
     };
 
     return (

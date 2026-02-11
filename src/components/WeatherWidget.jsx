@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
 import { 
   getCurrentWeather, 
   getWeatherForecast, 
@@ -11,6 +12,7 @@ import {
 const STORAGE_KEY = 'weather_location_preference';
 
 function WeatherWidget({ compact = false }) {
+  const { t, i18n } = useTranslation();
   const [weather, setWeather] = useState(null);
   const [forecast, setForecast] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -428,8 +430,8 @@ function WeatherWidget({ compact = false }) {
                   )}
                   <span className="text-gray-600">
                     {index === 0
-                      ? 'Today'
-                      : day.date.toLocaleDateString('en-US', { weekday: 'short' })}
+                      ? t('common.today')
+                      : day.date.toLocaleDateString(i18n.language, { weekday: 'short' })}
                   </span>
                 </div>
                 <div className="flex items-center gap-2">

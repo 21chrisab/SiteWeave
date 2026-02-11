@@ -1560,17 +1560,38 @@ ON public.contacts
 FOR INSERT
 WITH CHECK ((select auth.uid()) IS NOT NULL);
 
--- Contacts UPDATE policy (OPTIMIZED)
+-- Contacts UPDATE policy (FIXED: admins and PMs can update any contact in their org)
 CREATE POLICY "Users can update their own contacts"
 ON public.contacts
 FOR UPDATE
-USING (created_by_user_id = (select auth.uid()));
+USING (
+  -- Creator can always update their own contacts
+  (created_by_user_id = (select auth.uid()))
+  OR
+  -- Admins and PMs can update any contact in their organization
+  (
+    organization_id = (select get_user_organization_id())
+    AND (
+      (select is_user_admin())
+      OR (select get_user_role()) = 'PM'
+    )
+  )
+);
 
--- Contacts DELETE policy (OPTIMIZED)
+-- Contacts DELETE policy (FIXED: admins can delete any contact in their org)
 CREATE POLICY "Users can delete their own contacts"
 ON public.contacts
 FOR DELETE
-USING (created_by_user_id = (select auth.uid()));
+USING (
+  -- Creator can delete their own contacts
+  (created_by_user_id = (select auth.uid()))
+  OR
+  -- Admins can delete any contact in their organization
+  (
+    organization_id = (select get_user_organization_id())
+    AND (select is_user_admin())
+  )
+);
 
 -- ============================================================================
 -- CALENDAR EVENTS TABLE POLICIES
@@ -2124,6 +2145,87 @@ FOR DELETE
 USING (user_id = (select auth.uid()));
 
 -- ============================================================================
+-- PROJECT COLLABORATORS TABLE POLICIES
+-- ============================================================================
+
+-- Drop ALL existing project_collaborators policies to avoid conflicts
+DO $$ 
+DECLARE
+  r RECORD;
+BEGIN
+  FOR r IN (SELECT policyname FROM pg_policies WHERE tablename = 'project_collaborators' AND schemaname = 'public') LOOP
+    EXECUTE format('DROP POLICY IF EXISTS %I ON public.project_collaborators', r.policyname);
+  END LOOP;
+END $$;
+
+-- Project collaborators SELECT - users can see their own collaborator records and admins see all in their org
+CREATE POLICY "Users can see project collaborators in their organization"
+ON public.project_collaborators
+FOR SELECT
+USING (
+  -- Users can always see their own collaborator records (critical for project access subqueries)
+  user_id = (select auth.uid())
+  OR
+  -- Org members can see all collaborators in their org
+  organization_id = (select get_user_organization_id())
+);
+
+-- Project collaborators INSERT - admins and PMs can invite collaborators
+CREATE POLICY "Admins and PMs can add project collaborators"
+ON public.project_collaborators
+FOR INSERT
+WITH CHECK (
+  organization_id = (select get_user_organization_id())
+  AND (
+    (select is_user_admin())
+    OR
+    (project_id IN (
+      SELECT id FROM public.projects
+      WHERE project_manager_id = (select auth.uid())
+        AND organization_id = (select get_user_organization_id())
+    ))
+  )
+);
+
+-- Project collaborators UPDATE - admins and PMs can update collaborator access levels
+CREATE POLICY "Admins and PMs can update project collaborators"
+ON public.project_collaborators
+FOR UPDATE
+USING (
+  organization_id = (select get_user_organization_id())
+  AND (
+    (select is_user_admin())
+    OR
+    (project_id IN (
+      SELECT id FROM public.projects
+      WHERE project_manager_id = (select auth.uid())
+        AND organization_id = (select get_user_organization_id())
+    ))
+  )
+);
+
+-- Project collaborators DELETE - admins, PMs, and the collaborator themselves can remove
+CREATE POLICY "Admins, PMs, and self can remove project collaborators"
+ON public.project_collaborators
+FOR DELETE
+USING (
+  user_id = (select auth.uid())  -- Users can remove themselves
+  OR
+  (
+    organization_id = (select get_user_organization_id())
+    AND (
+      (select is_user_admin())
+      OR
+      (project_id IN (
+        SELECT id FROM public.projects
+        WHERE project_manager_id = (select auth.uid())
+          AND organization_id = (select get_user_organization_id())
+      ))
+    )
+  )
+);
+
+-- ============================================================================
 -- PROJECT CONTACTS TABLE POLICIES
 -- ============================================================================
 
@@ -2294,11 +2396,21 @@ USING (
 -- ============================================================================
 
 -- Tasks SELECT policy
+-- Users can see tasks in accessible projects OR tasks directly assigned to them
 CREATE POLICY "Users can see tasks for projects they have access to"
 ON public.tasks
 FOR SELECT
 USING (
   project_id IN (SELECT id FROM public.projects)
+  OR
+  -- "Assigned-to-me" escape hatch: users can always see tasks assigned to their contact_id
+  -- This ensures assigned users see their tasks even if project_contacts link is missing
+  (
+    assignee_id IS NOT NULL
+    AND assignee_id = (select get_user_contact_id())
+    AND (select get_user_contact_id()) IS NOT NULL
+    AND organization_id = (select get_user_organization_id())
+  )
 );
 
 -- Tasks INSERT policy

@@ -1,27 +1,37 @@
 import React, { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useAppContext } from '../context/AppContext';
 import Avatar from './Avatar';
 
 function MyDaySidebar() {
+    const { i18n } = useTranslation();
     const { state } = useAppContext();
     const [lastUpdate, setLastUpdate] = useState(new Date());
+
+    const tasks = state.tasks || [];
+    const calendarEvents = state.calendarEvents || [];
+    const activityLog = state.activityLog || [];
 
     useEffect(() => {
         // Update timestamp when tasks or events change
         setLastUpdate(new Date());
-    }, [state.tasks.length, state.calendarEvents.length]);
+    }, [tasks.length, calendarEvents.length]);
 
-    const myTodos = state.tasks.filter(task => 
-        task.assignee_id === state.user.id && !task.completed
-    );
+    // FIXED: assignee_id stores contacts.id, NOT auth.uid()
+    // Use state.userContactId (resolved from profiles.contact_id) for correct matching
+    // Guard: if userContactId is null (no linked contact yet), show no tasks rather than
+    // accidentally matching all unassigned tasks (where assignee_id is also null)
+    const myTodos = state.userContactId
+        ? tasks.filter(task => task.assignee_id === state.userContactId && !task.completed)
+        : [];
 
     const today = new Date();
-    const todayEvents = state.calendarEvents.filter(event => 
+    const todayEvents = calendarEvents.filter(event =>
         new Date(event.start_time).toDateString() === today.toDateString()
     );
 
     // Get recent activity from the database (filtered by RLS)
-    const recentActivity = state.activityLog.slice(0, 4).map(activity => ({
+    const recentActivity = activityLog.slice(0, 4).map(activity => ({
         id: activity.id,
         user: { 
             name: activity.user_name, 
@@ -94,7 +104,7 @@ function MyDaySidebar() {
                      {todayEvents.length > 0 ? todayEvents.map(event => {
                         const startTime = new Date(event.start_time);
                         const endTime = new Date(event.end_time);
-                        const timeString = startTime.toLocaleTimeString('en-US', { 
+                        const timeString = startTime.toLocaleTimeString(i18n.language, { 
                             hour: 'numeric', 
                             minute: '2-digit',
                             hour12: true 

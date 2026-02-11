@@ -47,8 +47,11 @@ function ContactsView() {
         };
     }, []);
 
-    const teamMembers = state.contacts.filter(c => c.type === 'Team');
-    const subcontractors = state.contacts.filter(c => c.type === 'Subcontractor');
+    const contacts = state.contacts || [];
+    const projects = state.projects || [];
+
+    const teamMembers = contacts.filter(c => c.type === 'Team');
+    const subcontractors = contacts.filter(c => c.type === 'Subcontractor');
 
     // Filter contacts based on search and status
     const filteredContacts = useMemo(() => {
@@ -221,13 +224,13 @@ function ContactsView() {
     };
 
     const handleAssignToProject = (contact) => {
-        if (state.projects.length === 0) {
+        if (projects.length === 0) {
             addToast('No projects available to assign', 'warning');
             return;
         }
         setAssignContact(contact);
         const assignedIds = (contact.project_contacts || []).map(pc => String(pc.project_id));
-        const unassignedProject = state.projects.find(project => !assignedIds.includes(String(project.id)));
+        const unassignedProject = projects.find(project => !assignedIds.includes(String(project.id)));
         const defaultProject = unassignedProject || state.projects[0];
         setSelectedAssignProject(defaultProject ? String(defaultProject.id) : '');
         setShowAssignModal(true);
@@ -391,7 +394,7 @@ function ContactsView() {
                         className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     >
                         <option value="All Projects">All Projects</option>
-                        {state.projects.map(project => (
+                        {projects.map(project => (
                             <option key={project.id} value={String(project.id)}>{project.name}</option>
                         ))}
                     </select>
@@ -569,8 +572,8 @@ function ContactsView() {
             {showAssignModal && assignContact && (() => {
                 // Get projects the contact is already assigned to
                 const assignedProjectIds = (assignContact.project_contacts || []).map(pc => String(pc.project_id));
-                const assignedProjects = state.projects.filter(p => assignedProjectIds.includes(String(p.id)));
-                const unassignedProjects = state.projects.filter(p => !assignedProjectIds.includes(String(p.id)));
+                const assignedProjects = projects.filter(p => assignedProjectIds.includes(String(p.id)));
+                const unassignedProjects = projects.filter(p => !assignedProjectIds.includes(String(p.id)));
                 
                 return (
                     <div className="fixed inset-0 backdrop-blur-[2px] bg-white/20 flex items-center justify-center z-50 p-4">
@@ -609,7 +612,7 @@ function ContactsView() {
                                     value={selectedAssignProject}
                                     onChange={e => setSelectedAssignProject(e.target.value)}
                                     className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
-                                    disabled={state.projects.length === 0 || unassignedProjects.length === 0}
+                                    disabled={projects.length === 0 || unassignedProjects.length === 0}
                                 >
                                     <option value="" disabled>
                                         {unassignedProjects.length === 0 
@@ -627,7 +630,7 @@ function ContactsView() {
                                         This contact is already assigned to all available projects.
                                     </p>
                                 )}
-                                {assignContact && state.projects.length === 0 && (
+                                {assignContact && projects.length === 0 && (
                                     <p className="text-sm text-amber-600 mt-2">Create a project to use this action.</p>
                                 )}
                             </div>

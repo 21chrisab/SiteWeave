@@ -28,9 +28,11 @@ function ProjectModal({ onClose, onSave, isLoading = false, project = null }) {
     const [isDuplicating, setIsDuplicating] = useState(false);
 
     const isEditMode = !!project;
+
+    const contacts = state.contacts || [];
     
     // Get all team members
-    const teamMembers = state.contacts.filter(c => c.type === 'Team');
+    const teamMembers = contacts.filter(c => c.type === 'Team');
 
     useEffect(() => {
         if (project) {

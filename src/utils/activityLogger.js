@@ -148,3 +148,44 @@ export function logContactCreated(contact, user, projectId = null) {
     });
 }
 
+/**
+ * Log phase progress change
+ * @param {Object} phase - Phase object with id, name, progress
+ * @param {Object} user - User object
+ * @param {string} projectId - Project ID
+ * @param {string} projectName - Project name
+ * @param {number} oldProgress - Previous progress value
+ * @param {number} newProgress - New progress value
+ * @param {string} organizationId - Organization ID
+ */
+export async function logPhaseProgressChange(phase, user, projectId, projectName, oldProgress, newProgress, organizationId) {
+    if (!user || !user.id) {
+        console.warn('Cannot log phase progress change: user not provided');
+        return;
+    }    try {
+        const activityData = {
+            user_id: user.id,
+            user_name: user.user_metadata?.full_name || user.email || 'Unknown User',
+            user_avatar: user.user_metadata?.avatar_url || null,
+            action: 'updated',
+            entity_type: 'project_phase',
+            entity_id: phase.id,
+            entity_name: `${projectName} - ${phase.name}`,
+            project_id: projectId,
+            organization_id: organizationId,
+            details: JSON.stringify({
+                phase_name: phase.name,
+                old_progress: oldProgress,
+                new_progress: newProgress
+            })
+        };        const { error } = await supabaseClient
+            .from('activity_log')
+            .insert(activityData);        if (error) {
+            console.error('Error logging phase progress change:', error);
+        } else {
+            console.log('Phase progress change logged:', phase.name, `${oldProgress}% → ${newProgress}%`);
+        }
+    } catch (error) {
+        console.error('Error in logPhaseProgressChange:', error);
+    }
+}

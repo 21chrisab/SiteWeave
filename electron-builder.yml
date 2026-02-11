@@ -21,6 +21,14 @@ win:
   target: nsis
   icon: build/icon.png
   verifyUpdateCodeSignature: false
+# AppX target for MSIX/Store (build with: npm run build:win:appx)
+appx:
+  applicationId: com.siteweave.app
+  displayName: SiteWeave
+  publisherDisplayName: SiteWeave
+  identityName: com.siteweave.app
+  publisher: CN=SiteWeave
+  backgroundColor: "#FFFFFF"
 nsis:
   oneClick: false
   allowToChangeInstallationDirectory: true

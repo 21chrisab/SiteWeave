@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useAppContext, supabaseClient } from '../context/AppContext';
 import { useToast } from '../context/ToastContext';
 import Icon from './Icon';
@@ -15,10 +16,15 @@ const ICONS = {
     Settings: <Icon path="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.324.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 011.37.49l1.296 2.247a1.125 1.125 0 01-.26 1.431l-1.003.827c-.293.24-.438.613-.431.992a6.759 6.759 0 010 .255c-.007.378.138.75.43.99l1.005.828c.424.35.534.954.26 1.43l-1.298 2.247a1.125 1.125 0 01-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.57 6.57 0 01-.22.128c-.331.183-.581.495-.644.869l-.213 1.28c-.09.543-.56.941-1.11.941h-2.594c-.55 0-1.019-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 01-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 01-1.369-.49l-1.297-2.247a1.125 1.125 0 01.26-1.431l1.004-.827c.292-.24.437-.613.43-.992a6.932 6.932 0 010-.255c.007-.378-.138-.75-.43-.99l-1.004-.828a1.125 1.125 0 01-.26-1.43l1.297-2.247a1.125 1.125 0 011.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.087.22-.128.332-.183.582-.495.644-.869l.214-1.281z M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
 };
 
+const NAV_KEYS = { Dashboard: 'dashboard', Projects: 'projects', Calendar: 'calendar', Messages: 'messages', Contacts: 'contacts', Organization: 'organization', Settings: 'settings' };
+
 function Sidebar() {
+    const { t } = useTranslation();
     const { state, dispatch } = useAppContext();
     const { addToast } = useToast();
     const [isCollapsed, setIsCollapsed] = useState(false);
+
+    const projects = state.projects || [];
 
     const handleLogout = async () => {
         try {
@@ -29,7 +35,7 @@ function Sidebar() {
                 // No session exists, just clear local state
                 console.log('No active session, clearing local state');
                 dispatch({ type: 'SET_USER', payload: null });
-                addToast('Signed out successfully', 'success');
+                addToast(t('toast.signed_out_successfully'), 'success');
                 return;
             }
             
@@ -43,21 +49,21 @@ function Sidebar() {
                     error.status === 403) {
                     console.log('Session invalid, clearing local state');
                     dispatch({ type: 'SET_USER', payload: null });
-                    addToast('Signed out successfully', 'success');
+                    addToast(t('toast.signed_out_successfully'), 'success');
                 } else {
                     console.error('Sign out error:', error);
                     // Still clear local state even if there's an error
                     dispatch({ type: 'SET_USER', payload: null });
-                    addToast('Signed out successfully', 'success');
+                    addToast(t('toast.signed_out_successfully'), 'success');
                 }
             } else {
-                addToast('Signed out successfully', 'success');
+                addToast(t('toast.signed_out_successfully'), 'success');
             }
         } catch (err) {
             // Handle any errors gracefully - always clear local state
             console.log('Sign out error caught, clearing local state:', err);
             dispatch({ type: 'SET_USER', payload: null });
-            addToast('Signed out successfully', 'success');
+            addToast(t('toast.signed_out_successfully'), 'success');
         }
     };
 
@@ -80,8 +86,8 @@ function Sidebar() {
                 <button 
                     onClick={() => setIsCollapsed(!isCollapsed)}
                     className="ml-auto p-1.5 hover:bg-gray-100 rounded transition-colors"
-                    title={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-                    aria-label={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+                    title={isCollapsed ? t('common.expand_sidebar') : t('common.collapse_sidebar')}
+                    aria-label={isCollapsed ? t('common.expand_sidebar') : t('common.collapse_sidebar')}
                 >
                     <Icon path={isCollapsed ? "M11 19l-7-7 7-7m8 14l-7-7 7-7" : "M13 5l7 7-7 7M5 5l7 7-7 7"} className="w-4 h-4" />
                 </button>
@@ -91,29 +97,29 @@ function Sidebar() {
               <div className="px-5 py-3 border-b border-gray-200">
                 {state.currentOrganization ? (
                   <>
-                    <p className="text-xs text-gray-500 uppercase tracking-wide">Organization</p>
+                    <p className="text-xs text-gray-500 uppercase tracking-wide">{t('sidebar.organization')}</p>
                     <p className="text-sm font-semibold text-gray-800 mt-1 truncate">
                       {state.currentOrganization.name}
                     </p>
                   </>
                 ) : state.isProjectCollaborator ? (
                   <>
-                    <p className="text-xs text-gray-500 uppercase tracking-wide">Guest Access</p>
+                    <p className="text-xs text-gray-500 uppercase tracking-wide">{t('sidebar.guest_access')}</p>
                     <p className="text-sm font-semibold text-gray-800 mt-1">
-                      Project Collaborator
+                      {t('sidebar.project_collaborator')}
                     </p>
                     <p className="text-xs text-gray-500 mt-1">
-                      {state.collaborationProjects.length} project{state.collaborationProjects.length !== 1 ? 's' : ''} accessible
+                      {state.collaborationProjects.length === 1 ? t('sidebar.projects_accessible', { count: 1 }) : t('sidebar.projects_accessible_plural', { count: state.collaborationProjects.length })}
                     </p>
                   </>
                 ) : state.organizationLoading ? (
-                  <p className="text-xs text-gray-500">Loading...</p>
+                  <p className="text-xs text-gray-500">{t('sidebar.loading')}</p>
                 ) : (
-                  <p className="text-xs text-gray-500">No organization</p>
+                  <p className="text-xs text-gray-500">{t('sidebar.no_organization')}</p>
                 )}
               </div>
             )}
-            <nav className="flex-1 px-3 py-2 space-y-1" data-onboarding="sidebar-nav" role="navigation" aria-label="Main navigation">
+            <nav className="flex-1 px-3 py-2 space-y-1" data-onboarding="sidebar-nav" role="navigation" aria-label={t('sidebar.main_navigation')}>
                 {navItems.map(item => (
                     <div key={item}>
                         <button 
@@ -124,21 +130,21 @@ function Sidebar() {
                                     dispatch({type: 'SET_PROJECT', payload: null});
                                 }
                                 // Auto-select first project when clicking Projects if none is selected
-                                if (item === 'Projects' && !state.selectedProjectId && state.projects.length > 0) {
-                                    dispatch({type: 'SET_PROJECT', payload: state.projects[0].id});
+                                if (item === 'Projects' && !state.selectedProjectId && projects.length > 0) {
+                                    dispatch({type: 'SET_PROJECT', payload: projects[0].id});
                                 }
                             }}
                             data-onboarding={item.toLowerCase()}
                             className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors w-full text-left ${state.activeView === item ? 'bg-blue-50 text-blue-700' : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'}`}
-                            title={isCollapsed ? item : ''}
-                            aria-label={`Navigate to ${item}`}
+                            title={isCollapsed ? t(`navigation.${NAV_KEYS[item]}`) : ''}
+                            aria-label={t('common.navigate_to', { item: t(`navigation.${NAV_KEYS[item]}`) })}
                             aria-current={state.activeView === item ? 'page' : undefined}>
                             {React.cloneElement(ICONS[item], { className: "w-5 h-5 flex-shrink-0" })}
-                            {!isCollapsed && <span>{item}</span>}
+                            {!isCollapsed && <span>{t(`navigation.${NAV_KEYS[item]}`)}</span>}
                         </button>
                         {item === 'Projects' && state.activeView === 'Projects' && !isCollapsed && (
-                            <div className="pl-8 mt-1.5 space-y-1 border-l-2 border-gray-200 ml-2.5" role="group" aria-label="Project list">
-                                {state.projects.map(p => (
+                            <div className="pl-8 mt-1.5 space-y-1 border-l-2 border-gray-200 ml-2.5" role="group" aria-label={t('sidebar.project_list')}>
+                                {projects.map(p => (
                                     <button 
                                         key={p.id} 
                                         onClick={(e) => {
@@ -151,7 +157,7 @@ function Sidebar() {
                                             }
                                         }}
                                         className={`block text-sm py-1 truncate w-full text-left ${state.selectedProjectId === p.id ? 'text-blue-600 font-semibold' : 'text-gray-500 hover:text-gray-800'}`}
-                                        aria-label={`Select project: ${p.name}`}
+                                        aria-label={t('common.select_project', { name: p.name })}
                                         aria-current={state.selectedProjectId === p.id ? 'page' : undefined}>
                                         {p.name}
                                     </button>
@@ -174,7 +180,7 @@ function Sidebar() {
                                     {state.user?.user_metadata?.full_name || state.user?.email}
                                 </p>
                                 <p className="text-xs text-gray-500 truncate">
-                                    {state.userRole?.name || (state.isProjectCollaborator ? 'Guest Collaborator' : 'User')}
+                                    {state.userRole?.name || (state.isProjectCollaborator ? t('settings.guest_collaborator') : t('common.user'))}
                                 </p>
                             </div>
                         </div>
@@ -182,7 +188,7 @@ function Sidebar() {
                     <button
                         onClick={handleLogout}
                         className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors flex-shrink-0"
-                        title="Sign out"
+                        title={t('common.sign_out')}
                     >
                         <Icon path="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15M12 9l-3 3m0 0l3 3m-3-3h12.75" className="w-4 h-4" />
                     </button>

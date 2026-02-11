@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useAppContext, supabaseClient } from '../context/AppContext';
 import { useToast } from '../context/ToastContext';
 import LoadingSpinner from '../components/LoadingSpinner';
@@ -6,10 +7,12 @@ import Avatar from '../components/Avatar';
 import PermissionGuard from '../components/PermissionGuard';
 import DirectoryManagementModal from '../components/DirectoryManagementModal';
 import RoleManagement from '../components/RoleManagement';
+import BrandingSettings from '../components/BrandingSettings';
 import packageJson from '../../package.json';
 import { getStoredCalendarToken } from '../utils/calendarIntegration';
 
 function SettingsView() {
+  const { t, i18n } = useTranslation();
   const { state, dispatch } = useAppContext();
   const { addToast } = useToast();
   
@@ -76,9 +79,9 @@ function SettingsView() {
       });
 
       if (error) {
-        addToast('Error updating profile: ' + error.message, 'error');
+        addToast(t('toast.error_updating_profile', { message: error.message }), 'error');
       } else {
-        addToast('Profile updated successfully!', 'success');
+        addToast(t('toast.profile_updated_successfully'), 'success');
         // Update the user in context
         dispatch({ 
           type: 'SET_USER', 
@@ -92,7 +95,7 @@ function SettingsView() {
         });
       }
     } catch (error) {
-      addToast('Error updating profile: ' + error.message, 'error');
+      addToast(t('toast.error_updating_profile', { message: error.message }), 'error');
     } finally {
       setIsUpdating(false);
     }
@@ -102,12 +105,12 @@ function SettingsView() {
     e.preventDefault();
     
     if (newPassword !== confirmPassword) {
-      addToast('New passwords do not match', 'error');
+      addToast(t('toast.new_passwords_do_not_match'), 'error');
       return;
     }
 
     if (newPassword.length < 6) {
-      addToast('Password must be at least 6 characters', 'error');
+      addToast(t('toast.password_min_length'), 'error');
       return;
     }
 
@@ -119,15 +122,15 @@ function SettingsView() {
       });
 
       if (error) {
-        addToast('Error changing password: ' + error.message, 'error');
+        addToast(t('toast.error_changing_password', { message: error.message }), 'error');
       } else {
-        addToast('Password changed successfully!', 'success');
+        addToast(t('toast.password_changed_successfully'), 'success');
         setCurrentPassword('');
         setNewPassword('');
         setConfirmPassword('');
       }
     } catch (error) {
-      addToast('Error changing password: ' + error.message, 'error');
+      addToast(t('toast.error_changing_password', { message: error.message }), 'error');
     } finally {
       setIsChangingPassword(false);
     }
@@ -136,9 +139,9 @@ function SettingsView() {
   const handleSignOut = async () => {
     const { error } = await supabaseClient.auth.signOut();
     if (error) {
-      addToast('Error signing out: ' + error.message, 'error');
+      addToast(t('toast.error_signing_out', { message: error.message }), 'error');
     } else {
-      addToast('Signed out successfully', 'success');
+      addToast(t('toast.signed_out_successfully'), 'success');
     }
   };
 
@@ -146,25 +149,41 @@ function SettingsView() {
     <div className="max-w-[95%] mx-auto space-y-8">
       <header className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900">Settings</h1>
-          <p className="text-gray-500">Manage your account and preferences</p>
+          <h1 className="text-3xl font-bold text-gray-900">{t('settings.title')}</h1>
+          <p className="text-gray-500">{t('settings.subtitle')}</p>
         </div>
       </header>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        {/* Language selector */}
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+          <h2 className="text-xl font-semibold text-gray-900 mb-4">{t('settings.language')}</h2>
+          <div className="space-y-2">
+            <label className="block text-sm font-medium text-gray-700">{t('settings.language')}</label>
+            <select
+              value={i18n.language}
+              onChange={(e) => i18n.changeLanguage(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            >
+              <option value="en">English</option>
+              <option value="es">Español</option>
+            </select>
+          </div>
+        </div>
+
         {/* Organization Section */}
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-          <h2 className="text-xl font-semibold text-gray-900 mb-4">Organization</h2>
+          <h2 className="text-xl font-semibold text-gray-900 mb-4">{t('settings.organization')}</h2>
           <div className="space-y-3">
             {state.currentOrganization ? (
               <>
                 <div>
-                  <span className="text-sm text-gray-600">Organization:</span>
+                  <span className="text-sm text-gray-600">{t('settings.organization_label')}</span>
                   <p className="font-medium text-gray-900 mt-1">{state.currentOrganization.name}</p>
                 </div>
                 <div>
-                  <span className="text-sm text-gray-600">Your Role:</span>
-                  <p className="font-medium text-gray-900 mt-1">{state.userRole?.name || 'No role assigned'}</p>
+                  <span className="text-sm text-gray-600">{t('settings.your_role')}</span>
+                  <p className="font-medium text-gray-900 mt-1">{state.userRole?.name || t('settings.no_role_assigned')}</p>
                 </div>
                 <div className="pt-3 border-t border-gray-200 space-y-2">
                   <PermissionGuard permission="can_manage_roles">
@@ -172,7 +191,7 @@ function SettingsView() {
                       onClick={() => setShowRoleManagement(true)}
                       className="w-full text-left px-3 py-2 text-sm text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded-md transition-colors"
                     >
-                      Manage Roles →
+                      {t('settings.manage_roles')}
                     </button>
                   </PermissionGuard>
                   <PermissionGuard permission="can_manage_users">
@@ -180,7 +199,7 @@ function SettingsView() {
                       onClick={() => setShowTeamModal(true)}
                       className="w-full text-left px-3 py-2 text-sm text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded-md transition-colors"
                     >
-                      Manage Team Members →
+                      {t('settings.manage_team_members')}
                     </button>
                   </PermissionGuard>
                 </div>
@@ -188,22 +207,22 @@ function SettingsView() {
             ) : state.isProjectCollaborator ? (
               <>
                 <div>
-                  <span className="text-sm text-gray-600">Access Type:</span>
-                  <p className="font-medium text-gray-900 mt-1">Guest Collaborator</p>
+                  <span className="text-sm text-gray-600">{t('settings.access_type')}</span>
+                  <p className="font-medium text-gray-900 mt-1">{t('settings.guest_collaborator')}</p>
                 </div>
                 <div>
-                  <span className="text-sm text-gray-600">Projects:</span>
+                  <span className="text-sm text-gray-600">{t('settings.projects_label')}</span>
                   <p className="font-medium text-gray-900 mt-1">
-                    {state.collaborationProjects.length} project{state.collaborationProjects.length !== 1 ? 's' : ''} accessible
+                    {state.collaborationProjects.length === 1 ? t('sidebar.projects_accessible', { count: 1 }) : t('sidebar.projects_accessible_plural', { count: state.collaborationProjects.length })}
                   </p>
                 </div>
                 <p className="text-xs text-gray-500 pt-2">
-                  You have guest access to specific projects. Contact the project owner to request organization membership.
+                  {t('settings.guest_access_message')}
                 </p>
               </>
             ) : (
               <div>
-                <p className="text-sm text-gray-500">No organization assigned</p>
+                <p className="text-sm text-gray-500">{t('settings.no_organization_assigned')}</p>
               </div>
             )}
           </div>
@@ -214,7 +233,7 @@ function SettingsView() {
           data-onboarding="profile-section"
           className="bg-white rounded-xl shadow-sm border border-gray-200 p-6"
         >
-          <h2 className="text-xl font-semibold text-gray-900 mb-6">Profile Information</h2>
+          <h2 className="text-xl font-semibold text-gray-900 mb-6">{t('settings.profile_information')}</h2>
           
           <div className="flex items-center gap-4 mb-6">
             <Avatar 
@@ -232,14 +251,14 @@ function SettingsView() {
           <form onSubmit={handleUpdateProfile} className="space-y-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                Full Name
+                {t('settings.full_name')}
               </label>
               <input
                 type="text"
                 value={fullName}
                 onChange={(e) => setFullName(e.target.value)}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                placeholder="Enter your full name"
+                placeholder={t('settings.enter_full_name')}
               />
             </div>
 
@@ -251,10 +270,10 @@ function SettingsView() {
               {isUpdating ? (
                 <>
                   <LoadingSpinner size="sm" text="" />
-                  Updating...
+                  {t('settings.updating')}
                 </>
               ) : (
-                'Update Profile'
+                t('settings.update_profile')
               )}
             </button>
           </form>
@@ -262,33 +281,33 @@ function SettingsView() {
 
         {/* Security Settings */}
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-          <h2 className="text-xl font-semibold text-gray-900 mb-6">Security</h2>
+          <h2 className="text-xl font-semibold text-gray-900 mb-6">{t('settings.security')}</h2>
           
           <form onSubmit={handleChangePassword} className="space-y-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                New Password
+                {t('settings.new_password')}
               </label>
               <input
                 type="password"
                 value={newPassword}
                 onChange={(e) => setNewPassword(e.target.value)}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                placeholder="Enter new password"
+                placeholder={t('settings.enter_new_password')}
                 minLength="6"
               />
             </div>
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                Confirm New Password
+                {t('settings.confirm_new_password')}
               </label>
               <input
                 type="password"
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                placeholder="Confirm new password"
+                placeholder={t('settings.confirm_new_password_placeholder')}
                 minLength="6"
               />
             </div>
@@ -301,16 +320,16 @@ function SettingsView() {
               {isChangingPassword ? (
                 <>
                   <LoadingSpinner size="sm" text="" />
-                  Changing...
+                  {t('settings.changing')}
                 </>
               ) : (
-                'Change Password'
+                t('settings.change_password')
               )}
             </button>
           </form>
 
           <div className="mt-6 pt-6 border-t border-gray-200">
-            <h3 className="text-lg font-medium text-gray-900 mb-3">Account Actions</h3>
+            <h3 className="text-lg font-medium text-gray-900 mb-3">{t('settings.account_actions')}</h3>
             <button
               onClick={handleSignOut}
               className="w-full px-4 py-2 bg-red-600 text-white font-medium rounded-lg hover:bg-red-700 flex items-center justify-center gap-2"
@@ -318,14 +337,22 @@ function SettingsView() {
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
               </svg>
-              Sign Out
+              {t('settings.sign_out')}
             </button>
           </div>
         </div>
 
+        {/* Report Branding */}
+        <PermissionGuard permission="can_manage_progress_reports">
+          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+            <h2 className="text-xl font-semibold text-gray-900 mb-6">{t('settings.report_branding')}</h2>
+            <BrandingSettings />
+          </div>
+        </PermissionGuard>
+
         {/* Integrations */}
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-          <h2 className="text-xl font-semibold text-gray-900 mb-6">Integrations</h2>
+          <h2 className="text-xl font-semibold text-gray-900 mb-6">{t('settings.integrations')}</h2>
           
           {/* Calendar Integrations */}
           <div className="space-y-4 mb-6">
@@ -341,8 +368,8 @@ function SettingsView() {
                   </svg>
                 </div>
                 <div>
-                  <h3 className="text-sm font-semibold text-gray-900">Google Calendar</h3>
-                  <p className="text-xs text-gray-500">Sync your Google Calendar events</p>
+                  <h3 className="text-sm font-semibold text-gray-900">{t('settings.google_calendar')}</h3>
+                  <p className="text-xs text-gray-500">{t('settings.sync_google_calendar')}</p>
                 </div>
               </div>
               <div className="flex items-center gap-2">
@@ -352,12 +379,12 @@ function SettingsView() {
                       <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
                         <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
                       </svg>
-                      Synced
+                      {t('settings.synced')}
                     </span>
                   </>
                 ) : (
                   <span className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-gray-600 bg-gray-100 rounded-full">
-                    Not Connected
+                    {t('settings.not_connected')}
                   </span>
                 )}
               </div>
@@ -374,8 +401,8 @@ function SettingsView() {
                   </svg>
                 </div>
                 <div>
-                  <h3 className="text-sm font-semibold text-gray-900">Outlook Calendar</h3>
-                  <p className="text-xs text-gray-500">Sync your Outlook Calendar events</p>
+                  <h3 className="text-sm font-semibold text-gray-900">{t('settings.outlook_calendar')}</h3>
+                  <p className="text-xs text-gray-500">{t('settings.sync_outlook_calendar')}</p>
                 </div>
               </div>
               <div className="flex items-center gap-2">
@@ -385,12 +412,12 @@ function SettingsView() {
                       <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
                         <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
                       </svg>
-                      Synced
+                      {t('settings.synced')}
                     </span>
                   </>
                 ) : (
                   <span className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-gray-600 bg-gray-100 rounded-full">
-                    Not Connected
+                    {t('settings.not_connected')}
                   </span>
                 )}
               </div>
@@ -399,23 +426,23 @@ function SettingsView() {
 
           {/* More Integrations */}
           <div className="pt-4 border-t border-gray-200">
-            <p className="text-xs text-gray-500 text-center">More integrations coming soon!</p>
+            <p className="text-xs text-gray-500 text-center">{t('settings.more_integrations_coming')}</p>
           </div>
         </div>
       </div>
 
       {/* App Information */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-        <h2 className="text-xl font-semibold text-gray-900 mb-4">About SiteWeave</h2>
+        <h2 className="text-xl font-semibold text-gray-900 mb-4">{t('settings.about_siteweave')}</h2>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm text-gray-600">
           <div>
-            <span className="font-medium">Version:</span> {appVersion}
+            <span className="font-medium">{t('common.version')}:</span> {appVersion}
           </div>
           <div>
-            <span className="font-medium">User ID:</span> {state.user?.id?.slice(0, 8)}...
+            <span className="font-medium">{t('settings.user_id')}</span> {state.user?.id?.slice(0, 8)}...
           </div>
           <div>
-            <span className="font-medium">Account Created:</span> {new Date(state.user?.created_at).toLocaleDateString()}
+            <span className="font-medium">{t('common.account_created')}:</span> {new Date(state.user?.created_at).toLocaleDateString(i18n.language)}
           </div>
         </div>
       </div>
@@ -431,11 +458,11 @@ function SettingsView() {
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
             <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
-              <h2 className="text-2xl font-bold text-gray-900">Role Management</h2>
+              <h2 className="text-2xl font-bold text-gray-900">{t('settings.role_management')}</h2>
               <button
                 onClick={() => setShowRoleManagement(false)}
                 className="text-gray-400 hover:text-gray-600 transition-colors"
-                aria-label="Close"
+                aria-label={t('common.close')}
               >
                 <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />

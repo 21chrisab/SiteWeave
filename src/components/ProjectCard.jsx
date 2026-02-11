@@ -1,4 +1,5 @@
 import React, { useState, memo } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useAppContext } from '../context/AppContext';
 import Icon from './Icon';
 import Avatar from './Avatar';
@@ -7,11 +8,13 @@ import PermissionGuard from './PermissionGuard';
 import { normalizeStatusDisplay } from '../utils/projectHelpers';
 
 const ProjectCard = memo(function ProjectCard({ project, onEdit, onDelete }) {
+    const { i18n } = useTranslation();
     const { dispatch, state } = useAppContext();
     const [showActions, setShowActions] = useState(false);
     
     // Get all members for this project (any contact linked via project_contacts)
-    const teamMembers = state.contacts.filter(contact => 
+    const contacts = state.contacts || [];
+    const teamMembers = contacts.filter(contact => 
         contact.project_contacts && contact.project_contacts.some(pc => pc.project_id === project.id)
     );
     
@@ -38,7 +41,7 @@ const ProjectCard = memo(function ProjectCard({ project, onEdit, onDelete }) {
     const formatDate = (dateString) => {
         if (!dateString) return '';
         const date = new Date(dateString);
-        return date.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+        return date.toLocaleDateString(i18n.language, { month: 'long', day: 'numeric', year: 'numeric' });
     };
 
     const handleCardClick = (e) => {

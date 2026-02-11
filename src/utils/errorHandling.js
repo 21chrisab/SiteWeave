@@ -44,13 +44,21 @@ export const isOnline = () => navigator.onLine;
 class OfflineQueue {
   constructor() {
     this.queue = JSON.parse(localStorage.getItem('offlineQueue') || '[]');
+    this._boundHandler = null;
     this.setupEventListeners();
   }
-  
+
   setupEventListeners() {
-    window.addEventListener('online', () => {
-      this.processQueue();
-    });
+    this.destroy();
+    this._boundHandler = () => this.processQueue();
+    window.addEventListener('online', this._boundHandler);
+  }
+
+  destroy() {
+    if (this._boundHandler) {
+      window.removeEventListener('online', this._boundHandler);
+      this._boundHandler = null;
+    }
   }
   
   add(request) {

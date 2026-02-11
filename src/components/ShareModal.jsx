@@ -17,12 +17,14 @@ function ShareModal({ projectId, onClose }) {
   const [warning, setWarning] = useState(null);
   const [removingMemberId, setRemovingMemberId] = useState(null);
 
+  const contacts = state.contacts || [];
+
   const projectMembers = useMemo(() => {
-    return state.contacts.filter(contact => {
+    return contacts.filter(contact => {
       if (!contact.email) return false;
       return contact.project_contacts?.some(pc => String(pc.project_id) === String(projectId));
     });
-  }, [state.contacts, projectId]);
+  }, [contacts, projectId]);
 
   const projectMemberEmails = useMemo(() => {
     return new Set(
@@ -35,7 +37,7 @@ function ShareModal({ projectId, onClose }) {
   // Get contacts not already in the project
   const availableContacts = useMemo(() => {
     // Get all contacts with email addresses
-    const contactsWithEmail = state.contacts.filter(c => c.email);
+    const contactsWithEmail = contacts.filter(c => c.email);
     
     // Filter out contacts already assigned to this project
     const notInProject = contactsWithEmail.filter(contact => {

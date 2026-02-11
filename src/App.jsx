@@ -3,6 +3,7 @@ import { Routes, Route, useNavigate, useLocation, useParams } from 'react-router
 import { useAppContext } from './context/AppContext'
 import { supabaseClient } from './context/AppContext'
 import LoadingSpinner from './components/LoadingSpinner'
+import ErrorBoundary from './components/ErrorBoundary'
 import Sidebar from './components/Sidebar'
 import LoginForm from './components/LoginForm'
 import InviteAcceptPage from './components/InviteAcceptPage'
@@ -291,34 +292,44 @@ function App() {
 
   return (
     <div className="flex h-screen bg-gray-50 overflow-hidden">
-      {/* Sidebar */}
-      <Sidebar />
+      {/* Sidebar - granular boundary so main content can stay up if sidebar crashes */}
+      <ErrorBoundary>
+        <Sidebar />
+      </ErrorBoundary>
 
-      {/* Main Content */}
+      {/* Main Content - boundary so sidebar stays up if view crashes */}
       <main className="flex-1 overflow-y-auto p-6">
-        {renderView()}
+        <ErrorBoundary>
+          {renderView()}
+        </ErrorBoundary>
       </main>
 
       {/* Setup Wizard - Shows on first login for Org Admins */}
       {showSetupWizard && (
-        <SetupWizardModal 
-          show={showSetupWizard} 
-          onComplete={handleSetupComplete}
-        />
+        <ErrorBoundary>
+          <SetupWizardModal 
+            show={showSetupWizard} 
+            onComplete={handleSetupComplete}
+          />
+        </ErrorBoundary>
       )}
 
       {/* Directory Management Modal */}
-      <DirectoryManagementModal 
-        show={showTeamModal} 
-        onClose={() => setShowTeamModal(false)} 
-      />
+      <ErrorBoundary>
+        <DirectoryManagementModal 
+          show={showTeamModal} 
+          onClose={() => setShowTeamModal(false)} 
+        />
+      </ErrorBoundary>
 
       {/* Force Password Reset - Shows when must_change_password is true */}
       {showPasswordReset && (
-        <ForcePasswordReset
-          show={showPasswordReset}
-          onComplete={handlePasswordResetComplete}
-        />
+        <ErrorBoundary>
+          <ForcePasswordReset
+            show={showPasswordReset}
+            onComplete={handlePasswordResetComplete}
+          />
+        </ErrorBoundary>
       )}
 
       {/* Update Notification - Shows in Electron app when updates are available */}

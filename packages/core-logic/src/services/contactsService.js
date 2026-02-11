@@ -45,7 +45,7 @@ export async function fetchContact(supabase, contactId) {
     .from('contacts')
     .select('*')
     .eq('id', contactId)
-    .single();
+    .maybeSingle();
   
   if (error) throw error;
   return data;

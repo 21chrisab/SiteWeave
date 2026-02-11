@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useAppContext } from '../context/AppContext';
 import { supabaseClient } from '../context/AppContext';
 import LoadingSpinner from './LoadingSpinner';
@@ -10,6 +11,7 @@ import Avatar from './Avatar';
  * This is the "magic moment" where new users see their team
  */
 function TeamDirectory() {
+  const { t, i18n } = useTranslation();
   const { state } = useAppContext();
   const currentOrganization = state.currentOrganization;
   const user = state.user;
@@ -142,7 +144,7 @@ function TeamDirectory() {
               </div>
 
               <div className="mt-4 pt-4 border-t border-gray-200 text-xs text-gray-500">
-                Joined {new Date(member.created_at).toLocaleDateString()}
+                {t('team.joined')} {new Date(member.created_at).toLocaleDateString(i18n.language)}
               </div>
             </div>
           ))}

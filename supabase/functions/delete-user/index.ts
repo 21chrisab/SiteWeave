@@ -46,40 +46,38 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     )
 
-    // Delete user's data from related tables first (due to foreign key constraints)
-    // This is important to clean up all user data before deleting the auth user
-    
-    // Delete user's tasks
-    await supabaseAdmin
+    // Delete user's data from related tables first (due to foreign key constraints).
+    // Check each step so we never delete the auth user if a step fails (avoids inconsistent state).
+    const { error: tasksErr } = await supabaseAdmin
       .from('tasks')
       .delete()
       .eq('assigned_to', user.id)
+    if (tasksErr) throw tasksErr
 
-    // Delete user's events
-    await supabaseAdmin
+    const { error: eventsErr } = await supabaseAdmin
       .from('events')
       .delete()
       .eq('user_id', user.id)
+    if (eventsErr) throw eventsErr
 
-    // Delete user's messages
-    await supabaseAdmin
+    const { error: messagesErr } = await supabaseAdmin
       .from('messages')
       .delete()
       .eq('sender_id', user.id)
+    if (messagesErr) throw messagesErr
 
-    // Delete user's contacts
-    await supabaseAdmin
+    const { error: contactsErr } = await supabaseAdmin
       .from('contacts')
       .delete()
       .eq('user_id', user.id)
+    if (contactsErr) throw contactsErr
 
-    // Delete user's project memberships
-    await supabaseAdmin
+    const { error: membersErr } = await supabaseAdmin
       .from('project_members')
       .delete()
       .eq('user_id', user.id)
+    if (membersErr) throw membersErr
 
-    // Delete projects created by the user (if they're the owner)
     const { data: userProjects } = await supabaseAdmin
       .from('projects')
       .select('id')
@@ -87,36 +85,19 @@ serve(async (req) => {
 
     if (userProjects && userProjects.length > 0) {
       const projectIds = userProjects.map(p => p.id)
-      
-      // Delete related data for these projects
-      await supabaseAdmin
-        .from('tasks')
-        .delete()
-        .in('project_id', projectIds)
-
-      await supabaseAdmin
-        .from('events')
-        .delete()
-        .in('project_id', projectIds)
-
-      await supabaseAdmin
-        .from('project_members')
-        .delete()
-        .in('project_id', projectIds)
-
-      await supabaseAdmin
-        .from('project_contacts')
-        .delete()
-        .in('project_id', projectIds)
-
-      // Finally delete the projects
-      await supabaseAdmin
-        .from('projects')
-        .delete()
-        .eq('created_by', user.id)
+      const { error: ptErr } = await supabaseAdmin.from('tasks').delete().in('project_id', projectIds)
+      if (ptErr) throw ptErr
+      const { error: peErr } = await supabaseAdmin.from('events').delete().in('project_id', projectIds)
+      if (peErr) throw peErr
+      const { error: pmErr } = await supabaseAdmin.from('project_members').delete().in('project_id', projectIds)
+      if (pmErr) throw pmErr
+      const { error: pcErr } = await supabaseAdmin.from('project_contacts').delete().in('project_id', projectIds)
+      if (pcErr) throw pcErr
+      const { error: projErr } = await supabaseAdmin.from('projects').delete().eq('created_by', user.id)
+      if (projErr) throw projErr
     }
 
-    // Finally, delete the auth user
+    // Finally, delete the auth user only after all data deletes succeeded
     const { error: deleteError } = await supabaseAdmin.auth.admin.deleteUser(
       user.id
     )

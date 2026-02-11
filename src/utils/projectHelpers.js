@@ -1,3 +1,5 @@
+import i18n from '../i18n/config';
+
 // Helper functions for project calculations
 
 export const calculateProjectProgress = async (projectId, supabaseClient) => {
@@ -50,7 +52,8 @@ export const calculateProjectBudget = async (projectId, supabaseClient) => {
 };
 
 export const formatCurrency = (amount) => {
-    return new Intl.NumberFormat('en-US', {
+    const locale = i18n.language || 'en';
+    return new Intl.NumberFormat(locale, {
         style: 'currency',
         currency: 'USD',
         minimumFractionDigits: 0,
@@ -61,13 +64,13 @@ export const formatCurrency = (amount) => {
 export const formatDate = (dateString) => {
     if (!dateString) return '';
     const date = new Date(dateString);
-    return date.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+    return date.toLocaleDateString(i18n.language || 'en', { month: 'long', day: 'numeric', year: 'numeric' });
 };
 
 export const formatDateShort = (dateString) => {
     if (!dateString) return '';
     const date = new Date(dateString);
-    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    return date.toLocaleDateString(i18n.language || 'en', { month: 'short', day: 'numeric', year: 'numeric' });
 };
 
 // Normalize status to canonical format

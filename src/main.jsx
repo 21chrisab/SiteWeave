@@ -1,3 +1,4 @@
+import './i18n/config'
 import React from 'react'
 import { createRoot } from 'react-dom/client'
 import { createBrowserRouter, RouterProvider } from 'react-router-dom'
@@ -11,10 +12,10 @@ import './index.css'
 // Unregister any existing service workers to prevent caching issues
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.getRegistrations().then(function(registrations) {
-    for(let registration of registrations) {
-      registration.unregister()
+    for (let registration of registrations) {
+      registration.unregister();
     }
-  })
+  }).catch(() => {});
 }
 
 // Suppress WebSocket connection errors from Supabase realtime subscriptions

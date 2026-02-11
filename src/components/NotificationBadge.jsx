@@ -8,9 +8,11 @@ function NotificationBadge() {
     const hasShownSessionRef = useRef(false);
     const lastActivityIdsRef = useRef(new Set());
 
+    const activityLog = state.activityLog || [];
+
     useEffect(() => {
         // Only show notifications for NEW activities since last session, or once per app session
-        const recentActivity = state.activityLog.slice(0, 4);
+        const recentActivity = activityLog.slice(0, 4);
         
         if (recentActivity.length === 0) {
             return;
@@ -87,7 +89,7 @@ function NotificationBadge() {
         recentActivity.forEach(activity => {
             lastActivityIdsRef.current.add(activity.id);
         });
-    }, [state.activityLog]);
+    }, [activityLog]);
 
     // Helper function to format time ago
     function formatTimeAgo(dateString) {

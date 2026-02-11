@@ -1,8 +1,10 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useAppContext, supabaseClient } from '../context/AppContext';
 import { useToast } from '../context/ToastContext';
 import PermissionGuard from './PermissionGuard';
 import { hasPermission } from '../utils/permissions';
+import { logPhaseProgressChange } from '../utils/activityLogger';
 
 // Simple debounce utility
 function debounce(func, wait) {
@@ -18,6 +20,7 @@ function debounce(func, wait) {
 }
 
 function BuildPath({ project }) {
+    const { t, i18n } = useTranslation();
     const { dispatch, state } = useAppContext();
     const { addToast } = useToast();
     const [phases, setPhases] = useState([]);
@@ -122,24 +125,44 @@ function BuildPath({ project }) {
     const handlePhaseUpdate = useCallback(async (phaseId, updates) => {
         setIsLoading(true);
         try {
+            // Get the current phase to track progress changes
+            const currentPhase = phases.find(p => p.id === phaseId);
+            const oldProgress = currentPhase?.progress || 0;
+            const newProgress = updates.progress !== undefined ? updates.progress : oldProgress;
+
             const { error } = await supabaseClient
                 .from('project_phases')
                 .update(updates)
                 .eq('id', phaseId);
 
             if (error) {
-                addToast('Error updating phase: ' + error.message, 'error');
+                addToast(t('toast.error_updating_phase', { message: error.message }), 'error');
             } else {
                 setPhases(prev => prev.map(phase => 
                     phase.id === phaseId ? { ...phase, ...updates } : phase
                 ));
-                addToast('Phase updated successfully!', 'success');
+                
+                // Log phase progress change if progress was updated
+                if (updates.progress !== undefined && updates.progress !== oldProgress && state.user && project) {
+                    const updatedPhase = { ...currentPhase, ...updates };
+                    await logPhaseProgressChange(
+                        updatedPhase,
+                        state.user,
+                        project.id,
+                        project.name,
+                        oldProgress,
+                        newProgress,
+                        project.organization_id
+                    );
+                }
+                
+                addToast(t('toast.phase_updated_successfully'), 'success');
             }
         } catch (error) {
-            addToast('Error updating phase: ' + error.message, 'error');
+            addToast(t('toast.error_updating_phase', { message: error.message }), 'error');
         }
         setIsLoading(false);
-    }, [addToast]);
+    }, [addToast, phases, state.user, project]);
 
     // Keep ref updated with latest function
     useEffect(() => {
@@ -198,13 +221,13 @@ function BuildPath({ project }) {
                 .single();
 
             if (error) {
-                addToast('Error adding phase: ' + error.message, 'error');
+                addToast(t('toast.error_adding_phase', { message: error.message }), 'error');
             } else {
                 setPhases(prev => [...prev, data]);
-                addToast('Phase added successfully!', 'success');
+                addToast(t('toast.phase_added_successfully'), 'success');
             }
         } catch (error) {
-            addToast('Error adding phase: ' + error.message, 'error');
+            addToast(t('toast.error_adding_phase', { message: error.message }), 'error');
         }
         setIsLoading(false);
     };
@@ -218,13 +241,13 @@ function BuildPath({ project }) {
                 .eq('id', phaseId);
 
             if (error) {
-                addToast('Error deleting phase: ' + error.message, 'error');
+                addToast(t('toast.error_deleting_phase', { message: error.message }), 'error');
             } else {
                 setPhases(prev => prev.filter(phase => phase.id !== phaseId));
-                addToast('Phase deleted successfully!', 'success');
+                addToast(t('toast.phase_deleted_successfully'), 'success');
             }
         } catch (error) {
-            addToast('Error deleting phase: ' + error.message, 'error');
+            addToast(t('toast.error_deleting_phase', { message: error.message }), 'error');
         }
         setIsLoading(false);
     };
@@ -327,14 +350,14 @@ function BuildPath({ project }) {
                     .filter(r => r.error)
                     .map(r => r.error.message)
                     .join(', ');
-                addToast('Error reordering phases: ' + errorMessages, 'error');
+                addToast(t('toast.error_reordering_phases', { message: errorMessages }), 'error');
                 // Reload phases on error
                 loadPhases();
             } else {
-                addToast('Phases reordered successfully!', 'success');
+                addToast(t('toast.phases_reordered_successfully'), 'success');
             }
         } catch (error) {
-            addToast('Error reordering phases: ' + error.message, 'error');
+            addToast(t('toast.error_reordering_phases', { message: error.message }), 'error');
             loadPhases();
         } finally {
             setIsLoading(false);
@@ -367,7 +390,7 @@ function BuildPath({ project }) {
     };
 
     const formatCurrency = (amount) => {
-        return new Intl.NumberFormat('en-US', {
+        return new Intl.NumberFormat(i18n.language || 'en', {
             style: 'currency',
             currency: 'USD',
             minimumFractionDigits: 0,
@@ -378,20 +401,20 @@ function BuildPath({ project }) {
     return (
         <div className="h-full flex flex-col">
             <div className="flex justify-between items-center mb-4">
-                <h3 className="font-bold text-lg">Progress Status</h3>
+                <h3 className="font-bold text-lg">{t('build_path.progress_status')}</h3>
                 {isAuthorized() && (
                     <div className="flex gap-2">
                         <button
                             onClick={() => setShowPhaseModal(true)}
                             className="px-3 py-1 text-sm bg-blue-600 text-white rounded hover:bg-blue-700"
                         >
-                            + Add Phase
+                            + {t('build_path.add_phase')}
                         </button>
                         <button
                             onClick={() => setIsEditing(!isEditing)}
                             className="px-3 py-1 text-sm bg-gray-600 text-white rounded hover:bg-gray-700"
                         >
-                            {isEditing ? 'Done' : 'Edit'}
+                            {isEditing ? t('common.done') : t('common.edit')}
                         </button>
                     </div>
                 )}
@@ -400,7 +423,7 @@ function BuildPath({ project }) {
             {/* Overall Progress Summary */}
             <div className="mb-4 p-4 bg-gray-50 rounded-lg">
                 <div className="flex justify-between items-center mb-2">
-                    <span className="font-semibold text-sm">Overall Progress</span>
+                    <span className="font-semibold text-sm">{t('build_path.overall_progress')}</span>
                     <span className="text-sm font-bold">{calculateOverallProgress()}%</span>
                 </div>
                 <div className="w-full bg-gray-200 rounded-full h-3 mb-2">
@@ -475,7 +498,7 @@ function BuildPath({ project }) {
                                     <h4 
                                         className={`font-semibold text-sm flex items-center gap-1 ${isAuthorized() ? 'cursor-pointer hover:text-blue-600 transition-colors' : ''}`}
                                         onClick={isAuthorized() ? () => setEditingNamePhaseId(phase.id) : undefined}
-                                        title={isAuthorized() ? "Click to edit" : undefined}
+                                        title={isAuthorized() ? t('common.click_to_edit') : undefined}
                                     >
                                         {editingValues[`${phase.id}_name`] !== undefined ? editingValues[`${phase.id}_name`] : phase.name}
                                         {isAuthorized() && (
@@ -491,7 +514,7 @@ function BuildPath({ project }) {
                                     onClick={() => handleDeletePhase(phase.id)}
                                     className="px-2 py-1 text-xs bg-red-100 text-red-600 rounded hover:bg-red-200"
                                 >
-                                    Delete
+                                    {t('common.delete')}
                                 </button>
                             )}
                         </div>
@@ -499,7 +522,7 @@ function BuildPath({ project }) {
                         {/* Progress */}
                         <div className="mb-2">
                             <div className="flex justify-between items-center mb-1">
-                                <span className="text-xs text-gray-600">Progress</span>
+                                <span className="text-xs text-gray-600">{t('common.progress')}</span>
                                 {editingProgressPhaseId === phase.id && isAuthorized() ? (
                                     <div className="flex items-center gap-1">
                                         <input
@@ -540,7 +563,7 @@ function BuildPath({ project }) {
                                     <span 
                                         className={`text-xs font-semibold flex items-center gap-1 ${isAuthorized() ? 'cursor-pointer hover:text-blue-600 transition-colors' : ''}`}
                                         onClick={isAuthorized() ? () => setEditingProgressPhaseId(phase.id) : undefined}
-                                        title={isAuthorized() ? "Click to edit" : undefined}
+                                        title={isAuthorized() ? t('common.click_to_edit') : undefined}
                                     >
                                         {editingValues[`${phase.id}_progress`] !== undefined ? editingValues[`${phase.id}_progress`] : phase.progress}%
                                         {isAuthorized() && (
@@ -563,7 +586,7 @@ function BuildPath({ project }) {
                         {isEditing && (
                             <PermissionGuard permission="can_edit_projects">
                             <div className="mt-3">
-                                <label className="text-xs text-gray-600 block mb-1">Budget</label>
+                                <label className="text-xs text-gray-600 block mb-1">{t('common.budget')}</label>
                                 <div className="flex items-center gap-2">
                                     <span className="text-sm">$</span>
                                     <input
@@ -608,6 +631,7 @@ function BuildPath({ project }) {
 
 // Phase Modal Component
 function PhaseModal({ phase, onClose, onSave, isLoading }) {
+    const { t } = useTranslation();
     const [formData, setFormData] = useState({
         name: phase?.name || '',
         budget: phase?.budget || 0,
@@ -624,7 +648,7 @@ function PhaseModal({ phase, onClose, onSave, isLoading }) {
         <div className="fixed inset-0 backdrop-blur-[2px] bg-white/20 flex items-center justify-center z-50 p-4">
             <div className="bg-white rounded-lg p-6 w-96 max-w-full mx-4 max-h-[90vh] overflow-y-auto">
                 <h3 className="text-lg font-bold mb-4">
-                    {phase ? 'Edit Phase' : 'Add New Phase'}
+                    {phase ? t('build_path.edit_phase') : t('build_path.add_new_phase')}
                 </h3>
                 
                 <form onSubmit={handleSubmit} className="space-y-4">
@@ -674,14 +698,14 @@ function PhaseModal({ phase, onClose, onSave, isLoading }) {
                             onClick={onClose}
                             className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200"
                         >
-                            Cancel
+                            {t('common.cancel')}
                         </button>
                         <button
                             type="submit"
                             disabled={isLoading}
                             className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:bg-gray-400"
                         >
-                            {isLoading ? 'Saving...' : (phase ? 'Update' : 'Add')}
+                            {isLoading ? t('common.saving') : (phase ? t('common.update') : t('common.add'))}
                         </button>
                     </div>
                 </form>

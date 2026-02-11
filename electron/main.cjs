@@ -51,6 +51,12 @@ let oauthServer = null;
 const OAUTH_PORT = 5000;
 
 // Configure auto-updater
+// Only enable auto-download in production builds (not in dev mode)
+if (!VITE_DEV_SERVER_URL && autoUpdater && typeof autoUpdater.autoDownload !== 'undefined') {
+  autoUpdater.autoDownload = true;
+  autoUpdater.autoInstallOnAppQuit = true;
+}
+
 // Check for updates 5 seconds after app starts (gives UI time to load)
 setTimeout(() => {
   autoUpdater.checkForUpdatesAndNotify();

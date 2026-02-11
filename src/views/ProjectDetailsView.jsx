@@ -1,24 +1,32 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useAppContext, supabaseClient } from '../context/AppContext';
 import { useToast } from '../context/ToastContext';
 import TaskItem from '../components/TaskItem';
 import TaskModal from '../components/TaskModal';
 import ProjectSidebar from '../components/ProjectSidebar';
 import ShareModal from '../components/ShareModal';
+import ProgressReportModal from '../components/ProgressReportModal';
+import PermissionGuard from '../components/PermissionGuard';
 import ConfirmDialog from '../components/ConfirmDialog';
 import TaskBulkActions from '../components/TaskBulkActions';
 import FieldIssues from '../components/FieldIssues';
 import Workflow from '../components/Workflow';
 import Avatar from '../components/Avatar';
-import PermissionGuard from '../components/PermissionGuard';
 import { useTaskShortcuts } from '../hooks/useKeyboardShortcuts';
 import { handleApiError, createOptimisticUpdate } from '../utils/errorHandling';
 import { parseRecurrence } from '../utils/recurrenceService';
 import { logTaskCreated, logTaskCompleted, logTaskUncompleted, logTaskUpdated, logTaskDeleted } from '../utils/activityLogger';
 
 function ProjectDetailsView() {
+    const { t } = useTranslation();
     const { state, dispatch } = useAppContext();
     const { addToast } = useToast();
+
+    const projects = state.projects || [];
+    const tasksState = state.tasks || [];
+    const contacts = state.contacts || [];
+
     const [showTaskModal, setShowTaskModal] = useState(false);
     const [isCreatingTask, setIsCreatingTask] = useState(false);
     const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -28,6 +36,7 @@ function ProjectDetailsView() {
     const [taskSort, setTaskSort] = useState('due_date'); // due_date, priority
     const [activeTab, setActiveTab] = useState('tasks'); // tasks, fieldIssues
     const [showShare, setShowShare] = useState(false);
+    const [showProgressReportModal, setShowProgressReportModal] = useState(false);
     const [fieldIssuesCount, setFieldIssuesCount] = useState(0);
 
     // Keyboard shortcuts
@@ -44,18 +53,19 @@ function ProjectDetailsView() {
 
     // Fetch field issues count
     useEffect(() => {
+        const ac = new AbortController();
         const fetchFieldIssuesCount = async () => {
             if (!state.selectedProjectId) {
-                setFieldIssuesCount(0);
+                if (!ac.signal.aborted) setFieldIssuesCount(0);
                 return;
             }
-            
             try {
                 const { count, error } = await supabaseClient
                     .from('project_issues')
                     .select('*', { count: 'exact', head: true })
                     .eq('project_id', state.selectedProjectId);
 
+                if (ac.signal.aborted) return;
                 if (error) {
                     console.error('Error fetching field issues count:', error);
                     setFieldIssuesCount(0);
@@ -63,19 +73,21 @@ function ProjectDetailsView() {
                     setFieldIssuesCount(count || 0);
                 }
             } catch (error) {
-                console.error('Error fetching field issues count:', error);
-                setFieldIssuesCount(0);
+                if (!ac.signal.aborted) {
+                    console.error('Error fetching field issues count:', error);
+                    setFieldIssuesCount(0);
+                }
             }
         };
-
         fetchFieldIssuesCount();
+        return () => ac.abort();
     }, [state.selectedProjectId, activeTab]);
 
-    const project = state.projects.find(p => p.id === state.selectedProjectId);
-    const allTasks = state.tasks.filter(t => t.project_id === state.selectedProjectId);
+    const project = projects.find(p => p.id === state.selectedProjectId);
+    const allTasks = tasksState.filter(t => t.project_id === state.selectedProjectId);
     
     // Get all project crew members (any contact linked to this project)
-    const crewMembers = state.contacts.filter(contact => 
+    const crewMembers = contacts.filter(contact => 
         contact.project_contacts && contact.project_contacts.some(pc => pc.project_id === project?.id)
     );
     
@@ -105,13 +117,13 @@ function ProjectDetailsView() {
         return (
             <div className="flex items-center justify-center h-full">
                 <div className="text-center">
-                    <h2 className="text-xl font-semibold text-gray-900 mb-2">No Project Selected</h2>
-                    <p className="text-gray-500 mb-4">Please select a project from the dashboard to view its details.</p>
+                    <h2 className="text-xl font-semibold text-gray-900 mb-2">{t('projects.no_project_selected')}</h2>
+                    <p className="text-gray-500 mb-4">{t('projects.no_project_description')}</p>
                     <button 
                         onClick={() => dispatch({ type: 'SET_VIEW', payload: 'Dashboard' })}
                         className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
                     >
-                        Go to Dashboard
+                        {t('projects.go_to_dashboard')}
                     </button>
                 </div>
             </div>
@@ -151,7 +163,7 @@ function ProjectDetailsView() {
             if (error) {
                 // Provide more specific error message for foreign key violations
                 if (error.message?.includes('foreign key constraint')) {
-                    addToast('Cannot assign task: Selected assignee is not valid. Task created without assignee.', 'warning');
+                    addToast(t('toast.cannot_assign_task'), 'warning');
                     // Retry without assignee
                     const taskDataWithoutAssignee = { ...taskData, assignee_id: null };
                     const { data: retryData, error: retryError } = await supabaseClient
@@ -161,7 +173,7 @@ function ProjectDetailsView() {
                         .single();
                     if (!retryError && retryData) {
                         dispatch({ type: 'ADD_TASK', payload: retryData });
-                        addToast('Task added successfully (without assignee)', 'success');
+                        addToast(t('toast.task_added_without_assignee'), 'success');
                         setShowTaskModal(false);
                         logTaskCreated(retryData, state.user, project.id);
                         return;
@@ -171,20 +183,20 @@ function ProjectDetailsView() {
             }
             
             dispatch({ type: 'ADD_TASK', payload: data });
-            addToast('Task added successfully!', 'success');
+            addToast(t('toast.task_added_successfully'), 'success');
             setShowTaskModal(false);
             
             // Log activity
             logTaskCreated(data, state.user, project.id);
         } catch (error) {
-            addToast(handleApiError(error, 'Could not add task'), 'error');
+            addToast(handleApiError(error, t('errors.could_not_add_task')), 'error');
         } finally {
             setIsCreatingTask(false);
         }
     };
     
     const handleToggleTask = async (taskId, currentStatus) => {
-        const task = state.tasks.find(t => t.id === taskId);
+        const task = tasksState.find(t => t.id === taskId);
         if (!task) return;
 
         // If completing a task and it's recurring (not an instance), generate next instance
@@ -196,12 +208,12 @@ function ProjectDetailsView() {
             () => {
                 const updatedTask = { ...task, completed: !currentStatus };
                 dispatch({ type: 'UPDATE_TASK', payload: updatedTask });
-                addToast('Task updated successfully!', 'success');
+                addToast(t('toast.task_updated_successfully'), 'success');
             },
             () => {
                 // Rollback
                 dispatch({ type: 'UPDATE_TASK', payload: task });
-                addToast('Failed to update task', 'error');
+                addToast(t('toast.failed_to_update_task'), 'error');
             }
         );
 
@@ -253,7 +265,7 @@ function ProjectDetailsView() {
 
                         if (!instanceError && newInstance) {
                             dispatch({ type: 'ADD_TASK', payload: newInstance });
-                            addToast('Next task instance created!', 'success');
+                            addToast(t('toast.next_task_instance_created'), 'success');
                         }
                     }
                 } catch (recurError) {
@@ -263,7 +275,7 @@ function ProjectDetailsView() {
             }
         } catch (error) {
             optimisticUpdate.rollback();
-            addToast(handleApiError(error, 'Error updating task'), 'error');
+            addToast(handleApiError(error, t('toast.error_updating_task', { message: error?.message || '' })), 'error');
         }
     };
     
@@ -308,11 +320,11 @@ function ProjectDetailsView() {
     const handleEditTask = async (taskId, updatedData) => {
         const { error } = await supabaseClient.from('tasks').update(updatedData).eq('id', taskId);
         if (error) {
-            addToast('Error updating task: ' + error.message, 'error');
+            addToast(t('toast.error_updating_task', { message: error.message }), 'error');
         } else {
-            const updatedTask = { ...state.tasks.find(t => t.id === taskId), ...updatedData };
+            const updatedTask = { ...tasksState.find(t => t.id === taskId), ...updatedData };
             dispatch({ type: 'UPDATE_TASK', payload: updatedTask });
-            addToast('Task updated successfully!', 'success');
+            addToast(t('toast.task_updated_successfully'), 'success');
         }
     };
 
@@ -337,7 +349,7 @@ function ProjectDetailsView() {
                 .eq('parent_task_id', taskToDelete.id);
 
             if (fetchError) {
-                addToast('Error checking for subtasks: ' + fetchError.message, 'error');
+                addToast(t('toast.error_checking_subtasks', { message: fetchError.message }), 'error');
                 setShowDeleteConfirm(false);
                 setTaskToDelete(null);
                 return;
@@ -351,7 +363,7 @@ function ProjectDetailsView() {
                     .eq('parent_task_id', taskToDelete.id);
 
                 if (updateError) {
-                    addToast('Error updating subtasks: ' + updateError.message, 'error');
+                    addToast(t('toast.error_updating_subtasks', { message: updateError.message }), 'error');
                     setShowDeleteConfirm(false);
                     setTaskToDelete(null);
                     return;
@@ -359,7 +371,7 @@ function ProjectDetailsView() {
 
                 // Update child tasks in state
                 childTasks.forEach(childTask => {
-                    const updatedTask = { ...state.tasks.find(t => t.id === childTask.id), parent_task_id: null };
+                    const updatedTask = { ...tasksState.find(t => t.id === childTask.id), parent_task_id: null };
                     dispatch({ type: 'UPDATE_TASK', payload: updatedTask });
                 });
             }
@@ -368,19 +380,19 @@ function ProjectDetailsView() {
             const { error } = await supabaseClient.from('tasks').delete().eq('id', taskToDelete.id);
             
             if (error) {
-                addToast('Error deleting task: ' + error.message, 'error');
+                addToast(t('toast.error_deleting_task', { message: error.message }), 'error');
             } else {
                 dispatch({ type: 'DELETE_TASK', payload: taskToDelete.id });
                 const childCount = childTasks?.length || 0;
                 if (childCount > 0) {
-                    addToast(`Task deleted successfully! ${childCount} subtask${childCount > 1 ? 's' : ''} converted to top-level tasks.`, 'success');
+                    addToast(t('toast.task_deleted_with_subtasks', { count: childCount }), 'success');
                 } else {
-                    addToast('Task deleted successfully!', 'success');
+                    addToast(t('toast.task_deleted_successfully'), 'success');
                 }
             }
         } catch (error) {
             console.error('Error deleting task:', error);
-            addToast('Error deleting task: ' + error.message, 'error');
+            addToast(t('toast.error_deleting_task', { message: error.message }), 'error');
         } finally {
             setShowDeleteConfirm(false);
             setTaskToDelete(null);
@@ -398,14 +410,14 @@ function ProjectDetailsView() {
     const handleBulkComplete = async (taskIds) => {
         const { error } = await supabaseClient.from('tasks').update({ completed: true }).in('id', taskIds);
         if (error) {
-            addToast('Error completing tasks: ' + error.message, 'error');
+            addToast(t('toast.error_completing_tasks', { message: error.message }), 'error');
         } else {
             // Update each task in the state
             taskIds.forEach(taskId => {
-                const updatedTask = { ...state.tasks.find(t => t.id === taskId), completed: true };
+                const updatedTask = { ...tasksState.find(t => t.id === taskId), completed: true };
                 dispatch({ type: 'UPDATE_TASK', payload: updatedTask });
             });
-            addToast(`${taskIds.length} tasks completed successfully!`, 'success');
+            addToast(t('toast.tasks_completed_successfully', { count: taskIds.length }), 'success');
             setSelectedTasks([]);
         }
     };
@@ -419,7 +431,7 @@ function ProjectDetailsView() {
                 .in('parent_task_id', taskIds);
 
             if (fetchError) {
-                addToast('Error checking for subtasks: ' + fetchError.message, 'error');
+                addToast(t('toast.error_checking_subtasks', { message: fetchError.message }), 'error');
                 return;
             }
 
@@ -431,13 +443,13 @@ function ProjectDetailsView() {
                     .in('parent_task_id', taskIds);
 
                 if (updateError) {
-                    addToast('Error updating subtasks: ' + updateError.message, 'error');
+                    addToast(t('toast.error_updating_subtasks', { message: updateError.message }), 'error');
                     return;
                 }
 
                 // Update child tasks in state
                 childTasks.forEach(childTask => {
-                    const updatedTask = { ...state.tasks.find(t => t.id === childTask.id), parent_task_id: null };
+                    const updatedTask = { ...tasksState.find(t => t.id === childTask.id), parent_task_id: null };
                     dispatch({ type: 'UPDATE_TASK', payload: updatedTask });
                 });
             }
@@ -446,7 +458,7 @@ function ProjectDetailsView() {
             const { error } = await supabaseClient.from('tasks').delete().in('id', taskIds);
             
             if (error) {
-                addToast('Error deleting tasks: ' + error.message, 'error');
+                addToast(t('toast.error_deleting_tasks', { message: error.message }), 'error');
             } else {
                 // Remove each task from the state
                 taskIds.forEach(taskId => {
@@ -454,15 +466,15 @@ function ProjectDetailsView() {
                 });
                 const childCount = childTasks?.length || 0;
                 if (childCount > 0) {
-                    addToast(`${taskIds.length} task${taskIds.length > 1 ? 's' : ''} deleted successfully! ${childCount} subtask${childCount > 1 ? 's' : ''} converted to top-level tasks.`, 'success');
+                    addToast(t('toast.tasks_deleted_with_subtasks', { count: taskIds.length, subtaskCount: childCount }), 'success');
                 } else {
-                    addToast(`${taskIds.length} task${taskIds.length > 1 ? 's' : ''} deleted successfully!`, 'success');
+                    addToast(t('toast.tasks_deleted_successfully', { count: taskIds.length }), 'success');
                 }
                 setSelectedTasks([]);
             }
         } catch (error) {
             console.error('Error in bulk delete:', error);
-            addToast('Error deleting tasks: ' + error.message, 'error');
+            addToast(t('toast.error_deleting_tasks', { message: error.message }), 'error');
         }
     };
 
@@ -503,16 +515,16 @@ function ProjectDetailsView() {
                                     .eq('id', project.id);
 
                                 if (error) {
-                                    addToast('Error updating project status: ' + error.message, 'error');
+                                    addToast(t('toast.error_updating_project_status', { message: error.message }), 'error');
                                 } else {
                                     dispatch({
                                         type: 'UPDATE_PROJECT',
                                         payload: { ...project, status: newStatus }
                                     });
-                                    addToast('Project status updated successfully!', 'success');
+                                    addToast(t('toast.project_status_updated_successfully'), 'success');
                                 }
                             } catch (error) {
-                                addToast('Error updating project status: ' + error.message, 'error');
+                                addToast(t('toast.error_updating_project_status', { message: error.message }), 'error');
                             }
                         }}
                         className={`px-3 py-1 text-sm font-semibold rounded-full border-0 cursor-pointer focus:ring-2 focus:ring-blue-500 focus:outline-none appearance-none pr-8 ${
@@ -561,11 +573,27 @@ function ProjectDetailsView() {
                     >
                         + Manage Crew
                     </button>
+                    <PermissionGuard permission="can_manage_progress_reports">
+                        <button 
+                            onClick={() => setShowProgressReportModal(true)}
+                            className="px-4 py-2 text-sm font-semibold text-white bg-green-600 rounded-lg shadow-sm hover:bg-green-700 transition-colors flex items-center gap-2"
+                            title="Schedule and manage progress reports"
+                        >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                            </svg>
+                            Progress Reports
+                        </button>
+                    </PermissionGuard>
                 </div>
             </header>
 
             {showShare && (
                 <ShareModal projectId={project.id} onClose={() => setShowShare(false)} />
+            )}
+
+            {showProgressReportModal && (
+                <ProgressReportModal projectId={project.id} onClose={() => setShowProgressReportModal(false)} />
             )}
 
             <div className="grid grid-cols-1 lg:grid-cols-5 gap-8">

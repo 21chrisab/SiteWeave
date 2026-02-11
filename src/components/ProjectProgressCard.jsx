@@ -1,9 +1,11 @@
 import React, { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useAppContext, supabaseClient } from '../context/AppContext';
 import { useToast } from '../context/ToastContext';
 import PermissionGuard from './PermissionGuard';
 
 function ProjectProgressCard({ project }) {
+    const { i18n } = useTranslation();
     const { dispatch } = useAppContext();
     const { addToast } = useToast();
     const [phases, setPhases] = useState([]);
@@ -65,7 +67,7 @@ function ProjectProgressCard({ project }) {
     };
 
     const formatCurrency = (amount) => {
-        return new Intl.NumberFormat('en-US', {
+        return new Intl.NumberFormat(i18n.language || 'en', {
             style: 'currency',
             currency: 'USD',
             minimumFractionDigits: 0,

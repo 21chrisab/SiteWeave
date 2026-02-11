@@ -22,6 +22,11 @@ import {
 function MessagesView() {
     const { state, dispatch } = useAppContext();
     const { addToast } = useToast();
+
+    const projects = state.projects || [];
+    const contacts = state.contacts || [];
+    const messageChannels = state.messageChannels || [];
+
     const [newMessage, setNewMessage] = useState('');
     const [showMentions, setShowMentions] = useState(false);
     const [mentionQuery, setMentionQuery] = useState('');
@@ -101,24 +106,24 @@ function MessagesView() {
         return grouped;
     }, [channelMessages]);
 
-    const getProjectForChannel = (channelId) => state.projects.find(p => p.id === state.messageChannels.find(c => c.id === channelId)?.project_id);
-    const getTeamCount = (projectId) => state.contacts.filter(c => c.project_contacts.some(pc => pc.project_id === projectId)).length;
+    const getProjectForChannel = (channelId) => projects.find(p => p.id === messageChannels.find(c => c.id === channelId)?.project_id);
+    const getTeamCount = (projectId) => contacts.filter(c => c.project_contacts?.some(pc => pc.project_id === projectId)).length;
     
     // Get team members for the active channel's project
     const project = getProjectForChannel(activeChannel?.id);
-    const teamMembers = state.contacts.filter(contact => 
+    const teamMembers = contacts.filter(contact => 
         contact.project_contacts && contact.project_contacts.some(pc => pc.project_id === project?.id) && contact.type === 'Team'
     );
 
     // Filter contacts for mentions
-    const filteredContacts = state.contacts.filter(contact => 
+    const filteredContacts = contacts.filter(contact => 
         contact.name.toLowerCase().includes(mentionQuery.toLowerCase()) &&
         contact.project_contacts.some(pc => pc.project_id === activeChannel?.project_id)
     );
 
     useEffect(() => {
-        if (!state.selectedChannelId && state.messageChannels.length > 0 && !hasAutoSelectedChannelRef.current) {
-            const firstChannelId = state.messageChannels[0]?.id;
+        if (!state.selectedChannelId && messageChannels.length > 0 && !hasAutoSelectedChannelRef.current) {
+            const firstChannelId = messageChannels[0]?.id;
             if (firstChannelId) {
                 dispatch({ type: 'SET_CHANNEL', payload: firstChannelId });
                 hasAutoSelectedChannelRef.current = true;
@@ -189,20 +194,22 @@ function MessagesView() {
     useEffect(() => {
         if (!activeChannel || !state.user?.id) return;
 
+        const ac = new AbortController();
         const loadMessages = async () => {
             try {
                 const messages = await fetchChannelMessages(supabaseClient, activeChannel.id, state.user.id);
+                if (ac.signal.aborted) return;
                 dispatch({ type: 'SET_CHANNEL_MESSAGES', payload: { channelId: activeChannel.id, messages } });
                 // Auto-scroll to bottom after loading
                 setTimeout(() => {
-                    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+                    if (!ac.signal.aborted) messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
                 }, 100);
             } catch (error) {
-                console.error('Error loading messages:', error);
+                if (!ac.signal.aborted) console.error('Error loading messages:', error);
             }
         };
-
         loadMessages();
+        return () => ac.abort();
     }, [activeChannel?.id, state.user?.id]);
 
     // Real-time subscriptions
@@ -287,7 +294,7 @@ function MessagesView() {
     useEffect(() => {
         const project = getProjectForChannel(state.selectedChannelId);
         if (project && project.notification_count > 0) {
-            supabaseClient.from('projects').update({ notification_count: 0 }).eq('id', project.id).then(() => {});
+            supabaseClient.from('projects').update({ notification_count: 0 }).eq('id', project.id).then(() => {}).catch(() => {});
         }
 
         // Check if this is a new message (count increased) or channel change

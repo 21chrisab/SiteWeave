@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useAppContext, useLazyDataLoader, supabaseClient } from '../context/AppContext';
 import { useToast } from '../context/ToastContext';
 import ProjectCard from '../components/ProjectCard';
@@ -10,13 +11,18 @@ import ViewSwitcher from '../components/ViewSwitcher';
 import ProjectBoardView from '../components/ProjectBoardView';
 import ProjectListView from '../components/ProjectListView';
 import PermissionGuard from '../components/PermissionGuard';
+import ProgressReportModal from '../components/ProgressReportModal';
 import { useProjectShortcuts } from '../hooks/useKeyboardShortcuts';
 
 function DashboardView() {
+    const { t } = useTranslation();
     const { state, dispatch } = useAppContext();
     const { loadTasksIfNeeded } = useLazyDataLoader();
     const { addToast } = useToast();
-    
+
+    const user = state.user;
+    const projects = state.projects || [];
+
     // Lazy load tasks when dashboard loads
     useEffect(() => {
         loadTasksIfNeeded();
@@ -28,6 +34,7 @@ function DashboardView() {
     const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
     const [projectToDelete, setProjectToDelete] = useState(null);
     const [viewType, setViewType] = useState('card'); // 'card', 'list', or 'board'
+    const [showProgressReportModal, setShowProgressReportModal] = useState(false);
 
     // Keyboard shortcuts
     useProjectShortcuts({
@@ -40,9 +47,9 @@ function DashboardView() {
             setIsUpdatingProject(true);
             // Remove selectedContacts and emailAddresses from projectData as they're not columns in the projects table
             const { selectedContacts, emailAddresses, ...projectFields } = projectData;
-            const projectDataWithAudit = {
+                const projectDataWithAudit = {
                 ...projectFields,
-                updated_by_user_id: state.user.id,
+                updated_by_user_id: user?.id,
                 updated_at: new Date().toISOString()
             };
             const { data: updatedProject, error } = await supabaseClient
@@ -52,7 +59,7 @@ function DashboardView() {
                 .select()
                 .single();
             if (error) {
-                addToast('Error updating project: ' + error.message, 'error');
+                addToast(t('toast.error_updating_project', { message: error.message }), 'error');
             } else {
                 // Update project contacts if selectedContacts or emailAddresses is provided
                 if (selectedContacts !== undefined || projectData.emailAddresses) {
@@ -64,7 +71,7 @@ function DashboardView() {
                     
                     if (deleteError) {
                         console.error('Error removing existing contacts:', deleteError);
-                        addToast('Project updated, but contacts could not be updated', 'warning');
+                        addToast(t('toast.project_updated_contacts_warning'), 'warning');
                     } else {
                         // Handle email addresses - create contacts for emails that don't exist
                         const emailAddresses = projectData.emailAddresses || [];
@@ -99,7 +106,7 @@ function DashboardView() {
                                         
                                         if (contactError) {
                                             console.error(`Error creating contact for ${email}:`, contactError);
-                                            addToast(`Could not create contact for ${email}`, 'warning');
+                                            addToast(t('toast.could_not_create_contact', { email }), 'warning');
                                         } else {
                                             contactsToAdd.push(newContact.id);
                                             // Refresh contacts in context
@@ -108,7 +115,7 @@ function DashboardView() {
                                     }
                                 } catch (error) {
                                     console.error(`Error processing email ${email}:`, error);
-                                    addToast(`Error processing ${email}`, 'warning');
+                                    addToast(t('toast.error_processing_email', { email }), 'warning');
                                 }
                             }
                         }
@@ -128,13 +135,13 @@ function DashboardView() {
                                 });
                             if (contactsError && contactsError.code !== '23505') {
                                 console.error('Error adding contacts to project:', contactsError);
-                                addToast('Project updated, but some contacts could not be added', 'warning');
+                                addToast(t('toast.project_updated_some_contacts_warning'), 'warning');
                             }
                         }
                     }
                 }
                 dispatch({ type: 'UPDATE_PROJECT', payload: updatedProject });
-                addToast('Project updated successfully!', 'success');
+                addToast(t('toast.project_updated_successfully'), 'success');
                 setShowModal(false);
                 setEditingProject(null);
             }
@@ -146,7 +153,7 @@ function DashboardView() {
             
             // Ensure organization_id is included for multi-tenant RLS
             if (!state.currentOrganization?.id) {
-                addToast('Error: No organization found. Please contact support.', 'error');
+                addToast(t('toast.error_no_organization'), 'error');
                 setIsCreatingProject(false);
                 return;
             }
@@ -154,9 +161,9 @@ function DashboardView() {
             const projectDataWithAudit = {
                 ...projectFields,
                 organization_id: state.currentOrganization.id,
-                project_manager_id: state.user.id,
-                created_by_user_id: state.user.id,
-                updated_by_user_id: state.user.id,
+                project_manager_id: user?.id,
+                created_by_user_id: user?.id,
+                updated_by_user_id: user?.id,
                 updated_at: new Date().toISOString()
             };
             console.log('Creating project with data:', projectDataWithAudit);
@@ -167,7 +174,7 @@ function DashboardView() {
                 .single();
             if (error) {
                 console.error('Project creation error:', error);
-                addToast('Error creating project: ' + error.message, 'error');
+                addToast(t('toast.error_creating_project', { message: error.message }), 'error');
             } else {
                 // Create a message channel for the project
                 const { data: messageChannel, error: channelError } = await supabaseClient
@@ -182,7 +189,7 @@ function DashboardView() {
 
                 if (channelError) {
                     console.error('Error creating message channel:', channelError);
-                    addToast('Project created, but message channel could not be created', 'warning');
+                    addToast(t('toast.project_created_channel_warning'), 'warning');
                 } else {
                     dispatch({ type: 'ADD_CHANNEL', payload: messageChannel });
                 }
@@ -215,14 +222,14 @@ function DashboardView() {
                                         role: 'Team Member',
                                         status: 'Available',
                                         organization_id: state.currentOrganization?.id,
-                                        created_by_user_id: state.user.id
+                                        created_by_user_id: user?.id
                                     })
                                     .select()
                                     .single();
                                 
                                 if (contactError) {
                                     console.error(`Error creating contact for ${email}:`, contactError);
-                                    addToast(`Could not create contact for ${email}`, 'warning');
+                                    addToast(t('toast.could_not_create_contact', { email }), 'warning');
                                 } else {
                                     contactsToAdd.push(newContact.id);
                                     // Refresh contacts in context
@@ -231,7 +238,7 @@ function DashboardView() {
                             }
                         } catch (error) {
                             console.error(`Error processing email ${email}:`, error);
-                            addToast(`Error processing ${email}`, 'warning');
+                            addToast(t('toast.error_processing_email', { email }), 'warning');
                         }
                     }
                 }
@@ -244,24 +251,24 @@ function DashboardView() {
                 const { data: profile } = await supabaseClient
                     .from('profiles')
                     .select('contact_id')
-                    .eq('id', state.user.id)
+                    .eq('id', user?.id)
                     .single();
                 
                 creatorContactId = profile?.contact_id;
                 
                 // If no contact_id exists, create a contact for the creator
-                if (!creatorContactId && state.user.email) {
-                    console.log('Creator has no contact_id, creating contact for:', state.user.email);
+                if (!creatorContactId && user?.email) {
+                    console.log('Creator has no contact_id, creating contact for:', user.email);
                     const { data: newCreatorContact, error: creatorContactError } = await supabaseClient
                         .from('contacts')
                         .insert({
-                            name: state.user.user_metadata?.full_name || state.user.email.split('@')[0] || 'User',
-                            email: state.user.email,
+                            name: user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'User',
+                            email: user?.email,
                             type: 'Team',
                             role: 'Team Member',
                             status: 'Available',
                             organization_id: state.currentOrganization?.id,
-                            created_by_user_id: state.user.id
+                            created_by_user_id: user?.id
                         })
                         .select('id')
                         .single();
@@ -274,7 +281,7 @@ function DashboardView() {
                         await supabaseClient
                             .from('profiles')
                             .update({ contact_id: creatorContactId })
-                            .eq('id', state.user.id);
+                            .eq('id', user?.id);
                         
                         // Refresh contacts in context
                         dispatch({ type: 'ADD_CONTACT', payload: newCreatorContact });
@@ -289,7 +296,7 @@ function DashboardView() {
                     console.log('Adding creator to project_contacts:', creatorContactId);
                 } else if (!creatorContactId) {
                     console.error('CRITICAL: Could not create or find contact for project creator. Project may not be visible.');
-                    addToast('Warning: Could not automatically add you to the project. Please contact support.', 'warning');
+                    addToast(t('toast.warning_could_not_add_you'), 'warning');
                 }
                 
                 // Add all contacts (existing + newly created + creator) to the project
@@ -331,9 +338,9 @@ function DashboardView() {
                     if (failedContacts.length > 0) {
                         console.warn('Some contacts could not be added:', failedContacts);
                         if (insertedContactIds.length === 0) {
-                            addToast('Project created, but contacts could not be added. You may need to add them manually.', 'warning');
+                            addToast(t('toast.project_created_contacts_warning'), 'warning');
                         } else {
-                            addToast(`Project created. ${failedContacts.length} contact(s) could not be added automatically.`, 'warning');
+                            addToast(t('toast.project_created_some_contacts_warning', { count: failedContacts.length }), 'warning');
                         }
                     } else {
                         console.log('Successfully added all contacts to project:', insertedContactIds);
@@ -342,7 +349,7 @@ function DashboardView() {
                     console.warn('No contacts to add to project - project may not be visible after reload');
                 }
                 dispatch({ type: 'ADD_PROJECT', payload: createdProject });
-                addToast('Project created successfully!', 'success');
+                addToast(t('toast.project_created_successfully'), 'success');
                 setShowModal(false);
             }
             setIsCreatingProject(false);
@@ -363,10 +370,10 @@ function DashboardView() {
         if (projectToDelete) {
             const { error } = await supabaseClient.from('projects').delete().eq('id', projectToDelete.id);
             if (error) {
-                addToast('Error deleting project: ' + error.message, 'error');
+                addToast(t('toast.error_deleting_project', { message: error.message }), 'error');
             } else {
                 dispatch({ type: 'DELETE_PROJECT', payload: projectToDelete.id });
-                addToast('Project deleted successfully!', 'success');
+                addToast(t('toast.project_deleted_successfully'), 'success');
             }
         }
         setShowDeleteConfirm(false);
@@ -389,32 +396,48 @@ function DashboardView() {
                 <div className="xl:col-span-3">
                     <header className="flex items-center justify-between mb-8" data-onboarding="dashboard-welcome">
                          <div>
-                            <h1 className="text-3xl font-bold text-gray-900 mb-1">Project Dashboard</h1>
-                            <p className="text-gray-500 text-sm">Manage your construction projects</p>
+                            <h1 className="text-3xl font-bold text-gray-900 mb-1">{t('dashboard.title')}</h1>
+                            <p className="text-gray-500 text-sm">{t('dashboard.subtitle')}</p>
                         </div>
                         <div className="flex items-center gap-3">
                             <ViewSwitcher currentView={viewType} onViewChange={setViewType} />
+                            <PermissionGuard permission="can_manage_progress_reports">
+                                <button
+                                    onClick={() => setShowProgressReportModal(true)}
+                                    className="px-4 py-2 text-sm font-semibold border border-gray-300 text-gray-700 bg-white rounded-lg shadow-sm hover:bg-gray-50 btn-smooth"
+                                    title="Schedule and manage progress reports"
+                                >
+                                    Progress reports
+                                </button>
+                            </PermissionGuard>
                             <PermissionGuard permission="can_create_projects">
                                 <button 
                                     onClick={() => setShowModal(true)} 
                                     data-onboarding="new-project-btn"
                                     className="px-4 py-2 text-sm font-semibold text-white bg-blue-600 rounded-lg shadow-sm hover:bg-blue-700 btn-smooth"
                                 >
-                                    + New Project
+                                    + {t('dashboard.new_project')}
                                 </button>
                             </PermissionGuard>
                         </div>
                     </header>
+
+                    {showProgressReportModal && (
+                        <ProgressReportModal
+                            projectId={null}
+                            onClose={() => setShowProgressReportModal(false)}
+                        />
+                    )}
                     
                     {/* Dashboard Statistics */}
                     <DashboardStats />
                     
                     {/* Project Views */}
-                    {state.projects.length > 0 ? (
+                    {projects.length > 0 ? (
                         <div data-onboarding="project-grid">
                             {viewType === 'card' && (
                                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                                    {state.projects.map(p => (
+                                    {projects.map(p => (
                                         <div key={p.id} data-onboarding="project-cards">
                                             <ProjectCard 
                                                 project={p} 
@@ -427,7 +450,7 @@ function DashboardView() {
                             )}
                             {viewType === 'list' && (
                                 <ProjectListView
-                                    projects={state.projects}
+                                    projects={projects}
                                     onEdit={handleEditProject}
                                     onDelete={handleDeleteProject}
                                     onProjectClick={handleProjectClick}
@@ -435,7 +458,7 @@ function DashboardView() {
                             )}
                             {viewType === 'board' && (
                                 <ProjectBoardView
-                                    projects={state.projects}
+                                    projects={projects}
                                     onEdit={handleEditProject}
                                     onDelete={handleDeleteProject}
                                     onProjectClick={handleProjectClick}
@@ -449,13 +472,13 @@ function DashboardView() {
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
                                 </svg>
                             </div>
-                            <h3 className="text-xl font-semibold text-gray-900 mb-2">No projects yet</h3>
-                            <p className="text-gray-500 mb-6 max-w-md text-sm leading-relaxed">Get started by creating your first construction project. Track progress, manage tasks, and collaborate with your team.</p>
+                            <h3 className="text-xl font-semibold text-gray-900 mb-2">{t('dashboard.no_projects_yet')}</h3>
+                            <p className="text-gray-500 mb-6 max-w-md text-sm leading-relaxed">{t('dashboard.no_projects_description')}</p>
                             <button 
                                 onClick={() => setShowModal(true)}
                                 className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium text-sm"
                             >
-                                Create Your First Project
+                                {t('dashboard.create_first_project')}
                             </button>
                         </div>
                     )}
@@ -479,10 +502,10 @@ function DashboardView() {
                 isOpen={showDeleteConfirm}
                 onClose={() => setShowDeleteConfirm(false)}
                 onConfirm={confirmDeleteProject}
-                title="Delete Project"
-                message={`Are you sure you want to delete "${projectToDelete?.name}"? This will also delete all associated tasks, files, message boards, and messages. This action cannot be undone.`}
-                confirmText="Delete"
-                cancelText="Cancel"
+                title={t('dashboard.delete_project')}
+                message={t('dashboard.delete_project_message', { name: projectToDelete?.name || '' })}
+                confirmText={t('common.delete')}
+                cancelText={t('common.cancel')}
             />
         </>
     );

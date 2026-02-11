@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import FullCalendar from '@fullcalendar/react';
 import dayGridPlugin from '@fullcalendar/daygrid';
 import timeGridPlugin from '@fullcalendar/timegrid';
@@ -32,6 +33,7 @@ import { getExtendedWeatherForecast, getWeatherIconUrl } from '../utils/weatherS
 
 // --- Mini Calendar Component (Sidebar) ---
 function MiniCalendar({ currentDate, setCurrentDate }) {
+    const { i18n } = useTranslation();
     // Normalize today to midnight local time to avoid timezone issues
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -76,7 +78,7 @@ function MiniCalendar({ currentDate, setCurrentDate }) {
         <div className="bg-white p-4 rounded-lg border border-gray-200">
             <div className="flex justify-between items-center mb-4">
                 <button onClick={handlePrevMonth} className="p-1 rounded-full hover:bg-gray-100">&lt;</button>
-                <span className="font-semibold text-sm">{currentDate.toLocaleString('default', { month: 'long', year: 'numeric' })}</span>
+                <span className="font-semibold text-sm">{currentDate.toLocaleString(i18n.language, { month: 'long', year: 'numeric' })}</span>
                 <button onClick={handleNextMonth} className="p-1 rounded-full hover:bg-gray-100">&gt;</button>
             </div>
             <div className="grid grid-cols-7 text-center text-xs text-gray-500 mb-2">
@@ -117,9 +119,15 @@ function MiniCalendar({ currentDate, setCurrentDate }) {
 
 // --- Main Calendar View Component ---
 function CalendarView() {
+    const { i18n } = useTranslation();
     const { state, dispatch } = useAppContext();
     const { loadCalendarEventsIfNeeded } = useLazyDataLoader();
     const { addToast } = useToast();
+
+    const calendarEvents = state.calendarEvents || [];
+    const contacts = state.contacts || [];
+    const projects = state.projects || [];
+
     const [showModal, setShowModal] = useState(false);
     const [modalDate, setModalDate] = useState(null);
     const [editingEvent, setEditingEvent] = useState(null);
@@ -340,7 +348,7 @@ function CalendarView() {
 
         const allEvents = [];
 
-        state.calendarEvents.forEach(event => {
+        calendarEvents.forEach(event => {
             // Determine event category (use existing or detect from title)
             let eventCategory = event.category || 'other';
             
@@ -423,7 +431,7 @@ function CalendarView() {
         });
 
         return allEvents;
-    }, [state.calendarEvents, state.projects, categories, visibleCategories]);
+    }, [calendarEvents, projects, categories, visibleCategories]);
 
     const handleDateClick = (arg) => {
         setModalDate(arg.date);
@@ -432,7 +440,7 @@ function CalendarView() {
     };
 
     const handleEventClick = (arg) => {
-        const event = state.calendarEvents.find(e => e.id === arg.event.id);
+        const event = calendarEvents.find(e => e.id === arg.event.id);
         if (event) {
             setEditingEvent(event);
             setShowModal(true);
@@ -460,7 +468,7 @@ function CalendarView() {
             }
 
             // Update local state
-            const updatedEvent = state.calendarEvents.find(e => e.id === eventId);
+            const updatedEvent = calendarEvents.find(e => e.id === eventId);
             if (updatedEvent) {
                 const finalEvent = {
                     ...updatedEvent, 
@@ -520,7 +528,7 @@ function CalendarView() {
             }
 
             // Update local state
-            const updatedEvent = state.calendarEvents.find(e => e.id === eventId);
+            const updatedEvent = calendarEvents.find(e => e.id === eventId);
             if (updatedEvent) {
                 const finalEvent = {
                     ...updatedEvent, 
@@ -573,11 +581,11 @@ function CalendarView() {
                 const { data: profile } = await supabaseClient
                     .from('profiles')
                     .select('contact_id')
-                    .eq('id', state.user.id)
+                    .eq('id', state.user?.id)
                     .maybeSingle();
                 
                 if (profile?.contact_id) {
-                    const userContact = state.contacts.find(c => c.id === profile.contact_id);
+                    const userContact = contacts.find(c => c.id === profile.contact_id);
                     if (userContact?.name) return userContact.name;
                 }
             } catch (error) {
@@ -873,7 +881,7 @@ function CalendarView() {
     };
 
     const handleDeleteEvent = (eventId) => {
-        const event = state.calendarEvents.find(e => e.id === eventId);
+        const event = calendarEvents.find(e => e.id === eventId);
         if (event) {
             setEventToDelete(event);
             setShowDeleteConfirm(true);
@@ -1115,8 +1123,8 @@ function CalendarView() {
                                 }
                                 
                                 // Week/Day views: full date
-                                const weekday = date.toLocaleDateString('en-US', { weekday: 'short' });
-                                const month = date.toLocaleDateString('en-US', { month: 'short' });
+                                const weekday = date.toLocaleDateString(i18n.language, { weekday: 'short' });
+                                const month = date.toLocaleDateString(i18n.language, { month: 'short' });
                                 const day = date.getDate();
                                 return `${weekday}, ${month} ${day}`;
                             }}

@@ -20,17 +20,19 @@ function TaskModal({ project, onClose, onSave, isLoading = false }) {
     const [recurrenceEndType, setRecurrenceEndType] = useState('never');
     const [recurrenceEndDate, setRecurrenceEndDate] = useState('');
     const [recurrenceOccurrences, setRecurrenceOccurrences] = useState(10);
+
+    const contacts = state.contacts || [];
     
 
     // Get contacts assigned to this project
-    const projectContacts = state.contacts.filter(contact =>
+    const projectContacts = contacts.filter(contact =>
         contact.project_contacts && contact.project_contacts.some(pc => pc.project_id === project.id)
     );
     
     // Also include org admins even if not in project_contacts
     // This allows org admins to be assigned tasks on any project in their organization
     // Check for both "Org Admin" and "OrganizationAdmin" role names
-    const orgAdmins = state.contacts.filter(contact => 
+    const orgAdmins = contacts.filter(contact => 
         contact.is_internal && 
         contact.organization_id === project.organization_id &&
         contact.role_name && 
