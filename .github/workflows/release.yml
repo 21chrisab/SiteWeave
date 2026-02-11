@@ -15,13 +15,44 @@ jobs:
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
+      with:
+        # Ensure we get a clean checkout with no extra files
+        clean: true
       
     - name: Setup Node.js
       uses: actions/setup-node@v4
       with:
         node-version: '22.x'
         cache: 'npm'
+
+    - name: Verify source code is current
+      shell: bash
+      run: |
+        echo "=== Tag: ${{ github.ref_name }} ==="
+        echo "=== Commit: ${{ github.sha }} ==="
+        echo "=== package.json version ==="
+        node -e "console.log(require('./package.json').version)"
+        echo "=== Key source files exist ==="
+        ls -la src/components/ProgressReportBuilder.jsx || echo "MISSING: ProgressReportBuilder.jsx"
+        ls -la packages/core-logic/src/services/progressReportService.js || echo "MISSING: progressReportService.js"
+        ls -la electron/main.cjs || echo "MISSING: electron/main.cjs"
+        echo "=== Verify no stale dist-electron in checkout ==="
+        if [ -f "dist-electron/main.cjs" ]; then
+          echo "WARNING: Stale dist-electron/main.cjs found in checkout, removing..."
+          rm -rf dist-electron/
+        else
+          echo "OK: No stale dist-electron/ in checkout"
+        fi
         
+    - name: Clean build directories
+      shell: bash
+      run: |
+        echo "Removing any existing build artifacts..."
+        rm -rf dist/
+        rm -rf dist-electron/
+        rm -rf release/
+        echo "Build directories cleaned"
+
     - name: Install dependencies
       run: npm ci
       
@@ -36,6 +67,39 @@ jobs:
         VITE_MICROSOFT_CLIENT_SECRET: ${{ secrets.VITE_MICROSOFT_CLIENT_SECRET }}
         VITE_DROPBOX_APP_KEY: ${{ secrets.VITE_DROPBOX_APP_KEY }}
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Verify build output
+      shell: bash
+      run: |
+        echo "=== Checking dist/ (renderer) ==="
+        if [ ! -f "dist/index.html" ]; then
+          echo "ERROR: dist/index.html not found! Vite build failed."
+          exit 1
+        fi
+        echo "dist/index.html exists"
+        ls -la dist/
+        echo ""
+        echo "=== Checking dist/assets/ ==="
+        ls -la dist/assets/ | head -20
+        echo ""
+        echo "Total renderer files: $(find dist/ -type f | wc -l)"
+        echo "Total renderer size: $(du -sh dist/ | cut -f1)"
+        echo ""
+        echo "=== Checking dist-electron/ (main process) ==="
+        if [ ! -f "dist-electron/main.cjs" ]; then
+          echo "ERROR: dist-electron/main.cjs not found! Electron build failed."
+          exit 1
+        fi
+        ls -la dist-electron/
+        echo ""
+        echo "=== Checking release/ (installer) ==="
+        ls -la release/ || echo "WARNING: release/ not found"
+        echo ""
+        echo "=== Verify version in built package.json ==="
+        node -e "console.log('Built version:', require('./package.json').version)"
+        echo ""
+        echo "=== latest.yml content ==="
+        cat release/latest.yml || echo "WARNING: latest.yml not found"
       
     - name: Create Release
       uses: softprops/action-gh-release@v2
