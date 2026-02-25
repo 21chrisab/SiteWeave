@@ -30,6 +30,7 @@ appx:
   publisher: CN=SiteWeave
   backgroundColor: "#FFFFFF"
 nsis:
+  artifactName: ${productName}-Setup-${version}.${ext}
   oneClick: false
   allowToChangeInstallationDirectory: true
   createDesktopShortcut: true
