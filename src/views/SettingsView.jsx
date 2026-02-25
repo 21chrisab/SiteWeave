@@ -156,14 +156,14 @@ function SettingsView() {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         {/* Language selector */}
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+        <div className="bg-white rounded-xl shadow-xs border border-gray-200 p-6">
           <h2 className="text-xl font-semibold text-gray-900 mb-4">{t('settings.language')}</h2>
           <div className="space-y-2">
             <label className="block text-sm font-medium text-gray-700">{t('settings.language')}</label>
             <select
               value={i18n.language}
               onChange={(e) => i18n.changeLanguage(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             >
               <option value="en">English</option>
               <option value="es">Español</option>
@@ -172,7 +172,7 @@ function SettingsView() {
         </div>
 
         {/* Organization Section */}
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+        <div className="bg-white rounded-xl shadow-xs border border-gray-200 p-6">
           <h2 className="text-xl font-semibold text-gray-900 mb-4">{t('settings.organization')}</h2>
           <div className="space-y-3">
             {state.currentOrganization ? (
@@ -231,7 +231,7 @@ function SettingsView() {
         {/* Profile Settings */}
         <div 
           data-onboarding="profile-section"
-          className="bg-white rounded-xl shadow-sm border border-gray-200 p-6"
+          className="bg-white rounded-xl shadow-xs border border-gray-200 p-6"
         >
           <h2 className="text-xl font-semibold text-gray-900 mb-6">{t('settings.profile_information')}</h2>
           
@@ -257,7 +257,7 @@ function SettingsView() {
                 type="text"
                 value={fullName}
                 onChange={(e) => setFullName(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 placeholder={t('settings.enter_full_name')}
               />
             </div>
@@ -280,7 +280,7 @@ function SettingsView() {
         </div>
 
         {/* Security Settings */}
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+        <div className="bg-white rounded-xl shadow-xs border border-gray-200 p-6">
           <h2 className="text-xl font-semibold text-gray-900 mb-6">{t('settings.security')}</h2>
           
           <form onSubmit={handleChangePassword} className="space-y-4">
@@ -292,7 +292,7 @@ function SettingsView() {
                 type="password"
                 value={newPassword}
                 onChange={(e) => setNewPassword(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 placeholder={t('settings.enter_new_password')}
                 minLength="6"
               />
@@ -306,7 +306,7 @@ function SettingsView() {
                 type="password"
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 placeholder={t('settings.confirm_new_password_placeholder')}
                 minLength="6"
               />
@@ -344,14 +344,14 @@ function SettingsView() {
 
         {/* Report Branding */}
         <PermissionGuard permission="can_manage_progress_reports">
-          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+          <div className="bg-white rounded-xl shadow-xs border border-gray-200 p-6">
             <h2 className="text-xl font-semibold text-gray-900 mb-6">{t('settings.report_branding')}</h2>
             <BrandingSettings />
           </div>
         </PermissionGuard>
 
         {/* Integrations */}
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+        <div className="bg-white rounded-xl shadow-xs border border-gray-200 p-6">
           <h2 className="text-xl font-semibold text-gray-900 mb-6">{t('settings.integrations')}</h2>
           
           {/* Calendar Integrations */}
@@ -432,7 +432,7 @@ function SettingsView() {
       </div>
 
       {/* App Information */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+      <div className="bg-white rounded-xl shadow-xs border border-gray-200 p-6">
         <h2 className="text-xl font-semibold text-gray-900 mb-4">{t('settings.about_siteweave')}</h2>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm text-gray-600">
           <div>
@@ -455,7 +455,7 @@ function SettingsView() {
 
       {/* Role Management Modal/View */}
       {showRoleManagement && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
             <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
               <h2 className="text-2xl font-bold text-gray-900">{t('settings.role_management')}</h2>

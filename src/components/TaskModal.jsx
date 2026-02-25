@@ -8,6 +8,7 @@ import PermissionGuard from './PermissionGuard';
 function TaskModal({ project, onClose, onSave, isLoading = false }) {
     const { state } = useAppContext();
     const [text, setText] = useState('');
+    const [startDate, setStartDate] = useState('');
     const [dueDate, setDueDate] = useState('');
     const [priority, setPriority] = useState('Medium');
     const [assigneeId, setAssigneeId] = useState('');
@@ -91,6 +92,7 @@ function TaskModal({ project, onClose, onSave, isLoading = false }) {
         onSave({
             project_id: project.id,
             text,
+            start_date: startDate || null,
             due_date: dueDate || null,
             priority,
             assignee_id: validAssigneeId,
@@ -110,9 +112,15 @@ function TaskModal({ project, onClose, onSave, isLoading = false }) {
                         <input type="text" value={text} onChange={e => setText(e.target.value)} className="w-full p-2 border rounded-lg" required />
                     </div>
                     <DateDropdown 
+                        value={startDate} 
+                        onChange={setStartDate} 
+                        label="Start Date"
+                        className="mb-4"
+                    />
+                    <DateDropdown 
                         value={dueDate} 
                         onChange={setDueDate} 
-                        label="Due Date"
+                        label="End Date"
                         className="mb-4"
                     />
                     <div className="mb-4">

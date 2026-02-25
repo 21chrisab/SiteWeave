@@ -116,7 +116,8 @@ export async function loadProjectTasks(supabaseClient, dispatch, projectId, stat
       .from('tasks')
       .select('*, contacts(name, avatar_url)')
       .eq('project_id', projectId)
-      .order('order_index', { ascending: true });
+      .order('due_date', { ascending: true, nullsFirst: false })
+      .order('id', { ascending: true });
     
     if (error) throw error;
     

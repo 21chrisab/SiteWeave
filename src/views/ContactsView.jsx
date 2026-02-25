@@ -341,7 +341,7 @@ function ContactsView() {
                     <button 
                         onClick={() => setShowAddModal(true)} 
                         data-onboarding="add-contact-btn"
-                        className="px-4 py-2 text-sm font-semibold text-white bg-blue-600 rounded-lg shadow-sm hover:bg-blue-700 transition-colors"
+                        className="px-4 py-2 text-sm font-semibold text-white bg-blue-600 rounded-lg shadow-xs hover:bg-blue-700 transition-colors"
                     >
                         + Add Contact
                     </button>
@@ -429,7 +429,7 @@ function ContactsView() {
             </div>
             
             {activeTab === 'Team' ? (
-                <div className="p-6 bg-white rounded-xl shadow-sm border border-gray-200" data-onboarding="contacts-list">
+                <div className="p-6 bg-white rounded-xl shadow-xs border border-gray-200" data-onboarding="contacts-list">
                     <h2 className="text-xl font-bold mb-4">
                         Team Members ({filteredContacts.length})
                     </h2>
@@ -457,7 +457,7 @@ function ContactsView() {
                     )}
                 </div>
             ) : (
-                <div className="p-6 bg-white rounded-xl shadow-sm border border-gray-200" data-onboarding="contacts-list">
+                <div className="p-6 bg-white rounded-xl shadow-xs border border-gray-200" data-onboarding="contacts-list">
                     <h2 className="text-xl font-bold mb-4">
                         All Subcontractors ({filteredContacts.length})
                     </h2>
@@ -518,7 +518,7 @@ function ContactsView() {
 
             {/* Import Modal */}
             {showImportModal && (
-                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
                     <div className="bg-white rounded-lg shadow-2xl p-8 w-full max-w-md">
                         <h2 className="text-2xl font-bold mb-6">Import Contacts</h2>
                         <p className="text-gray-600 mb-6">
@@ -544,7 +544,7 @@ function ContactsView() {
 
             {/* Export Modal */}
             {showExportModal && (
-                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
                     <div className="bg-white rounded-lg shadow-2xl p-8 w-full max-w-md">
                         <h2 className="text-2xl font-bold mb-6">Export Contacts</h2>
                         <p className="text-gray-600 mb-6">

@@ -323,14 +323,16 @@ export const AppProvider = ({ children }) => {
         } else if (session?.user) {
           dispatch({ type: 'SET_USER', payload: session.user });
           // Restore cached data immediately when user is set, but preserve current activeView
-          const cachedData = loadStateFromStorage(session.user.id);
+            const cachedData = loadStateFromStorage(session.user.id);
           if (cachedData) {
             // Preserve current activeView if it's already set (user is navigating)
             const activeViewToUse = currentActiveViewRef.current && currentActiveViewRef.current !== 'Dashboard' 
               ? currentActiveViewRef.current 
               : (cachedData.activeView || 'Dashboard');
+            // Omit tasks so we don't overwrite in-memory tasks loaded by project view
+            const { tasks: _omitTasks, ...rest } = cachedData;
             dispatch({ type: 'SET_DATA', payload: { 
-              ...cachedData, 
+              ...rest, 
               activeView: activeViewToUse,
               isLoading: false 
             } });
@@ -369,19 +371,7 @@ export const AppProvider = ({ children }) => {
             sessionStorage.removeItem(STORAGE_USER_KEY);
           } else if (session?.user) {
             dispatch({ type: 'SET_USER', payload: session.user });
-            // Restore cached data immediately when user is set, but preserve current activeView
-            const cachedData = loadStateFromStorage(session.user.id);
-            if (cachedData) {
-              // Preserve current activeView if it's already set (user is navigating)
-              const activeViewToUse = currentActiveViewRef.current && currentActiveViewRef.current !== 'Dashboard' 
-                ? currentActiveViewRef.current 
-                : (cachedData.activeView || 'Dashboard');
-              dispatch({ type: 'SET_DATA', payload: { 
-                ...cachedData, 
-                activeView: activeViewToUse,
-                isLoading: false 
-              } });
-            }
+            // Do not restore cache here (e.g. on token refresh) so we don't overwrite in-memory state like project tasks
           } else {
             dispatch({ type: 'SET_USER', payload: null });
             // Clear cached data on logout

@@ -161,7 +161,7 @@ function FeedbackModal({ isOpen, onClose }) {
                             type="text"
                             value={subject}
                             onChange={(e) => setSubject(e.target.value)}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                             placeholder="Brief summary of your feedback"
                             required
                             disabled={isSubmitting}
@@ -176,7 +176,7 @@ function FeedbackModal({ isOpen, onClose }) {
                         <textarea
                             value={message}
                             onChange={(e) => setMessage(e.target.value)}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                             placeholder="Please provide details about the bug, feature idea, or general feedback..."
                             rows={8}
                             required

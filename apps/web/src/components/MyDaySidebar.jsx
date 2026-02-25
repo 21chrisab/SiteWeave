@@ -1,3 +1,7 @@
+/**
+ * My Day sidebar for web app. Root version uses i18n for locale; this one uses en-US.
+ * TODO: Refactor - Align with root (add i18n) or document web-only behavior.
+ */
 import React, { useState, useEffect } from 'react';
 import { useAppContext } from '../context/AppContext';
 import Avatar from './Avatar';
@@ -11,9 +15,13 @@ function MyDaySidebar() {
         setLastUpdate(new Date());
     }, [state.tasks.length, state.calendarEvents.length]);
 
-    const myTodos = state.tasks.filter(task => 
-        task.assignee_id === state.user.id && !task.completed
-    );
+    // FIXED: assignee_id stores contacts.id, NOT auth.uid()
+    // Use state.userContactId (resolved from profiles.contact_id) for correct matching
+    // Guard: if userContactId is null (no linked contact yet), show no tasks rather than
+    // accidentally matching all unassigned tasks (where assignee_id is also null)
+    const myTodos = state.userContactId
+        ? state.tasks.filter(task => task.assignee_id === state.userContactId && !task.completed)
+        : [];
 
     const today = new Date();
     const todayEvents = state.calendarEvents.filter(event => 
@@ -72,9 +80,9 @@ function MyDaySidebar() {
                     {recentActivity.length > 0 ? recentActivity.map(activity => (
                         <div key={activity.id} className="flex items-start gap-2.5 text-sm">
                             {activity.user.avatar ? (
-                                <img src={activity.user.avatar} alt={activity.user.name} className="w-7 h-7 rounded-full flex-shrink-0" />
+                                <img src={activity.user.avatar} alt={activity.user.name} className="w-7 h-7 rounded-full shrink-0" />
                             ) : (
-                                <div className="flex-shrink-0">
+                                <div className="shrink-0">
                                     <Avatar name={activity.user.name} size="sm" />
                                 </div>
                             )}
@@ -124,7 +132,7 @@ function MyDaySidebar() {
                         return (
                             <div key={event.id} className="bg-gray-50 rounded-lg p-2.5 border border-gray-200">
                                 <div className="flex items-start gap-2.5">
-                                    <div className="flex-shrink-0 mt-0.5">
+                                    <div className="shrink-0 mt-0.5">
                                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth="1.5" stroke="#3B82F6" className="w-4 h-4">
                                             <path strokeLinecap="round" strokeLinejoin="round" d={getEventIcon()} />
                                         </svg>

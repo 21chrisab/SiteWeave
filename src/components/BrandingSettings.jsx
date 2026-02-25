@@ -156,7 +156,7 @@ function BrandingSettings() {
                 type="text"
                 value={branding.primary_color}
                 onChange={(e) => setBranding({ ...branding, primary_color: e.target.value })}
-                className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-blue-500"
                 placeholder="#3B82F6"
               />
             </div>
@@ -177,7 +177,7 @@ function BrandingSettings() {
                 type="text"
                 value={branding.secondary_color}
                 onChange={(e) => setBranding({ ...branding, secondary_color: e.target.value })}
-                className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-blue-500"
                 placeholder="#10B981"
               />
             </div>
@@ -195,7 +195,7 @@ function BrandingSettings() {
           value={branding.company_footer}
           onChange={(e) => setBranding({ ...branding, company_footer: e.target.value })}
           rows={4}
-          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-blue-500"
           placeholder="Company address, contact info, etc. (HTML supported)"
         />
         <p className="text-xs text-gray-500 mt-1">
@@ -212,7 +212,7 @@ function BrandingSettings() {
           value={branding.email_signature}
           onChange={(e) => setBranding({ ...branding, email_signature: e.target.value })}
           rows={3}
-          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-blue-500"
           placeholder="Your name, title, contact info..."
         />
         <p className="text-xs text-gray-500 mt-1">

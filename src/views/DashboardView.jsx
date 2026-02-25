@@ -4,6 +4,7 @@ import { useAppContext, useLazyDataLoader, supabaseClient } from '../context/App
 import { useToast } from '../context/ToastContext';
 import ProjectCard from '../components/ProjectCard';
 import ProjectModal from '../components/ProjectModal';
+import CreateFromTemplateModal from '../components/CreateFromTemplateModal';
 import MyDaySidebar from '../components/MyDaySidebar';
 import ConfirmDialog from '../components/ConfirmDialog';
 import DashboardStats from '../components/DashboardStats';
@@ -35,6 +36,7 @@ function DashboardView() {
     const [projectToDelete, setProjectToDelete] = useState(null);
     const [viewType, setViewType] = useState('card'); // 'card', 'list', or 'board'
     const [showProgressReportModal, setShowProgressReportModal] = useState(false);
+    const [showCreateFromTemplateModal, setShowCreateFromTemplateModal] = useState(false);
 
     // Keyboard shortcuts
     useProjectShortcuts({
@@ -404,7 +406,7 @@ function DashboardView() {
                             <PermissionGuard permission="can_manage_progress_reports">
                                 <button
                                     onClick={() => setShowProgressReportModal(true)}
-                                    className="px-4 py-2 text-sm font-semibold border border-gray-300 text-gray-700 bg-white rounded-lg shadow-sm hover:bg-gray-50 btn-smooth"
+                                    className="px-4 py-2 text-sm font-semibold border border-gray-300 text-gray-700 bg-white rounded-lg shadow-xs hover:bg-gray-50 btn-smooth"
                                     title="Schedule and manage progress reports"
                                 >
                                     Progress reports
@@ -414,9 +416,15 @@ function DashboardView() {
                                 <button 
                                     onClick={() => setShowModal(true)} 
                                     data-onboarding="new-project-btn"
-                                    className="px-4 py-2 text-sm font-semibold text-white bg-blue-600 rounded-lg shadow-sm hover:bg-blue-700 btn-smooth"
+                                    className="px-4 py-2 text-sm font-semibold text-white bg-blue-600 rounded-lg shadow-xs hover:bg-blue-700 btn-smooth"
                                 >
                                     + {t('dashboard.new_project')}
+                                </button>
+                                <button 
+                                    onClick={() => setShowCreateFromTemplateModal(true)} 
+                                    className="px-4 py-2 text-sm font-semibold text-gray-700 bg-gray-100 rounded-lg shadow-xs hover:bg-gray-200 btn-smooth"
+                                >
+                                    From template
                                 </button>
                             </PermissionGuard>
                         </div>
@@ -485,7 +493,7 @@ function DashboardView() {
                 </div>
                 <aside 
                     data-onboarding="my-day-sidebar"
-                    className="bg-white rounded-xl shadow-sm p-5 border border-gray-200 h-fit"
+                    className="bg-white rounded-xl shadow-xs p-5 border border-gray-200 h-fit"
                 >
                     <MyDaySidebar />
                 </aside>
@@ -497,6 +505,9 @@ function DashboardView() {
                     isLoading={isCreatingProject || isUpdatingProject}
                     project={editingProject}
                 />
+            )}
+            {showCreateFromTemplateModal && (
+                <CreateFromTemplateModal onClose={() => setShowCreateFromTemplateModal(false)} />
             )}
             <ConfirmDialog
                 isOpen={showDeleteConfirm}

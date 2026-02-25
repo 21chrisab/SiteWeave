@@ -112,7 +112,7 @@ function ForcePasswordReset({ show, onComplete }) {
   if (!show) return null;
 
   return (
-    <div className="fixed inset-0 bg-gray-900 bg-opacity-50 flex items-center justify-center z-50 backdrop-blur-sm">
+    <div className="fixed inset-0 bg-gray-900/50 flex items-center justify-center z-50 backdrop-blur-xs">
       <div className="bg-white rounded-lg shadow-2xl p-8 max-w-md w-full mx-4">
         <div className="text-center mb-6">
           <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">

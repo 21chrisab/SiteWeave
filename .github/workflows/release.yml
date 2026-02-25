@@ -56,11 +56,12 @@ jobs:
     - name: Clean build directories
       shell: bash
       run: |
-        echo "Removing any existing build artifacts..."
+        echo "Removing any existing build artifacts and caches..."
         rm -rf dist/
         rm -rf dist-electron/
         rm -rf release/
-        echo "Build directories cleaned"
+        rm -rf node_modules/.vite
+        echo "Build directories and Vite cache cleaned"
 
     - name: Verify package.json version matches tag
       shell: bash
@@ -89,6 +90,7 @@ jobs:
         VITE_MICROSOFT_CLIENT_SECRET: ${{ secrets.VITE_MICROSOFT_CLIENT_SECRET }}
         VITE_DROPBOX_APP_KEY: ${{ secrets.VITE_DROPBOX_APP_KEY }}
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        ELECTRON_BUILDER_CACHE: ${{ runner.temp }}/electron-builder-cache-${{ github.run_id }}
 
     - name: Verify build output
       shell: bash
@@ -130,6 +132,21 @@ jobs:
           exit 1
         fi
         echo "OK: Built bundle contains ProgressReport code - fresh build verified."
+
+    - name: Delete existing release for tag
+      shell: bash
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        TAG: ${{ github.ref_name }}
+        REPO: ${{ github.repository }}
+      run: |
+        RELEASE_ID=$(curl -s -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" "https://api.github.com/repos/$REPO/releases/tags/$TAG" | node -e "let d=require('fs').readFileSync(0,'utf8'); try { const j=JSON.parse(d); console.log(j.id||''); } catch(e) { console.log(''); }")
+        if [ -n "$RELEASE_ID" ]; then
+          curl -s -X DELETE -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" "https://api.github.com/repos/$REPO/releases/$RELEASE_ID"
+          echo "Deleted existing release for $TAG so new assets can be uploaded."
+        else
+          echo "No existing release for $TAG."
+        fi
       
     - name: Create Release
       uses: softprops/action-gh-release@v2

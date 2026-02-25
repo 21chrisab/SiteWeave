@@ -4,21 +4,15 @@
 
 SiteWeave uses Supabase Row Level Security (RLS) to implement a comprehensive 3-tier user hierarchy system that ensures proper data isolation and access control. This system transforms the application from sample data to production-ready with enterprise-grade security.
 
-## ⚠️ Important: Profiles Table RLS
+## Profiles Table RLS (Enabled)
 
-**The `profiles` table has RLS DISABLED** to prevent infinite recursion in RLS policies.
+**The `profiles` table has RLS ENABLED** with SELECT, INSERT, UPDATE, and DELETE policies. Recursion is avoided because the helper functions (`get_user_role()`, `get_user_contact_id()`, `get_user_organization_id()`, etc.) are defined with **SECURITY DEFINER** and read from `profiles` with definer privileges, so they do not go through RLS when resolving the current user's context.
 
-### Why?
-- The `profiles` table stores user roles and contact associations
-- Helper functions `get_user_role()` and `get_user_contact_id()` query the `profiles` table
-- These helper functions are used by RLS policies on other tables (like `projects`)
-- If `profiles` had RLS policies that also called these helper functions, it would create infinite recursion
-
-### Security Implications
-- ✅ **Profiles are still secure**: Only authenticated users can access the database
-- ✅ **Minimal data exposure**: Profiles only contain `role` and `contact_id` mappings
-- ✅ **Application-level control**: Profile creation is handled by the auth trigger
-- ⚠️ **Trade-off**: All authenticated users can read all profiles (but cannot modify them without proper authorization)
+### Policies
+- **SELECT:** Users can see their own profile and profiles in their organization.
+- **INSERT:** Users can create only their own profile (id = auth.uid()); the signup trigger also creates profiles via SECURITY DEFINER.
+- **UPDATE:** Users can update their own profile; admins (via `is_user_admin()`) can update any profile in their org.
+- **DELETE:** Only admins can delete profiles.
 
 ## User Hierarchy System
 
@@ -84,22 +78,25 @@ The `contacts` table stores all people and organizations involved in projects:
 - **Vendors:** Suppliers and service providers
 - **Other:** Any other contacts relevant to projects
 
-### Contact-to-User Linking
-The `profiles` table creates the bridge between Supabase authentication and contacts:
+### Contact-to-User Linking and Dual Role System
+The `profiles` table links Supabase auth to contacts and supports both legacy and custom roles:
 
 ```sql
 profiles {
   id: UUID (references auth.users.id)
-  role: 'Admin' | 'PM' | 'Team'
+  role: TEXT ('Admin' | 'PM' | 'Team' | 'Client')   -- legacy
+  role_id: UUID (references roles.id, nullable)     -- custom roles
   contact_id: UUID (references contacts.id, nullable)
+  organization_id: UUID (references organizations.id, nullable)
+  is_super_admin: boolean
   created_at: timestamp
 }
 ```
 
 **Key Points:**
-- **Not all contacts become users** - Some contacts remain as contact records only
-- **All users must have a contact record** - When a user signs up, they should be linked to a contact
-- **Contact linking is optional** - The `contact_id` can be NULL if a user doesn't have a corresponding contact record yet
+- **Dual role system:** `get_user_role()` resolves the display role by using `role_id` first (joining to `roles.name`), then falls back to the legacy `role` TEXT column. New users created by the signup trigger get `role = 'Team'` and no `role_id` until an admin assigns a custom role.
+- **Not all contacts become users** - Some contacts remain as contact records only.
+- **Contact linking is optional** - The `contact_id` can be NULL if a user doesn't have a corresponding contact record yet.
 
 ### Contact Assignment to Projects
 Team members are assigned to projects via the `project_contacts` junction table:
@@ -307,6 +304,9 @@ Visual receipts show:
 2. **Regular role reviews** - Ensure users have appropriate access levels
 3. **Test permissions** - Verify RLS policies work as expected
 4. **Backup strategies** - Include RLS policies in database backups
+
+### Auth configuration (Supabase dashboard)
+- **Leaked password protection:** In the Supabase dashboard, go to **Authentication → Settings** (or **Auth → Password security**) and enable **Leaked password protection** (HaveIBeenPwned). This prevents users from choosing compromised passwords. [Docs](https://supabase.com/docs/guides/auth/password-security#password-strength-and-leaked-password-protection)
 
 ## Troubleshooting
 

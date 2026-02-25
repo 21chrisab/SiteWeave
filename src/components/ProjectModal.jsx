@@ -25,6 +25,8 @@ function ProjectModal({ onClose, onSave, isLoading = false, project = null }) {
     const [showDuplicateDialog, setShowDuplicateDialog] = useState(false);
     const [duplicateName, setDuplicateName] = useState('');
     const [duplicateStartDate, setDuplicateStartDate] = useState('');
+    const [duplicateAddress, setDuplicateAddress] = useState('');
+    const [duplicateProjectNumber, setDuplicateProjectNumber] = useState('');
     const [isDuplicating, setIsDuplicating] = useState(false);
 
     const isEditMode = !!project;
@@ -153,7 +155,9 @@ function ProjectModal({ onClose, onSave, isLoading = false, project = null }) {
                 project.id,
                 duplicateName,
                 state.currentOrganization.id,
-                duplicateStartDate
+                duplicateStartDate,
+                { address: duplicateAddress || undefined, project_number: duplicateProjectNumber || undefined },
+                state.user?.id
             );
 
             if (result.success) {
@@ -189,6 +193,14 @@ function ProjectModal({ onClose, onSave, isLoading = false, project = null }) {
                             required 
                         />
                     </div>
+                    <div className="mb-4">
+                        <label className="block text-sm font-semibold mb-1 text-gray-600">Address (optional)</label>
+                        <input type="text" value={duplicateAddress} onChange={e => setDuplicateAddress(e.target.value)} className="w-full p-2 border rounded-lg" placeholder="Same as original if blank" />
+                    </div>
+                    <div className="mb-4">
+                        <label className="block text-sm font-semibold mb-1 text-gray-600">Project Number (optional)</label>
+                        <input type="text" value={duplicateProjectNumber} onChange={e => setDuplicateProjectNumber(e.target.value)} className="w-full p-2 border rounded-lg" placeholder="Same as original if blank" />
+                    </div>
                     <DateDropdown 
                         value={duplicateStartDate} 
                         onChange={setDuplicateStartDate} 
@@ -197,7 +209,7 @@ function ProjectModal({ onClose, onSave, isLoading = false, project = null }) {
                         required
                     />
                     <p className="text-sm text-gray-600 mb-6">
-                        This will create a copy of the project structure (phases, tasks) with dates adjusted based on the new start date. 
+                        This will create a copy of the project structure (phases, tasks, dependencies) with dates adjusted. 
                         Transactional data (comments, files, activity logs) will not be copied.
                     </p>
                     <div className="flex gap-3">
@@ -234,6 +246,8 @@ function ProjectModal({ onClose, onSave, isLoading = false, project = null }) {
                                 type="button"
                                 onClick={() => {
                                     setDuplicateName(`${project.name} - Copy`);
+                                    setDuplicateAddress(project.address || '');
+                                    setDuplicateProjectNumber(project.project_number || '');
                                     setDuplicateStartDate('');
                                     setShowDuplicateDialog(true);
                                 }}
@@ -312,7 +326,7 @@ function ProjectModal({ onClose, onSave, isLoading = false, project = null }) {
                                     onChange={(e) => setEmailInput(e.target.value)}
                                     onKeyPress={handleKeyPress}
                                     placeholder="Enter email addresses (comma or space separated)"
-                                    className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                    className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-hidden focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                                 />
                                 <button
                                     type="button"

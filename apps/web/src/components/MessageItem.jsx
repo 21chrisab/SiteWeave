@@ -251,9 +251,9 @@ function MessageItem({ message, onEdit, onDelete, isGrouped = false, showAvatar 
     // Handle special "Imported from Outlook" message
     if (displayMessage.content.startsWith('RE:')) {
         return (
-            <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg my-2 max-w-[90%] mx-auto break-words">
+            <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg my-2 max-w-[90%] mx-auto wrap-break-word">
                 <p className="text-sm font-semibold text-blue-800">Imported from Outlook <span className="font-normal text-gray-500 text-xs ml-2">{formatTime(displayMessage.created_at)}</span></p>
-                <p className="text-sm text-gray-700 mt-1 whitespace-pre-wrap break-words overflow-wrap-anywhere">{displayMessage.content}</p>
+                <p className="text-sm text-gray-700 mt-1 whitespace-pre-wrap wrap-break-word overflow-wrap-anywhere">{displayMessage.content}</p>
             </div>
         );
     }
@@ -269,21 +269,21 @@ function MessageItem({ message, onEdit, onDelete, isGrouped = false, showAvatar 
                     <img 
                         src={user.avatar_url} 
                         alt={user.name || 'User'} 
-                        className="w-10 h-10 rounded-full flex-shrink-0 object-cover" 
+                        className="w-10 h-10 rounded-full shrink-0 object-cover" 
                         onError={() => setAvatarLoadError(true)}
                     />
                 ) : (
                     <Avatar 
                         name={user?.name || 'User'} 
                         size="lg" 
-                        className="flex-shrink-0"
+                        className="shrink-0"
 =======
             {showAvatar && (
                 user?.avatar_url ? (
                     <img 
                         src={user.avatar_url} 
                         alt={user?.name || 'User'} 
-                        className="w-10 h-10 rounded-full flex-shrink-0 object-cover" 
+                        className="w-10 h-10 rounded-full shrink-0 object-cover" 
                     />
                 ) : (
                     <Avatar 
@@ -293,12 +293,12 @@ function MessageItem({ message, onEdit, onDelete, isGrouped = false, showAvatar 
                     />
                 )
             )}
-            {!showAvatar && !isCurrentUser && <div className="w-10 flex-shrink-0" />}
+            {!showAvatar && !isCurrentUser && <div className="w-10 shrink-0" />}
             <div className="flex flex-col gap-1 max-w-[70%] min-w-0 flex-1">
                 {showTimestamp && (
                     <div className={`flex items-baseline gap-2 ${isCurrentUser ? 'self-end' : ''}`}>
                         {!isCurrentUser && <span className="font-bold text-sm truncate">{user?.name}</span>}
-                        <span className="text-xs text-gray-400 flex-shrink-0">
+                        <span className="text-xs text-gray-400 shrink-0">
                             {formatTime(displayMessage.created_at)}
                             {displayMessage.edited_at && (
                                 <span className="ml-1 italic text-gray-300">(edited)</span>
@@ -307,7 +307,7 @@ function MessageItem({ message, onEdit, onDelete, isGrouped = false, showAvatar 
                     </div>
                 )}
                 
-                <div className={`p-3 rounded-lg relative break-words overflow-wrap-anywhere ${isCurrentUser ? 'bg-blue-600 text-white' : 'bg-gray-100'}`}>
+                <div className={`p-3 rounded-lg relative wrap-break-word overflow-wrap-anywhere ${isCurrentUser ? 'bg-blue-600 text-white' : 'bg-gray-100'}`}>
                     {isEditing ? (
                         <div className="space-y-2">
                             <textarea
@@ -339,7 +339,7 @@ function MessageItem({ message, onEdit, onDelete, isGrouped = false, showAvatar 
                     ) : (
                         <>
                             {displayMessage.content && (
-                                <p className="text-sm whitespace-pre-wrap break-words overflow-wrap-anywhere">
+                                <p className="text-sm whitespace-pre-wrap wrap-break-word overflow-wrap-anywhere">
                                     {renderContentWithMentions(displayMessage.content)}
                                 </p>
                             )}
@@ -356,17 +356,17 @@ function MessageItem({ message, onEdit, onDelete, isGrouped = false, showAvatar 
                             {displayMessage.type === 'file' && displayMessage.file_url && (
                                 <a href={displayMessage.file_url} target="_blank" rel="noopener noreferrer" 
                                    className={`flex items-center gap-2 mt-2 p-2 rounded-md ${isCurrentUser ? 'bg-blue-700 hover:bg-blue-800' : 'bg-gray-200 hover:bg-gray-300'}`}>
-                                    <Icon path="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" className="w-5 h-5 flex-shrink-0" />
+                                    <Icon path="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" className="w-5 h-5 shrink-0" />
                                     <span className="text-sm font-medium truncate">{displayMessage.file_name}</span>
                                 </a>
                             )}
 
                             {/* Message Actions */}
                             <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                                <div className="flex gap-1 bg-black bg-opacity-20 rounded-lg p-1">
+                                <div className="flex gap-1 bg-black/20 rounded-lg p-1">
                                     <button
                                         onClick={() => onReply && onReply(displayMessage)}
-                                        className="p-1 hover:bg-white hover:bg-opacity-20 rounded"
+                                        className="p-1 hover:bg-white/20 rounded"
                                         title="Reply"
                                     >
                                         <Icon path="M12 20.25c4.97 0 9-3.694 9-8.25s-4.03-8.25-9-8.25S3 7.444 3 12c0 2.104.859 4.023 2.273 5.488.432.447.74 1.04.586 1.641a4.483 4.483 0 01-.923 1.785A5.969 5.969 0 006 21c1.282 0 2.47-.492 3.337-1.313.379-.38.708-.796.924-1.22a4.801 4.801 0 001.923-1.22 4.705 4.705 0 00.334-1.785c0-.6-.154-1.194-.432-1.641A8.98 8.98 0 0012 20.25z" className="w-4 h-4" />
@@ -378,7 +378,7 @@ function MessageItem({ message, onEdit, onDelete, isGrouped = false, showAvatar 
                                             setIsEditing(true);
                                             setEditContent(displayMessage.content || '');
                                         }}
-                                        className="p-1 hover:bg-white hover:bg-opacity-20 rounded"
+                                        className="p-1 hover:bg-white/20 rounded"
                                         title="Edit message"
                                     >
                                                 <Icon path="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10" className="w-4 h-4" />
@@ -386,7 +386,7 @@ function MessageItem({ message, onEdit, onDelete, isGrouped = false, showAvatar 
                                             <button
                                                 onClick={handleDeleteMessage}
                                                 disabled={isDeletingMessage}
-                                                className="p-1 hover:bg-white hover:bg-opacity-20 rounded text-red-300 hover:text-red-200"
+                                                className="p-1 hover:bg-white/20 rounded text-red-300 hover:text-red-200"
                                                 title="Delete message"
                                             >
                                                 <Icon path="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" className="w-4 h-4" />

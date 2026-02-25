@@ -1,7 +1,7 @@
 import './i18n/config'
 import React from 'react'
 import { createRoot } from 'react-dom/client'
-import { createBrowserRouter, RouterProvider } from 'react-router-dom'
+import { createHashRouter, RouterProvider } from 'react-router-dom'
 import App from './App.jsx'
 import ErrorBoundary from './components/ErrorBoundary.jsx'
 import RouteErrorElement from './components/RouteErrorElement.jsx'
@@ -32,7 +32,7 @@ if (typeof window !== 'undefined') {
   };
 }
 
-const router = createBrowserRouter([
+const router = createHashRouter([
   { 
     path: '/*', 
     element: <App />,

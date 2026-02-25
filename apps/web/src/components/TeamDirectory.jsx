@@ -75,7 +75,7 @@ function TeamDirectory() {
               }`}
             >
               <div className="flex items-start space-x-4">
-                <div className="flex-shrink-0">
+                <div className="shrink-0">
                   {member.contacts?.avatar_url ? (
                     <img
                       src={member.contacts.avatar_url}

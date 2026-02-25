@@ -6,6 +6,7 @@ import TaskItem from '../components/TaskItem';
 import TaskModal from '../components/TaskModal';
 import ProjectSidebar from '../components/ProjectSidebar';
 import ShareModal from '../components/ShareModal';
+import SaveAsTemplateModal from '../components/SaveAsTemplateModal';
 import ProgressReportModal from '../components/ProgressReportModal';
 import PermissionGuard from '../components/PermissionGuard';
 import ConfirmDialog from '../components/ConfirmDialog';
@@ -17,6 +18,9 @@ import { useTaskShortcuts } from '../hooks/useKeyboardShortcuts';
 import { handleApiError, createOptimisticUpdate } from '../utils/errorHandling';
 import { parseRecurrence } from '../utils/recurrenceService';
 import { logTaskCreated, logTaskCompleted, logTaskUncompleted, logTaskUpdated, logTaskDeleted } from '../utils/activityLogger';
+import { getCriticalPathTaskIds } from '../utils/criticalPath';
+import { orderTasksForGantt } from '../utils/ganttOrdering';
+import GanttChart from '../components/GanttChart';
 
 function ProjectDetailsView() {
     const { t } = useTranslation();
@@ -34,9 +38,10 @@ function ProjectDetailsView() {
     const [selectedTasks, setSelectedTasks] = useState([]);
     const [taskFilter, setTaskFilter] = useState('all'); // all, completed, pending
     const [taskSort, setTaskSort] = useState('due_date'); // due_date, priority
-    const [activeTab, setActiveTab] = useState('tasks'); // tasks, fieldIssues
+    const [activeTab, setActiveTab] = useState('tasks'); // tasks, gantt, fieldIssues
     const [showShare, setShowShare] = useState(false);
     const [showProgressReportModal, setShowProgressReportModal] = useState(false);
+    const [showSaveAsTemplateModal, setShowSaveAsTemplateModal] = useState(false);
     const [fieldIssuesCount, setFieldIssuesCount] = useState(0);
 
     // Keyboard shortcuts
@@ -83,8 +88,97 @@ function ProjectDetailsView() {
         return () => ac.abort();
     }, [state.selectedProjectId, activeTab]);
 
+    // Load tasks for this project; keep a local list so it cannot be overwritten by cache/auth
+    const [projectTasksList, setProjectTasksList] = useState([]);
+    useEffect(() => {
+        if (!state.selectedProjectId) {
+            setProjectTasksList([]);
+            return;
+        }
+        setProjectTasksList([]);
+        const ac = new AbortController();
+        (async () => {
+            try {
+                const { data: tasks, error } = await supabaseClient
+                    .from('tasks')
+                    .select('*, contacts(name, avatar_url)')
+                    .eq('project_id', state.selectedProjectId)
+                    .order('due_date', { ascending: true, nullsFirst: false })
+                    .order('id', { ascending: true });
+                if (ac.signal.aborted) return;
+                if (error) {
+                    console.error('Error loading project tasks:', error);
+                    return;
+                }
+                const list = tasks || [];
+                if (!ac.signal.aborted) setProjectTasksList(list);
+                const otherTasks = (state.tasks || []).filter(t => t.project_id !== state.selectedProjectId);
+                dispatch({ type: 'SET_TASKS_LOADED', payload: [...otherTasks, ...list] });
+            } catch (e) {
+                if (!ac.signal.aborted) console.error('Error loading project tasks:', e);
+            }
+        })();
+        return () => ac.abort();
+    }, [state.selectedProjectId]);
+
     const project = projects.find(p => p.id === state.selectedProjectId);
-    const allTasks = tasksState.filter(t => t.project_id === state.selectedProjectId);
+    const allTasksFromState = (tasksState || []).filter(t => t.project_id === state.selectedProjectId);
+    const allTasks = projectTasksList.length > 0 ? projectTasksList : allTasksFromState;
+
+    // Gantt tab: fetch tasks and dependencies from Supabase for current project
+    const [ganttTasks, setGanttTasks] = useState([]);
+    const [ganttDependencies, setGanttDependencies] = useState([]);
+    const [ganttCriticalCount, setGanttCriticalCount] = useState(0);
+    const [ganttCriticalIds, setGanttCriticalIds] = useState([]);
+    const [showCriticalPath, setShowCriticalPath] = useState(true);
+    useEffect(() => {
+        if (activeTab !== 'gantt' || !state.selectedProjectId) return;
+        const ac = new AbortController();
+        (async () => {
+            try {
+                const projectId = state.selectedProjectId;
+                const { data: taskRows, error: taskErr } = await supabaseClient
+                    .from('tasks')
+                    .select('id, text, start_date, due_date, duration_days, is_milestone, project_id, completed, parent_task_id, assignee_id, contacts(name)')
+                    .eq('project_id', projectId)
+                    .order('start_date', { ascending: true, nullsFirst: true });
+                if (ac.signal.aborted) return;
+                if (taskErr) {
+                    console.error('Gantt: tasks fetch error', taskErr);
+                    setGanttTasks([]);
+                    setGanttDependencies([]);
+                    setGanttCriticalCount(0);
+                    setGanttCriticalIds([]);
+                    return;
+                }
+                const tasks = taskRows || [];
+                let deps = [];
+                if (tasks.length > 0) {
+                    const taskIds = tasks.map((t) => t.id);
+                    const { data: depRows, error: depErr } = await supabaseClient
+                        .from('task_dependencies')
+                        .select('id, task_id, successor_task_id, dependency_type, lag_days')
+                        .in('task_id', taskIds);
+                    if (!depErr) {
+                        deps = (depRows || []).filter((d) => taskIds.includes(d.successor_task_id));
+                    } else {
+                        console.error('Gantt: task_dependencies fetch error', depErr);
+                    }
+                }
+                if (!ac.signal.aborted) {
+                    const ordered = orderTasksForGantt(tasks);
+                    setGanttTasks(ordered);
+                    setGanttDependencies(deps);
+                    const criticalIds = getCriticalPathTaskIds(tasks, deps);
+                    setGanttCriticalCount(criticalIds.length);
+                    setGanttCriticalIds(criticalIds);
+                }
+            } catch (e) {
+                if (!ac.signal.aborted) console.error('Gantt fetch error', e);
+            }
+        })();
+        return () => ac.abort();
+    }, [activeTab, state.selectedProjectId]);
     
     // Get all project crew members (any contact linked to this project)
     const crewMembers = contacts.filter(contact => 
@@ -173,6 +267,7 @@ function ProjectDetailsView() {
                         .single();
                     if (!retryError && retryData) {
                         dispatch({ type: 'ADD_TASK', payload: retryData });
+                        setProjectTasksList(prev => [...prev, retryData]);
                         addToast(t('toast.task_added_without_assignee'), 'success');
                         setShowTaskModal(false);
                         logTaskCreated(retryData, state.user, project.id);
@@ -183,6 +278,7 @@ function ProjectDetailsView() {
             }
             
             dispatch({ type: 'ADD_TASK', payload: data });
+            setProjectTasksList(prev => [...prev, data]);
             addToast(t('toast.task_added_successfully'), 'success');
             setShowTaskModal(false);
             
@@ -324,6 +420,7 @@ function ProjectDetailsView() {
         } else {
             const updatedTask = { ...tasksState.find(t => t.id === taskId), ...updatedData };
             dispatch({ type: 'UPDATE_TASK', payload: updatedTask });
+            setProjectTasksList(prev => prev.map(t => t.id === taskId ? { ...t, ...updatedData } : t));
             addToast(t('toast.task_updated_successfully'), 'success');
         }
     };
@@ -383,6 +480,7 @@ function ProjectDetailsView() {
                 addToast(t('toast.error_deleting_task', { message: error.message }), 'error');
             } else {
                 dispatch({ type: 'DELETE_TASK', payload: taskToDelete.id });
+                setProjectTasksList(prev => prev.filter(t => t.id !== taskToDelete.id));
                 const childCount = childTasks?.length || 0;
                 if (childCount > 0) {
                     addToast(t('toast.task_deleted_with_subtasks', { count: childCount }), 'success');
@@ -527,7 +625,7 @@ function ProjectDetailsView() {
                                 addToast(t('toast.error_updating_project_status', { message: error.message }), 'error');
                             }
                         }}
-                        className={`px-3 py-1 text-sm font-semibold rounded-full border-0 cursor-pointer focus:ring-2 focus:ring-blue-500 focus:outline-none appearance-none pr-8 ${
+                        className={`px-3 py-1 text-sm font-semibold rounded-full border-0 cursor-pointer focus:ring-2 focus:ring-blue-500 focus:outline-hidden appearance-none pr-8 ${
                             project.status?.toLowerCase() === 'planning' ? 'bg-blue-100 text-blue-800' :
                             project.status?.toLowerCase() === 'in progress' ? 'bg-green-100 text-green-800' :
                             project.status?.toLowerCase() === 'on hold' ? 'bg-yellow-100 text-yellow-900' :
@@ -568,15 +666,24 @@ function ProjectDetailsView() {
                     )}
                     <button 
                         onClick={() => setShowShare(true)}
-                        className="px-4 py-2 text-sm font-semibold text-white bg-blue-600 rounded-lg shadow-sm hover:bg-blue-700 transition-colors"
+                        className="px-4 py-2 text-sm font-semibold text-white bg-blue-600 rounded-lg shadow-xs hover:bg-blue-700 transition-colors"
                         title="Assign crew members from organization directory or invite guests"
                     >
                         + Manage Crew
                     </button>
+                    <PermissionGuard permission="can_create_projects">
+                        <button 
+                            onClick={() => setShowSaveAsTemplateModal(true)}
+                            className="px-4 py-2 text-sm font-semibold text-gray-700 bg-gray-100 rounded-lg shadow-xs hover:bg-gray-200 transition-colors"
+                            title="Save this project structure as a reusable template"
+                        >
+                            Save as template
+                        </button>
+                    </PermissionGuard>
                     <PermissionGuard permission="can_manage_progress_reports">
                         <button 
                             onClick={() => setShowProgressReportModal(true)}
-                            className="px-4 py-2 text-sm font-semibold text-white bg-green-600 rounded-lg shadow-sm hover:bg-green-700 transition-colors flex items-center gap-2"
+                            className="px-4 py-2 text-sm font-semibold text-white bg-green-600 rounded-lg shadow-xs hover:bg-green-700 transition-colors flex items-center gap-2"
                             title="Schedule and manage progress reports"
                         >
                             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -596,6 +703,14 @@ function ProjectDetailsView() {
                 <ProgressReportModal projectId={project.id} onClose={() => setShowProgressReportModal(false)} />
             )}
 
+            {showSaveAsTemplateModal && (
+                <SaveAsTemplateModal 
+                    projectId={project.id} 
+                    projectName={project.name} 
+                    onClose={() => setShowSaveAsTemplateModal(false)} 
+                />
+            )}
+
             <div className="grid grid-cols-1 lg:grid-cols-5 gap-8">
                 {/* Main Content Area with Tabs */}
                 <div className="lg:col-span-3">
@@ -610,7 +725,17 @@ function ProjectDetailsView() {
                                         : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
                                 }`}
                             >
-                                Tasks ({allTasks.length})
+                                Tasks ({Math.max(allTasks.length, ganttTasks.length)})
+                            </button>
+                            <button
+                                onClick={() => setActiveTab('gantt')}
+                                className={`py-2 px-1 text-sm font-medium border-b-2 transition-colors ${
+                                    activeTab === 'gantt'
+                                        ? 'border-blue-500 text-blue-600'
+                                        : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                                }`}
+                            >
+                                Gantt
                             </button>
                             <button
                                 onClick={() => setActiveTab('fieldIssues')}
@@ -627,11 +752,40 @@ function ProjectDetailsView() {
 
                     {/* Tab Content */}
                     <div className="min-h-96">
+                        {activeTab === 'gantt' && (
+                            <div className="bg-white rounded-xl shadow-xs border border-gray-200 flex flex-col" data-onboarding="gantt-section" style={{ height: 'max(60vh, 500px)', maxHeight: '80vh' }}>
+                                <div className="flex flex-wrap items-center justify-between gap-4 px-6 pt-5 pb-3 flex-shrink-0">
+                                    <h2 className="text-xl font-bold">Gantt</h2>
+                                    <div className="flex items-center gap-4">
+                                        <span className="text-gray-500 text-xs">
+                                            {ganttTasks.length} tasks &middot; {ganttDependencies.length} deps &middot; {ganttCriticalCount} critical
+                                        </span>
+                                        <label className="flex items-center gap-2 cursor-pointer">
+                                            <input
+                                                type="checkbox"
+                                                checked={showCriticalPath}
+                                                onChange={(e) => setShowCriticalPath(e.target.checked)}
+                                                className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                            />
+                                            <span className="text-sm text-gray-700">Show critical path</span>
+                                        </label>
+                                    </div>
+                                </div>
+                                <div className="flex-1 min-h-0 flex flex-col px-4 pb-4">
+                                    <GanttChart
+                                        tasks={ganttTasks}
+                                        dependencies={ganttDependencies}
+                                        criticalPathIds={ganttCriticalIds}
+                                        showCriticalPath={showCriticalPath}
+                                    />
+                                </div>
+                            </div>
+                        )}
                         {activeTab === 'tasks' && (
-                            <div className="p-6 bg-white rounded-xl shadow-sm border border-gray-200" data-onboarding="tasks-section">
+                            <div className="p-6 bg-white rounded-xl shadow-xs border border-gray-200" data-onboarding="tasks-section">
                                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-4">
                                     <div className="flex items-center gap-4">
-                                        <h2 className="text-xl font-bold">Tasks ({allTasks.length})</h2>
+                                        <h2 className="text-xl font-bold">Tasks ({Math.max(allTasks.length, ganttTasks.length)})</h2>
                                         <div className="flex items-center gap-2">
                                             <label className="text-sm font-medium text-gray-700">Filter:</label>
                                             <select 
@@ -657,7 +811,7 @@ function ProjectDetailsView() {
                                         </div>
                                     </div>
                                     <PermissionGuard permission="can_create_tasks">
-                                        <button onClick={() => setShowTaskModal(true)} className="px-4 py-2 text-sm font-semibold text-white bg-blue-600 rounded-lg shadow-sm hover:bg-blue-700">+ New Task</button>
+                                        <button onClick={() => setShowTaskModal(true)} className="px-4 py-2 text-sm font-semibold text-white bg-blue-600 rounded-lg shadow-xs hover:bg-blue-700">+ New Task</button>
                                     </PermissionGuard>
                                 </div>
                                 <TaskBulkActions

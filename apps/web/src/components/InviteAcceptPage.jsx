@@ -48,13 +48,9 @@ function InviteAcceptPage() {
     setLoading(true);
     setError(null);
     try {
-      // First, get the invitation without joins to avoid RLS issues
-      const { data: invitationData, error: invitationError } = await supabase
-        .from('invitations')
-        .select('*')
-        .eq('invitation_token', token)
-        .eq('status', 'pending')
-        .single();
+      const { data: invitationRows, error: invitationError } = await supabase
+        .rpc('get_invitation_by_token', { invitation_token_param: token });
+      const invitationData = Array.isArray(invitationRows) ? invitationRows[0] : invitationRows;
 
       if (invitationError) {
         throw invitationError;
@@ -706,7 +702,7 @@ function InviteAcceptPage() {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               placeholder="At least 6 characters"
-              className="w-full px-3 py-2 text-sm sm:text-base border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-900"
+              className="w-full px-3 py-2 text-sm sm:text-base border border-gray-300 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-gray-900"
               required
               minLength={6}
               disabled={accepting}
@@ -723,7 +719,7 @@ function InviteAcceptPage() {
               value={confirmPassword}
               onChange={(e) => setConfirmPassword(e.target.value)}
               placeholder="Re-enter your password"
-              className="w-full px-3 py-2 text-sm sm:text-base border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-900"
+              className="w-full px-3 py-2 text-sm sm:text-base border border-gray-300 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-gray-900"
               required
               minLength={6}
               disabled={accepting}

@@ -636,7 +636,7 @@ function PhaseModal({ phase, onClose, onSave, isLoading }) {
                             type="text"
                             value={formData.name}
                             onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-hidden focus:ring-2 focus:ring-blue-500"
                             required
                         />
                     </div>
@@ -650,7 +650,7 @@ function PhaseModal({ phase, onClose, onSave, isLoading }) {
                             min="0"
                             value={formData.budget}
                             onChange={(e) => setFormData({ ...formData, budget: parseFloat(e.target.value) || 0 })}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-hidden focus:ring-2 focus:ring-blue-500"
                         />
                     </div>
 
@@ -664,7 +664,7 @@ function PhaseModal({ phase, onClose, onSave, isLoading }) {
                             max="100"
                             value={formData.progress}
                             onChange={(e) => setFormData({ ...formData, progress: parseInt(e.target.value) || 0 })}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-hidden focus:ring-2 focus:ring-blue-500"
                         />
                     </div>
 

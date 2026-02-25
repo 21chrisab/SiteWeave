@@ -1,6 +1,7 @@
 directories:
   output: release
   buildResources: build
+  app: .
 appId: com.siteweave.app
 productName: SiteWeave
 files:
@@ -13,11 +14,19 @@ files:
       - '!**/win-unpacked/**'
       - '!**/.DS_Store'
       - '!**/Thumbs.db'
+      - '!apps/**'
       - node_modules/electron-updater/**/*
 win:
   target: nsis
   icon: build/icon.png
   verifyUpdateCodeSignature: false
+appx:
+  applicationId: com.siteweave.app
+  displayName: SiteWeave
+  publisherDisplayName: SiteWeave
+  identityName: com.siteweave.app
+  publisher: CN=SiteWeave
+  backgroundColor: '#FFFFFF'
 nsis:
   oneClick: false
   allowToChangeInstallationDirectory: true

@@ -188,7 +188,7 @@ function UpdatePasswordScreen() {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               placeholder="At least 6 characters"
-              className="w-full px-3 py-2 text-sm sm:text-base border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-900"
+              className="w-full px-3 py-2 text-sm sm:text-base border border-gray-300 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-gray-900"
               required
               minLength={6}
               disabled={submitting}
@@ -205,7 +205,7 @@ function UpdatePasswordScreen() {
               value={confirmPassword}
               onChange={(e) => setConfirmPassword(e.target.value)}
               placeholder="Re-enter your password"
-              className="w-full px-3 py-2 text-sm sm:text-base border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-900"
+              className="w-full px-3 py-2 text-sm sm:text-base border border-gray-300 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-gray-900"
               required
               minLength={6}
               disabled={submitting}

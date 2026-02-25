@@ -11,7 +11,7 @@ function RoleSummaryCard({ role, memberCount, onEdit, isCreateCard = false }) {
     return (
       <div
         onClick={onEdit}
-        className="flex-shrink-0 w-48 bg-white border-2 border-dashed border-gray-300 rounded-lg px-3 py-2 cursor-pointer hover:border-blue-500 hover:bg-blue-50 transition-all"
+        className="shrink-0 w-48 bg-white border-2 border-dashed border-gray-300 rounded-lg px-3 py-2 cursor-pointer hover:border-blue-500 hover:bg-blue-50 transition-all"
       >
         <div className="flex flex-col items-center justify-center h-full min-h-[100px]">
           <div className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center mb-1.5">
@@ -26,7 +26,7 @@ function RoleSummaryCard({ role, memberCount, onEdit, isCreateCard = false }) {
   return (
     <div
       onClick={onEdit}
-      className="flex-shrink-0 w-64 bg-white border border-gray-200 rounded-lg px-3 pt-3 pb-2 cursor-pointer hover:border-blue-500 hover:shadow-md transition-all"
+      className="shrink-0 w-64 bg-white border border-gray-200 rounded-lg px-3 pt-3 pb-2 cursor-pointer hover:border-blue-500 hover:shadow-md transition-all"
     >
       <div className="flex items-start justify-between mb-1.5">
         <div className="flex-1 min-w-0">

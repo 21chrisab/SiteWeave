@@ -333,7 +333,7 @@ function ProgressReportPreview({ formData, recipients, scheduleId }) {
                     Status changes
                   </h2>
                   {(previewData.status_changes || []).map((change, i) => (
-                    <div key={i} className="p-3 bg-white border border-amber-200 rounded mb-2 shadow-sm">
+                    <div key={i} className="p-3 bg-white border border-amber-200 rounded mb-2 shadow-xs">
                       <p className="font-medium text-gray-900">{change.project_name}</p>
                       <p className="text-sm text-gray-700 mt-1">
                         <span className="line-through text-gray-500">{change.old_status}</span>

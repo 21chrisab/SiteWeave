@@ -119,7 +119,7 @@ function Login() {
                 required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className="relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500 focus:z-10 sm:text-sm"
+                className="relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-md focus:outline-hidden focus:ring-blue-500 focus:border-blue-500 focus:z-10 sm:text-sm"
                 placeholder="Email address"
               />
             </div>
@@ -135,7 +135,7 @@ function Login() {
                 required
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500 focus:z-10 sm:text-sm"
+                className="relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-md focus:outline-hidden focus:ring-blue-500 focus:border-blue-500 focus:z-10 sm:text-sm"
                 placeholder="Password"
               />
             </div>
@@ -151,7 +151,7 @@ function Login() {
             <button
               type="submit"
               disabled={isLoading}
-              className="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              className="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-hidden focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
               {isLoading ? (
                 <LoadingSpinner size="sm" text="" />
@@ -176,7 +176,7 @@ function Login() {
                 type="button"
                 onClick={handleGoogleLogin}
                 disabled={isLoading}
-                className="w-full inline-flex justify-center py-2 px-4 border border-gray-300 rounded-md shadow-sm bg-white text-sm font-medium text-gray-500 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                className="w-full inline-flex justify-center py-2 px-4 border border-gray-300 rounded-md shadow-xs bg-white text-sm font-medium text-gray-500 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
                 <svg className="w-5 h-5" viewBox="0 0 24 24">
                   <path
@@ -203,7 +203,7 @@ function Login() {
                 type="button"
                 onClick={handleMicrosoftLogin}
                 disabled={isLoading}
-                className="w-full inline-flex justify-center py-2 px-4 border border-gray-300 rounded-md shadow-sm bg-white text-sm font-medium text-gray-500 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                className="w-full inline-flex justify-center py-2 px-4 border border-gray-300 rounded-md shadow-xs bg-white text-sm font-medium text-gray-500 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
                 <svg className="w-5 h-5" viewBox="0 0 24 24">
                   <path fill="#f25022" d="M1 1h10v10H1z"/>
@@ -245,9 +245,9 @@ function TaskItem({ task, onToggle }) {
   }
 
   return (
-    <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-200 hover:border-blue-500 transition-all hover:shadow-md">
+    <div className="bg-white p-4 rounded-xl shadow-xs border border-gray-200 hover:border-blue-500 transition-all hover:shadow-md">
       <div className="flex items-start gap-3">
-        <div className="relative flex-shrink-0 pt-0.5">
+        <div className="relative shrink-0 pt-0.5">
           <input
             type="checkbox"
             checked={task.completed || false}
@@ -281,7 +281,7 @@ function TaskItem({ task, onToggle }) {
               )}
             </div>
             {task.due_date && (
-              <div className="text-right flex-shrink-0">
+              <div className="text-right shrink-0">
                 <p className="text-xs text-gray-400 font-semibold">DUE DATE</p>
                 <p className={`text-sm font-medium ${task.completed ? 'text-gray-400' : 'text-gray-800'}`}>
                   {formatTaskDate(task.due_date)}
@@ -564,7 +564,7 @@ function Home() {
             <Link
               key={p.id}
               to={`/projects/${p.id}`}
-              className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 space-y-3 cursor-pointer hover:border-blue-500 transition-all hover:shadow-md group"
+              className="bg-white p-6 rounded-xl shadow-xs border border-gray-200 space-y-3 cursor-pointer hover:border-blue-500 transition-all hover:shadow-md group"
             >
               <div className="flex justify-between items-start">
                 <div className="flex-1 pr-2">
@@ -574,7 +574,7 @@ function Home() {
                   )}
                 </div>
                 {p.status && (
-                  <span className={`px-2 py-1 text-xs font-semibold rounded-full flex-shrink-0 ${getStatusColor(p.status)}`}>
+                  <span className={`px-2 py-1 text-xs font-semibold rounded-full shrink-0 ${getStatusColor(p.status)}`}>
                     {p.status}
                   </span>
                 )}
@@ -852,7 +852,7 @@ function Messages() {
                         key={msg.id}
                         className={`flex items-start gap-3 ${isCurrentUser ? 'flex-row-reverse' : ''}`}
                       >
-                        <div className="w-10 h-10 rounded-full bg-blue-600 flex items-center justify-center text-white font-semibold flex-shrink-0">
+                        <div className="w-10 h-10 rounded-full bg-blue-600 flex items-center justify-center text-white font-semibold shrink-0">
                           {userInitial}
                         </div>
                         <div className={`flex flex-col gap-1 max-w-lg ${isCurrentUser ? 'items-end' : ''}`}>
@@ -906,7 +906,7 @@ function Messages() {
                     value={newMessage}
                     onChange={(e) => setNewMessage(e.target.value)}
                     placeholder="Type a message..."
-                    className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     disabled={sending}
                   />
                   <button
@@ -1110,7 +1110,7 @@ function ProjectDetails() {
                     <div className="flex items-start gap-3 flex-1">
                       <button
                         onClick={() => handleCompleteTask(t.id)}
-                        className="mt-1 flex-shrink-0 w-5 h-5 border-2 border-gray-300 rounded hover:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-all cursor-pointer flex items-center justify-center bg-white hover:bg-blue-50 group"
+                        className="mt-1 shrink-0 w-5 h-5 border-2 border-gray-300 rounded hover:border-blue-500 focus:outline-hidden focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-all cursor-pointer flex items-center justify-center bg-white hover:bg-blue-50 group"
                         title="Mark as complete"
                         aria-label="Complete task"
                       >
@@ -1126,7 +1126,7 @@ function ProjectDetails() {
                       </div>
                     </div>
                     {t.due_date && (
-                      <div className="ml-4 text-right flex-shrink-0">
+                      <div className="ml-4 text-right shrink-0">
                         <p className="text-xs text-gray-400 font-semibold">DUE DATE</p>
                         <p className="text-sm font-medium text-gray-800 mt-1">{formatTaskDate(t.due_date)}</p>
                       </div>
@@ -1194,7 +1194,7 @@ function ProjectDetails() {
         {/* Sidebar: Photos & Milestones */}
         <div className="lg:col-span-1 space-y-6">
           {/* Photos Sidebar */}
-          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
+          <div className="bg-white rounded-xl shadow-xs border border-gray-200 p-4">
             <h3 className="font-bold text-gray-800 mb-3 text-sm uppercase tracking-wide">Photos</h3>
             {files.length === 0 ? (
               <div className="text-center py-6">
@@ -1241,7 +1241,7 @@ function ProjectDetails() {
           </div>
 
           {/* Milestones Sidebar */}
-          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
+          <div className="bg-white rounded-xl shadow-xs border border-gray-200 p-4">
             <h3 className="font-bold text-gray-800 mb-3 text-sm uppercase tracking-wide">Milestones</h3>
             {phases.length === 0 ? (
               <div className="text-center py-6">
@@ -1256,7 +1256,7 @@ function ProjectDetails() {
                   <div key={p.id}>
                     <div className="flex items-center justify-between mb-1.5">
                       <h4 className="text-xs font-semibold text-gray-800 truncate">{p.name}</h4>
-                      <span className="text-xs font-medium text-gray-600 flex-shrink-0 ml-2">{p.progress || 0}%</span>
+                      <span className="text-xs font-medium text-gray-600 shrink-0 ml-2">{p.progress || 0}%</span>
                     </div>
                     <div className="w-full bg-gray-200 rounded-full h-1.5">
                       <div

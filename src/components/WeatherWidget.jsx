@@ -196,7 +196,7 @@ function WeatherWidget({ compact = false }) {
             value={cityInput}
             onChange={(e) => setCityInput(e.target.value)}
             placeholder="Enter city name (e.g., Austin)"
-            className="w-full px-3 pr-10 py-1.5 text-xs border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="w-full px-3 pr-10 py-1.5 text-xs border border-gray-300 rounded focus:outline-hidden focus:ring-2 focus:ring-blue-500"
             autoFocus
           />
           <button
@@ -244,7 +244,7 @@ function WeatherWidget({ compact = false }) {
   // Compact mode for header
   if (compact) {
     return (
-      <div ref={widgetRef} className="relative flex items-center gap-2 px-3 py-2 bg-white rounded-lg border border-gray-200 hover:shadow-sm transition-shadow">
+      <div ref={widgetRef} className="relative flex items-center gap-2 px-3 py-2 bg-white rounded-lg border border-gray-200 hover:shadow-xs transition-shadow">
         {weather.icon && (
           <img
             src={getWeatherIconUrl(weather.icon)}
@@ -301,7 +301,7 @@ function WeatherWidget({ compact = false }) {
                 value={cityInput}
                 onChange={(e) => setCityInput(e.target.value)}
                 placeholder="Enter city name (e.g., Austin)"
-                className="w-full px-2 pr-8 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                className="w-full px-2 pr-8 py-1 text-xs border border-gray-300 rounded focus:outline-hidden focus:ring-1 focus:ring-blue-500"
                 autoFocus
               />
               <button
@@ -368,7 +368,7 @@ function WeatherWidget({ compact = false }) {
               value={cityInput}
               onChange={(e) => setCityInput(e.target.value)}
               placeholder="Enter city name (e.g., Austin)"
-              className="w-full px-2 pr-8 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+              className="w-full px-2 pr-8 py-1 text-xs border border-gray-300 rounded focus:outline-hidden focus:ring-1 focus:ring-blue-500"
             />
             <button
               type="button"

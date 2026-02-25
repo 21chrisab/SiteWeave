@@ -320,7 +320,7 @@ function TabSettings({
           type="text"
           value={formData.name}
           onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-blue-500"
           placeholder="e.g., Weekly Client Update"
         />
       </div>
@@ -331,7 +331,7 @@ function TabSettings({
           value={recipientsText}
           onChange={(e) => setRecipientsText(e.target.value)}
           rows={3}
-          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-blue-500"
           placeholder="owner@example.com, investor@example.com"
         />
         <p className="mt-1 text-xs text-gray-500">
@@ -370,7 +370,7 @@ function TabSettings({
                   frequency_value: f === 'weekly' || f === 'bi-weekly' ? prev.frequency_value != null && prev.frequency_value <= 6 ? prev.frequency_value : 1 : f === 'monthly' ? (prev.frequency_value === 15 ? 15 : prev.frequency_value === -1 || prev.frequency_value === 31 ? -1 : 1) : null,
                 }));
               }}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-blue-500"
             >
               {FREQUENCY_OPTIONS.map((opt) => (
                 <option key={opt.value} value={opt.value}>{opt.label}</option>
@@ -382,7 +382,7 @@ function TabSettings({
               <select
                 value={dayValue}
                 onChange={(e) => setFormData({ ...formData, frequency_value: parseInt(e.target.value, 10) })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-blue-500"
               >
                 {DAY_NAMES.map((day, i) => (
                   <option key={i} value={i}>{day}</option>
@@ -396,7 +396,7 @@ function TabSettings({
               <select
                 value={monthlyValue}
                 onChange={(e) => setFormData({ ...formData, frequency_value: parseInt(e.target.value, 10) })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-blue-500"
               >
                 {MONTHLY_OPTIONS.map((opt) => (
                   <option key={opt.value} value={opt.value}>{opt.label}</option>
@@ -433,7 +433,7 @@ function TabContent({ formData, setFormData }) {
           type="text"
           value={formData.custom_subject}
           onChange={(e) => setFormData({ ...formData, custom_subject: e.target.value })}
-          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-blue-500"
           placeholder="Leave empty for default"
         />
       </div>
@@ -444,7 +444,7 @@ function TabContent({ formData, setFormData }) {
           value={formData.custom_message}
           onChange={(e) => setFormData({ ...formData, custom_message: e.target.value })}
           rows={3}
-          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-blue-500"
           placeholder="Optional note for recipients..."
         />
       </div>

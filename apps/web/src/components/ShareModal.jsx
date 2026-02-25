@@ -300,7 +300,7 @@ function ShareModal({ projectId, onClose }) {
                           : 'border-gray-200 bg-gray-50'
                       }`}
                     >
-                      <div className="flex-shrink-0 w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-purple-500 flex items-center justify-center text-white text-sm font-semibold">
+                      <div className="shrink-0 w-8 h-8 rounded-full bg-linear-to-br from-blue-500 to-purple-500 flex items-center justify-center text-white text-sm font-semibold">
                         {member.name?.charAt(0)?.toUpperCase() || member.email.charAt(0).toUpperCase()}
                       </div>
                       <div className="min-w-0">
@@ -359,14 +359,14 @@ function ShareModal({ projectId, onClose }) {
                         onClick={() => addContact(contact)}
                         className="w-full px-4 py-3 flex items-center gap-3 hover:bg-blue-50 transition-colors text-left"
                       >
-                        <div className="flex-shrink-0 w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-purple-500 flex items-center justify-center text-white text-sm font-semibold">
+                        <div className="shrink-0 w-8 h-8 rounded-full bg-linear-to-br from-blue-500 to-purple-500 flex items-center justify-center text-white text-sm font-semibold">
                           {contact.name.charAt(0).toUpperCase()}
                         </div>
                         <div className="flex-1 min-w-0">
                           <div className="text-sm font-medium text-gray-900">{contact.name}</div>
                           <div className="text-xs text-gray-500">{contact.email}</div>
                         </div>
-                        <div className="flex-shrink-0">
+                        <div className="shrink-0">
                           <span className="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-gray-100 text-gray-700">
                             {contact.type}
                           </span>
@@ -390,7 +390,7 @@ function ShareModal({ projectId, onClose }) {
                 value={input}
                 onChange={e => setInput(e.target.value)}
                 placeholder="e.g. user@example.com"
-                className="flex-1 rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-blue-500"
+                className="flex-1 rounded-md border border-gray-300 px-3 py-2 shadow-xs focus:border-blue-500 focus:outline-hidden focus:ring-blue-500"
               />
               <button type="button" onClick={addEmails} className="rounded-md bg-gray-100 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-200">Add</button>
             </div>
@@ -413,7 +413,7 @@ function ShareModal({ projectId, onClose }) {
                     <select
                       value={en.role}
                       onChange={e => updateRole(idx, e.target.value)}
-                      className="rounded-md border border-gray-300 px-2 py-1 text-sm focus:border-blue-500 focus:outline-none focus:ring-blue-500 bg-white"
+                      className="rounded-md border border-gray-300 px-2 py-1 text-sm focus:border-blue-500 focus:outline-hidden focus:ring-blue-500 bg-white"
                     >
                       {ROLE_OPTIONS.map(r => (
                         <option key={r} value={r}>{r}</option>
@@ -484,7 +484,7 @@ function ShareModal({ projectId, onClose }) {
             <button
               type="submit"
               disabled={submitting || entries.length === 0}
-              className="rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
+              className="rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-xs hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
             >
               {submitting ? 'Adding…' : `Add ${entries.length} to Crew`}
             </button>

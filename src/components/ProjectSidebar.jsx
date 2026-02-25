@@ -50,7 +50,7 @@ function ProjectSidebar({ project }) {
     return (
         <div className="space-y-6">
             {hasMilestones && (
-                <div className="p-6 bg-white rounded-xl shadow-sm border border-gray-200">
+                <div className="p-6 bg-white rounded-xl shadow-xs border border-gray-200">
                     <h3 className="font-bold mb-3">Overview</h3>
                     <ul className="space-y-3">
                         {project.milestones.map((m, index) => (
@@ -64,11 +64,11 @@ function ProjectSidebar({ project }) {
             )}
             
             {/* Progress Status Section */}
-            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 h-[600px] overflow-hidden">
+            <div className="bg-white rounded-xl shadow-xs border border-gray-200 p-6 h-[600px] overflow-hidden">
                 <BuildPath project={project} />
             </div>
             
-            <div className="p-6 bg-white rounded-xl shadow-sm border border-gray-200">
+            <div className="p-6 bg-white rounded-xl shadow-xs border border-gray-200">
                 <h3 className="font-bold mb-3">Recent Activity</h3>
                  <div className="space-y-3">
                     {projectActivity.length > 0 ? projectActivity.map(activity => (

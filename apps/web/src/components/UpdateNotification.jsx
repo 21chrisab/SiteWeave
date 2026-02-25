@@ -186,7 +186,7 @@ const UpdateNotification = () => {
           </div>
           <button
             onClick={dismissNotification}
-            className="text-red-500 hover:text-red-700 text-sm flex-shrink-0"
+            className="text-red-500 hover:text-red-700 text-sm shrink-0"
             title="Dismiss"
           >
             ✕

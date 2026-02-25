@@ -19,16 +19,37 @@ export async function fetchTasks(supabase) {
 }
 
 /**
+ * Resolve auth.uid() to the user's contact_id from profiles.
+ * tasks.assignee_id stores contacts.id, NOT auth.users.id.
+ * @param {import('@supabase/supabase-js').SupabaseClient} supabase - Supabase client
+ * @param {string} userId - Auth user ID (auth.uid())
+ * @returns {Promise<string|null>} The user's contact_id, or null
+ */
+async function resolveUserContactId(supabase, userId) {
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('contact_id')
+    .eq('id', userId)
+    .single();
+  return profile?.contact_id || null;
+}
+
+/**
  * Fetch tasks assigned to a specific user
  * @param {import('@supabase/supabase-js').SupabaseClient} supabase - Supabase client
- * @param {string} userId - User ID
+ * @param {string} userId - Auth user ID (auth.uid()) — will be resolved to contact_id
+ * @param {string} [contactId] - Optional pre-resolved contact_id (skips lookup if provided)
  * @returns {Promise<Array>} Array of tasks
  */
-export async function fetchUserTasks(supabase, userId) {
+export async function fetchUserTasks(supabase, userId, contactId) {
+  // Resolve auth.uid() -> contact_id (tasks.assignee_id stores contacts.id)
+  const resolvedContactId = contactId || await resolveUserContactId(supabase, userId);
+  if (!resolvedContactId) return [];
+  
   const { data, error } = await supabase
     .from('tasks')
     .select('*')
-    .eq('assignee_id', userId)
+    .eq('assignee_id', resolvedContactId)
     .order('created_at', { ascending: false });
   
   if (error) throw error;
@@ -38,14 +59,19 @@ export async function fetchUserTasks(supabase, userId) {
 /**
  * Fetch incomplete tasks assigned to a user
  * @param {import('@supabase/supabase-js').SupabaseClient} supabase - Supabase client
- * @param {string} userId - User ID
+ * @param {string} userId - Auth user ID (auth.uid()) — will be resolved to contact_id
+ * @param {string} [contactId] - Optional pre-resolved contact_id (skips lookup if provided)
  * @returns {Promise<Array>} Array of incomplete tasks
  */
-export async function fetchUserIncompleteTasks(supabase, userId) {
+export async function fetchUserIncompleteTasks(supabase, userId, contactId) {
+  // Resolve auth.uid() -> contact_id (tasks.assignee_id stores contacts.id)
+  const resolvedContactId = contactId || await resolveUserContactId(supabase, userId);
+  if (!resolvedContactId) return [];
+  
   const { data, error } = await supabase
     .from('tasks')
     .select('*')
-    .eq('assignee_id', userId)
+    .eq('assignee_id', resolvedContactId)
     .eq('completed', false)
     .order('created_at', { ascending: false });
   

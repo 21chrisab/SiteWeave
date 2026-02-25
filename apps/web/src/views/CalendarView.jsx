@@ -948,7 +948,7 @@ function CalendarView() {
         <>
             <div className="flex h-full gap-8">
                 {/* Left Sidebar */}
-                <aside className="w-64 flex-shrink-0">
+                <aside className="w-64 shrink-0">
                     <MiniCalendar currentDate={currentDate} setCurrentDate={setCurrentDate} />
                     
                     {/* Calendar Actions */}
@@ -993,7 +993,7 @@ function CalendarView() {
                                             className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                                         />
                                         <div 
-                                            className="w-3 h-3 rounded flex-shrink-0" 
+                                            className="w-3 h-3 rounded shrink-0" 
                                             style={{backgroundColor: category.color}}
                                         ></div>
                                         <span className={`text-gray-600 flex-1 ${!isVisible ? 'opacity-50 line-through' : ''}`}>
@@ -1009,7 +1009,7 @@ function CalendarView() {
                 {/* Main Calendar */}
                 <main 
                     data-onboarding="calendar-container"
-                    className="flex-1 bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden"
+                    className="flex-1 bg-white rounded-xl shadow-xs border border-gray-200 overflow-hidden"
                 >
                     {/* Outlook-style Header */}
                     <div className="bg-white border-b border-gray-200 px-6 py-4">
@@ -1033,7 +1033,7 @@ function CalendarView() {
                             </div>
                             <div className="flex items-center space-x-4">
                                 {/* Weather Widget */}
-                                <div className="flex-shrink-0 relative">
+                                <div className="shrink-0 relative">
                                     <WeatherWidget compact={true} />
                                 </div>
                                 <div className="flex items-center bg-gray-100 rounded-lg p-1">
@@ -1041,7 +1041,7 @@ function CalendarView() {
                                         onClick={() => handleViewChange('timeGridDay')}
                                         className={`px-3 py-1 text-sm font-medium rounded-md transition-colors ${
                                             currentView === 'timeGridDay' 
-                                                ? 'bg-white text-gray-900 shadow-sm' 
+                                                ? 'bg-white text-gray-900 shadow-xs' 
                                                 : 'text-gray-700 hover:bg-white hover:text-gray-900'
                                         }`}
                                     >
@@ -1051,7 +1051,7 @@ function CalendarView() {
                                         onClick={() => handleViewChange('timeGridWeek')}
                                         className={`px-3 py-1 text-sm font-medium rounded-md transition-colors ${
                                             currentView === 'timeGridWeek' 
-                                                ? 'bg-white text-gray-900 shadow-sm' 
+                                                ? 'bg-white text-gray-900 shadow-xs' 
                                                 : 'text-gray-700 hover:bg-white hover:text-gray-900'
                                         }`}
                                     >
@@ -1061,7 +1061,7 @@ function CalendarView() {
                                         onClick={() => handleViewChange('dayGridMonth')}
                                         className={`px-3 py-1 text-sm font-medium rounded-md transition-colors ${
                                             currentView === 'dayGridMonth' 
-                                                ? 'bg-white text-gray-900 shadow-sm' 
+                                                ? 'bg-white text-gray-900 shadow-xs' 
                                                 : 'text-gray-700 hover:bg-white hover:text-gray-900'
                                         }`}
                                     >

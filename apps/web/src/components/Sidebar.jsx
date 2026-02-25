@@ -72,7 +72,7 @@ function Sidebar() {
     const navItems = ['Dashboard', 'Projects', 'Calendar', 'Messages', 'Contacts', 'Organization', 'Settings'];
 
     return (
-        <aside className={`${isCollapsed ? 'w-16' : 'w-64'} bg-white flex flex-col flex-shrink-0 border-r border-gray-100 transition-all duration-300`}>
+        <aside className={`${isCollapsed ? 'w-16' : 'w-64'} bg-white flex flex-col shrink-0 border-r border-gray-100 transition-all duration-300`}>
             <div className="h-16 flex items-center px-5 font-bold text-xl text-gray-800 border-b border-gray-100">
                 {!isCollapsed && (
                     <span>SiteWeave</span>
@@ -133,7 +133,7 @@ function Sidebar() {
                             title={isCollapsed ? item : ''}
                             aria-label={`Navigate to ${item}`}
                             aria-current={state.activeView === item ? 'page' : undefined}>
-                            {React.cloneElement(ICONS[item], { className: "w-5 h-5 flex-shrink-0" })}
+                            {React.cloneElement(ICONS[item], { className: "w-5 h-5 shrink-0" })}
                             {!isCollapsed && <span>{item}</span>}
                         </button>
                         {item === 'Projects' && state.activeView === 'Projects' && !isCollapsed && (
@@ -181,7 +181,7 @@ function Sidebar() {
                     )}
                     <button
                         onClick={handleLogout}
-                        className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors flex-shrink-0"
+                        className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors shrink-0"
                         title="Sign out"
                     >
                         <Icon path="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15M12 9l-3 3m0 0l3 3m-3-3h12.75" className="w-4 h-4" />

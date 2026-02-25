@@ -742,7 +742,7 @@ function SetupWizardModal({ show, onComplete }) {
           <div className="flex-1 flex items-center space-x-2 overflow-x-auto pr-4">
             {allRoles.map((role, idx) => (
               <React.Fragment key={`${role.roleName}-${idx}`}>
-                <div className={`flex items-center flex-shrink-0 ${idx <= currentRoleIndex ? 'text-blue-600' : 'text-gray-400'}`}>
+                <div className={`flex items-center shrink-0 ${idx <= currentRoleIndex ? 'text-blue-600' : 'text-gray-400'}`}>
                   <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium ${
                     idx < currentRoleIndex ? 'bg-blue-600 text-white' :
                     idx === currentRoleIndex ? 'bg-blue-100 text-blue-700 border-2 border-blue-600' :
@@ -753,14 +753,14 @@ function SetupWizardModal({ show, onComplete }) {
                   <span className="ml-2 text-sm font-medium hidden sm:inline">{role.roleName}</span>
                 </div>
                 {idx < allRoles.length - 1 && (
-                  <div className={`w-8 h-0.5 flex-shrink-0 ${idx < currentRoleIndex ? 'bg-blue-600' : 'bg-gray-200'}`}></div>
+                  <div className={`w-8 h-0.5 shrink-0 ${idx < currentRoleIndex ? 'bg-blue-600' : 'bg-gray-200'}`}></div>
                 )}
               </React.Fragment>
             ))}
           </div>
           
           {/* Right: Pinned Add Role Button */}
-          <div className="flex-shrink-0" ref={addRoleButtonRef}>
+          <div className="shrink-0" ref={addRoleButtonRef}>
             <button
               onClick={() => {
                 // If role preset dropdown is open, close both dropdowns
@@ -784,7 +784,7 @@ function SetupWizardModal({ show, onComplete }) {
         {/* Add Role Dropdown Menu - Rendered via Portal */}
         {showAddRoleDropdown && typeof document !== 'undefined' && createPortal(
           <div
-            className="add-role-dropdown-portal fixed bg-white rounded-lg shadow-xl border border-gray-200 z-[9999] w-56"
+            className="add-role-dropdown-portal fixed bg-white rounded-lg shadow-xl border border-gray-200 z-9999 w-56"
             style={{
               top: `${dropdownPosition.top}px`,
               left: `${dropdownPosition.left}px`
@@ -813,7 +813,7 @@ function SetupWizardModal({ show, onComplete }) {
         {/* Role Preset Dropdown - Rendered via Portal */}
         {showRolePresetDropdown && typeof document !== 'undefined' && createPortal(
           <div
-            className="role-preset-dropdown-portal fixed bg-white rounded-lg shadow-xl border border-gray-200 z-[9999] w-64 max-h-[300px] overflow-y-auto"
+            className="role-preset-dropdown-portal fixed bg-white rounded-lg shadow-xl border border-gray-200 z-9999 w-64 max-h-[300px] overflow-y-auto"
             style={{
               top: `${dropdownPosition.top}px`,
               left: `${dropdownPosition.left}px`
@@ -843,7 +843,7 @@ function SetupWizardModal({ show, onComplete }) {
         <div className="flex-1 grid grid-cols-1 lg:grid-cols-2 gap-6 overflow-hidden">
           {/* Left Column: Role Configuration */}
           <div className="flex flex-col space-y-4 overflow-y-auto pr-2">
-            <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-lg p-6 border border-blue-200">
+            <div className="bg-linear-to-br from-blue-50 to-indigo-50 rounded-lg p-6 border border-blue-200">
               <div className="flex items-start justify-between mb-2">
                 {editingRoleName ? (
                   <div className="flex-1 flex items-center space-x-2">
@@ -858,7 +858,7 @@ function SetupWizardModal({ show, onComplete }) {
                           setEditingRoleName(false);
                         }
                       }}
-                      className="flex-1 text-xl font-bold text-gray-900 bg-transparent border-b-2 border-blue-500 focus:outline-none"
+                      className="flex-1 text-xl font-bold text-gray-900 bg-transparent border-b-2 border-blue-500 focus:outline-hidden"
                       autoFocus
                     />
                     <button
@@ -982,7 +982,7 @@ function SetupWizardModal({ show, onComplete }) {
                 onClick={() => setInputMode('email')}
                 className={`flex-1 px-4 py-2 rounded-md text-sm font-medium transition-colors ${
                   inputMode === 'email'
-                    ? 'bg-white text-blue-700 shadow-sm'
+                    ? 'bg-white text-blue-700 shadow-xs'
                     : 'text-gray-600 hover:text-gray-900'
                 }`}
               >
@@ -992,7 +992,7 @@ function SetupWizardModal({ show, onComplete }) {
                 onClick={() => setInputMode('managed')}
                 className={`flex-1 px-4 py-2 rounded-md text-sm font-medium transition-colors ${
                   inputMode === 'managed'
-                    ? 'bg-white text-blue-700 shadow-sm'
+                    ? 'bg-white text-blue-700 shadow-xs'
                     : 'text-gray-600 hover:text-gray-900'
                 }`}
               >
@@ -1067,7 +1067,7 @@ function SetupWizardModal({ show, onComplete }) {
 
                   {/* Credential Card Preview */}
                   {previewCredentials && managedInput.fullName && (
-                    <div className="mt-3 p-4 bg-gradient-to-br from-gray-50 to-gray-100 rounded-lg border-2 border-gray-300 shadow-sm">
+                    <div className="mt-3 p-4 bg-linear-to-br from-gray-50 to-gray-100 rounded-lg border-2 border-gray-300 shadow-xs">
                       <div className="flex items-center justify-between mb-3">
                         <div className="flex items-center space-x-2">
                           <div className="w-10 h-10 bg-blue-600 rounded-full flex items-center justify-center text-white font-bold text-lg">
@@ -1116,13 +1116,13 @@ function SetupWizardModal({ show, onComplete }) {
                       <div className="flex items-center space-x-3 flex-1">
                         {/* Status Icon */}
                         {member.type === 'invite' ? (
-                          <div className="flex-shrink-0">
+                          <div className="shrink-0">
                             <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
                               <Icon path="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" className="w-5 h-5 text-blue-600" />
                             </div>
                           </div>
                         ) : (
-                          <div className="flex-shrink-0">
+                          <div className="shrink-0">
                             <div className="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center">
                               <Icon path="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" className="w-5 h-5 text-green-600" />
                             </div>

@@ -5,11 +5,14 @@ import { createClient } from '@supabase/supabase-js';
  * @returns {Object|undefined} Storage adapter or undefined if not available
  */
 function getStorageAdapter() {
-  // Try to import AsyncStorage for React Native
+  // Only attempt to load AsyncStorage in React Native environment
+  // Skip entirely for web/electron to avoid build-time resolution errors
   try {
-    // Check if we're in a React Native/Expo environment
-    if (typeof require !== 'undefined') {
-      const AsyncStorage = require('@react-native-async-storage/async-storage').default;
+    // Detect React Native environment
+    if (typeof navigator !== 'undefined' && navigator.product === 'ReactNative') {
+      // Use eval to prevent Vite from trying to statically resolve this import
+      // This is safe because we only execute this in React Native
+      const AsyncStorage = eval("require('@react-native-async-storage/async-storage')").default;
       if (AsyncStorage) {
         return {
           getItem: async (key) => {
@@ -39,9 +42,35 @@ function getStorageAdapter() {
     }
   } catch (error) {
     // AsyncStorage not available, will use default storage
-    // This is fine for web environments
+    // This is fine for web/electron environments
   }
-  return undefined; // Use default storage (localStorage for web)
+  return undefined; // Use default storage (localStorage for web/electron)
+}
+
+/**
+ * In React Native, polyfill global crypto so PKCE can be used (recommended over implicit flow).
+ * Requires: react-native-get-random-values; for PKCE code challenge also expo-crypto.
+ */
+function polyfillReactNativeCrypto() {
+  if (typeof navigator === 'undefined' || navigator.product !== 'ReactNative') return;
+  try {
+    if (typeof globalThis.crypto === 'undefined' || !globalThis.crypto.getRandomValues) {
+      require('react-native-get-random-values');
+    }
+    if (globalThis.crypto && !globalThis.crypto.subtle) {
+      try {
+        const Crypto = require('expo-crypto').default;
+        const algoMap = { 'SHA-256': Crypto.CryptoDigestAlgorithm?.SHA256 ?? 'SHA-256' };
+        globalThis.crypto.subtle = {
+          digest: (alg, data) => Crypto.digest(algoMap[alg] || alg, data),
+        };
+      } catch (_) {
+        // expo-crypto not available; flow will fall back to implicit if PKCE needs digest
+      }
+    }
+  } catch (_) {
+    // Polyfill failed; will fall back to implicit flow
+  }
 }
 
 /**
@@ -52,19 +81,17 @@ function getStorageAdapter() {
  */
 export function createSupabaseClient(supabaseUrl, supabaseAnonKey) {
   const storageAdapter = getStorageAdapter();
-  
-  // Detect if we're in React Native/Expo environment
+  polyfillReactNativeCrypto();
+
   const isReactNative = typeof navigator !== 'undefined' && navigator.product === 'ReactNative';
-  const hasWebCrypto = typeof window !== 'undefined' && window.crypto && window.crypto.subtle;
-  
+  const hasWebCrypto = typeof globalThis.crypto !== 'undefined' && globalThis.crypto.subtle;
+
   const authOptions = {
     autoRefreshToken: true,
     persistSession: true,
-    detectSessionInUrl: false,
-    storageKey: 'supabase.auth.token', // Explicit storage key for consistency
-    // Use implicit flow for React Native since WebCrypto isn't available for PKCE
-    // PKCE requires WebCrypto API which isn't available in React Native
-    flowType: (isReactNative || !hasWebCrypto) ? 'implicit' : 'pkce',
+    detectSessionInUrl: isReactNative,
+    storageKey: 'supabase.auth.token',
+    flowType: hasWebCrypto ? 'pkce' : 'implicit',
   };
   
   // Only add storage if we have a custom adapter (React Native)

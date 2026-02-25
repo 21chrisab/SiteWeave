@@ -198,8 +198,8 @@ CREATE TABLE IF NOT EXISTS messages (
     type TEXT DEFAULT 'text',
     private BOOLEAN DEFAULT false,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT now(),
-    updated_at TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT now(),
-    inserted_at TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT now()
+    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+    inserted_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now()
 );
 
 -- Message Reactions Table
@@ -293,7 +293,34 @@ CREATE TABLE IF NOT EXISTS tasks (
     recurrence TEXT,
     parent_task_id UUID REFERENCES tasks(id),
     is_recurring_instance BOOLEAN DEFAULT false,
+    start_date DATE,
+    duration_days INTEGER,
+    is_milestone BOOLEAN DEFAULT false,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT now()
+);
+
+-- Task Dependencies Table (Gantt: predecessor/successor links)
+CREATE TABLE IF NOT EXISTS task_dependencies (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    task_id UUID NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+    successor_task_id UUID NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+    dependency_type TEXT NOT NULL DEFAULT 'finish_to_start'
+        CHECK (dependency_type IN ('finish_to_start', 'start_to_start', 'finish_to_finish', 'start_to_finish')),
+    lag_days INTEGER DEFAULT 0,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT now(),
+    CONSTRAINT task_dependencies_no_self CHECK (task_id != successor_task_id),
+    CONSTRAINT task_dependencies_unique UNIQUE (task_id, successor_task_id)
+);
+
+-- Project Templates Table (reusable project structure: phases, tasks, dependencies)
+CREATE TABLE IF NOT EXISTS project_templates (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    description TEXT,
+    created_by_user_id UUID REFERENCES auth.users(id) ON DELETE SET NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT now(),
+    structure JSONB NOT NULL DEFAULT '{}'
 );
 
 -- Activity Log Table (for tracking user actions)
@@ -333,7 +360,7 @@ CREATE TABLE IF NOT EXISTS invitations (
 -- User Preferences Table
 CREATE TABLE IF NOT EXISTS user_preferences (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id UUID,
+    user_id UUID NOT NULL,
     onboarding_completed BOOLEAN DEFAULT false,
     onboarding_step INTEGER DEFAULT 0,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT now(),
@@ -399,7 +426,7 @@ BEGIN
                    WHERE table_schema = 'public'
                      AND table_name = 'messages' 
                      AND column_name = 'updated_at') THEN
-        ALTER TABLE messages ADD COLUMN updated_at TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT now();
+        ALTER TABLE messages ADD COLUMN updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now();
     END IF;
     
     -- Add inserted_at column if it doesn't exist
@@ -407,7 +434,20 @@ BEGIN
                    WHERE table_schema = 'public'
                      AND table_name = 'messages' 
                      AND column_name = 'inserted_at') THEN
-        ALTER TABLE messages ADD COLUMN inserted_at TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT now();
+        ALTER TABLE messages ADD COLUMN inserted_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now();
+    END IF;
+END $$;
+
+-- Migrate messages.updated_at and inserted_at to TIMESTAMP WITH TIME ZONE (if currently WITHOUT)
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'messages' AND column_name = 'updated_at')
+       AND (SELECT data_type FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'messages' AND column_name = 'updated_at') = 'timestamp without time zone' THEN
+        ALTER TABLE messages ALTER COLUMN updated_at TYPE TIMESTAMP WITH TIME ZONE USING updated_at AT TIME ZONE 'UTC';
+    END IF;
+    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'messages' AND column_name = 'inserted_at')
+       AND (SELECT data_type FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'messages' AND column_name = 'inserted_at') = 'timestamp without time zone' THEN
+        ALTER TABLE messages ALTER COLUMN inserted_at TYPE TIMESTAMP WITH TIME ZONE USING inserted_at AT TIME ZONE 'UTC';
     END IF;
 END $$;
 
@@ -456,6 +496,11 @@ ALTER TABLE issue_steps ADD COLUMN IF NOT EXISTS updated_by_user_id UUID;
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS recurrence TEXT;
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS parent_task_id UUID REFERENCES tasks(id);
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS is_recurring_instance BOOLEAN DEFAULT false;
+
+-- Add schedule/Gantt fields to tasks table
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS start_date DATE;
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS duration_days INTEGER;
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS is_milestone BOOLEAN DEFAULT false;
 
 -- Add workflow steps to tasks table (stored as JSONB)
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS workflow_steps JSONB;
@@ -807,6 +852,15 @@ BEGIN
     END IF;
 END $$;
 
+-- Enforce user_preferences.user_id NOT NULL (remove orphaned rows then set constraint)
+DO $$
+BEGIN
+    DELETE FROM user_preferences WHERE user_id IS NULL;
+    IF (SELECT is_nullable FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'user_preferences' AND column_name = 'user_id') = 'YES' THEN
+        ALTER TABLE user_preferences ALTER COLUMN user_id SET NOT NULL;
+    END IF;
+END $$;
+
 -- Activity log constraints
 DO $$ 
 BEGIN
@@ -851,7 +905,7 @@ END $$;
 CREATE OR REPLACE FUNCTION get_user_organization_id()
 RETURNS UUID AS $$
   SELECT organization_id FROM public.profiles WHERE id = auth.uid();
-$$ LANGUAGE sql SECURITY DEFINER STABLE;
+$$ LANGUAGE sql SECURITY DEFINER STABLE SET search_path = public;
 
 -- Gets the role of the currently logged-in user
 -- Handles both old TEXT role field and new role_id system
@@ -868,19 +922,19 @@ RETURNS TEXT AS $$
      FROM public.profiles 
      WHERE id = (select auth.uid()))
   );
-$$ LANGUAGE sql SECURITY DEFINER STABLE;
+$$ LANGUAGE sql SECURITY DEFINER STABLE SET search_path = public;
 
 -- Gets the contact_id of the currently logged-in user
 CREATE OR REPLACE FUNCTION get_user_contact_id()
 RETURNS UUID AS $$
   SELECT contact_id FROM public.profiles WHERE id = auth.uid();
-$$ LANGUAGE sql SECURITY DEFINER STABLE;
+$$ LANGUAGE sql SECURITY DEFINER STABLE SET search_path = public;
 
 -- Gets the email of the currently logged-in user
 CREATE OR REPLACE FUNCTION get_user_email()
 RETURNS TEXT AS $$
   SELECT email FROM auth.users WHERE id = auth.uid();
-$$ LANGUAGE sql SECURITY DEFINER STABLE;
+$$ LANGUAGE sql SECURITY DEFINER STABLE SET search_path = public;
 
 -- Helper function to check if current user is admin
 -- Checks both is_super_admin flag and role name (handles both old and new role systems)
@@ -889,8 +943,8 @@ RETURNS BOOLEAN AS $$
   SELECT COALESCE(
     (SELECT is_super_admin FROM public.profiles WHERE id = auth.uid()),
     false
-  ) OR get_user_role() = 'Admin';
-$$ LANGUAGE sql SECURITY DEFINER STABLE;
+  ) OR COALESCE(get_user_role() = 'Admin', false);
+$$ LANGUAGE sql SECURITY DEFINER STABLE SET search_path = public;
 
 -- Helper function to check if current user can view a specific role
 -- Uses SECURITY DEFINER to bypass RLS when checking profiles table
@@ -920,7 +974,7 @@ BEGIN
     (user_role_id IS NOT NULL AND check_role_id = user_role_id)
   );
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER STABLE;
+$$ LANGUAGE plpgsql SECURITY DEFINER STABLE SET search_path = public;
 
 -- Helper function to check if current user can view a specific organization
 -- Uses SECURITY DEFINER to bypass RLS when checking profiles table
@@ -937,7 +991,7 @@ BEGIN
   -- User can view organization if it's their own organization
   RETURN (user_org_id IS NOT NULL AND user_org_id = check_org_id);
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER STABLE;
+$$ LANGUAGE plpgsql SECURITY DEFINER STABLE SET search_path = public;
 
 -- Helper function to check if current user is admin (bypasses RLS via SECURITY DEFINER)
 -- This is safe because it doesn't call get_user_role(), avoiding recursion
@@ -948,7 +1002,7 @@ RETURNS BOOLEAN AS $$
     SELECT 1 FROM public.profiles 
     WHERE id = (select auth.uid()) AND (role = 'Admin' OR is_super_admin = true)
   );
-$$ LANGUAGE sql SECURITY DEFINER STABLE;
+$$ LANGUAGE sql SECURITY DEFINER STABLE SET search_path = public;
 
 -- Helper to check if user has a specific permission
 CREATE OR REPLACE FUNCTION user_has_permission(permission_name TEXT)
@@ -960,7 +1014,7 @@ RETURNS BOOLEAN AS $$
   FROM public.profiles p
   LEFT JOIN public.roles r ON p.role_id = r.id
   WHERE p.id = auth.uid();
-$$ LANGUAGE sql SECURITY DEFINER STABLE;
+$$ LANGUAGE sql SECURITY DEFINER STABLE SET search_path = public;
 
 -- Helper function to check if current user can manage roles
 -- Uses SECURITY DEFINER to bypass RLS when checking profiles and roles tables
@@ -1014,7 +1068,7 @@ BEGIN
 
   RETURN COALESCE((role_permissions->>'can_manage_roles')::boolean, false);
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
 
 -- ============================================================================
 -- TRIGGERS
@@ -1036,7 +1090,7 @@ BEGIN
   VALUES (NEW.id, 'Team', contact_uuid);
   RETURN NEW;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
 
 CREATE OR REPLACE TRIGGER on_auth_user_created
   AFTER INSERT ON auth.users
@@ -1066,7 +1120,7 @@ BEGIN
   
   RETURN NEW;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
 
 -- Drop trigger if it already exists to avoid conflicts
 DROP TRIGGER IF EXISTS trigger_auto_add_project_creator ON public.projects;
@@ -1112,6 +1166,7 @@ DROP POLICY IF EXISTS "Only admins can delete profiles" ON public.profiles;
 DROP POLICY IF EXISTS "All authenticated users can view contacts" ON public.contacts;
 DROP POLICY IF EXISTS "Users can view their own contacts" ON public.contacts;
 DROP POLICY IF EXISTS "Users can view their own contacts and contacts with their email" ON public.contacts;
+DROP POLICY IF EXISTS "Users can view contacts in their organization" ON public.contacts;
 DROP POLICY IF EXISTS "Only admins can create contacts" ON public.contacts;
 DROP POLICY IF EXISTS "Authenticated users can create contacts" ON public.contacts;
 DROP POLICY IF EXISTS "Only admins can update contacts" ON public.contacts;
@@ -1213,10 +1268,21 @@ DROP POLICY IF EXISTS "Users can delete their own activity logs" ON public.activ
 DROP POLICY IF EXISTS "Users can see invitations they sent or received" ON public.invitations;
 DROP POLICY IF EXISTS "Public can view invitations by token" ON public.invitations;
 DROP POLICY IF EXISTS "Public can read pending invitations by token, users can see their invitations" ON public.invitations;
+DROP POLICY IF EXISTS "Authenticated users can see their invitations" ON public.invitations;
 DROP POLICY IF EXISTS "Authenticated users can create invitations" ON public.invitations;
 DROP POLICY IF EXISTS "Users can update their sent invitations" ON public.invitations;
 DROP POLICY IF EXISTS "Users can accept their own invitations" ON public.invitations;
 DROP POLICY IF EXISTS "Users can delete their sent invitations" ON public.invitations;
+
+DROP POLICY IF EXISTS "Users can see task dependencies for tasks they can see" ON public.task_dependencies;
+DROP POLICY IF EXISTS "Users can create task dependencies for tasks they can update" ON public.task_dependencies;
+DROP POLICY IF EXISTS "Users can update task dependencies for tasks they can update" ON public.task_dependencies;
+DROP POLICY IF EXISTS "Users can delete task dependencies for tasks they can update" ON public.task_dependencies;
+
+DROP POLICY IF EXISTS "Users can view templates in their organization" ON public.project_templates;
+DROP POLICY IF EXISTS "Users can create templates in their organization" ON public.project_templates;
+DROP POLICY IF EXISTS "Users can update templates in their organization" ON public.project_templates;
+DROP POLICY IF EXISTS "Users can delete templates in their organization" ON public.project_templates;
 
 -- Enable RLS on all tables
 ALTER TABLE projects ENABLE ROW LEVEL SECURITY;
@@ -1241,6 +1307,8 @@ ALTER TABLE tasks ENABLE ROW LEVEL SECURITY;
 ALTER TABLE user_preferences ENABLE ROW LEVEL SECURITY;
 ALTER TABLE activity_log ENABLE ROW LEVEL SECURITY;
 ALTER TABLE invitations ENABLE ROW LEVEL SECURITY;
+ALTER TABLE task_dependencies ENABLE ROW LEVEL SECURITY;
+ALTER TABLE project_templates ENABLE ROW LEVEL SECURITY;
 ALTER TABLE roles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE organizations ENABLE ROW LEVEL SECURITY;
 ALTER TABLE project_collaborators ENABLE ROW LEVEL SECURITY;
@@ -1519,19 +1587,19 @@ ON public.profiles FOR INSERT
 WITH CHECK (id = (select auth.uid()));
 
 -- Profiles UPDATE policy: Users can update their own profile, admins can update any (OPTIMIZED)
--- Note: Admin check uses is_current_user_admin() which bypasses RLS, avoiding recursion
+-- Note: Admin check uses is_user_admin() so role_id (new role system) is respected
 CREATE POLICY "Users can update their own profile, admins can update any"
 ON public.profiles FOR UPDATE
 USING (
   (id = (select auth.uid())) 
   OR 
-  is_current_user_admin()
+  (select is_user_admin())
 );
 
 -- Profiles DELETE policy: Only admins can delete profiles
 CREATE POLICY "Only admins can delete profiles"
 ON public.profiles FOR DELETE
-USING (is_current_user_admin());
+USING ((select is_user_admin()));
 
 -- ============================================================================
 -- CONTACTS TABLE POLICIES
@@ -1544,14 +1612,11 @@ CREATE POLICY "Users can view contacts in their organization"
 ON public.contacts
 FOR SELECT
 USING (
-  -- Contacts in same organization (primary access method - avoids recursion)
-  organization_id = get_user_organization_id()
+  organization_id = (select get_user_organization_id())
   OR
-  -- Users can see their own contact (by email match, even if org is different - for collaborators)
-  (LOWER(email) = LOWER(get_user_email()))
+  (LOWER(email) = LOWER((select get_user_email())))
   OR
-  -- Users can see contacts they created (even if org is different)
-  (created_by_user_id = auth.uid())
+  (created_by_user_id = (select auth.uid()))
 );
 
 -- Contacts INSERT policy (OPTIMIZED)
@@ -1699,7 +1764,7 @@ ON public.files
 FOR DELETE
 USING (
   project_id IN (
-    SELECT id FROM public.projects WHERE project_manager_id = auth.uid() OR get_user_role() = 'Admin' OR created_by_user_id = auth.uid()
+    SELECT id FROM public.projects WHERE project_manager_id = (select auth.uid()) OR (select get_user_role()) = 'Admin' OR created_by_user_id = (select auth.uid())
   )
 );
 
@@ -1753,7 +1818,7 @@ CREATE POLICY "Users can delete their own comments within 15 minutes or admins/P
 ON public.issue_comments
 FOR DELETE
 USING (
-  (user_id = auth.uid() AND created_at > NOW() - INTERVAL '15 minutes') -- Own recent comments
+  (user_id = (select auth.uid()) AND created_at > NOW() - INTERVAL '15 minutes')
   OR
   (issue_id IN (
     SELECT pi.id 
@@ -1911,7 +1976,7 @@ ON public.message_channels
 FOR DELETE
 USING (
   project_id IN (
-    SELECT id FROM public.projects WHERE project_manager_id = auth.uid() OR get_user_role() = 'Admin' OR created_by_user_id = auth.uid()
+    SELECT id FROM public.projects WHERE project_manager_id = (select auth.uid()) OR (select get_user_role()) = 'Admin' OR created_by_user_id = (select auth.uid())
   )
 );
 
@@ -2056,7 +2121,7 @@ CREATE POLICY "Users can create typing indicators for accessible channels"
 ON public.typing_indicators
 FOR INSERT
 WITH CHECK (
-  user_id = auth.uid()
+  user_id = (select auth.uid())
   AND
   channel_id IN (
     SELECT mc.id 
@@ -2256,9 +2321,9 @@ WITH CHECK (
   organization_id = (select get_user_organization_id())
   AND (
     -- Admins can add any contact in their organization
-    (is_user_admin() AND contact_id IN (
+    ((select is_user_admin()) AND contact_id IN (
       SELECT id FROM public.contacts 
-      WHERE organization_id = get_user_organization_id()
+      WHERE organization_id = (select get_user_organization_id())
     ))
     OR
     -- PMs can add contacts to their projects
@@ -2275,7 +2340,7 @@ WITH CHECK (
         AND organization_id = (select get_user_organization_id())
     ) AND contact_id IN (
       SELECT id FROM public.contacts
-      WHERE organization_id = get_user_organization_id()
+      WHERE organization_id = (select get_user_organization_id())
     ))
   )
 );
@@ -2387,7 +2452,7 @@ ON public.project_phases
 FOR DELETE
 USING (
   project_id IN (
-    SELECT id FROM public.projects WHERE project_manager_id = auth.uid() OR get_user_role() = 'Admin' OR created_by_user_id = auth.uid()
+    SELECT id FROM public.projects WHERE project_manager_id = (select auth.uid()) OR (select get_user_role()) = 'Admin' OR created_by_user_id = (select auth.uid())
   )
 );
 
@@ -2426,11 +2491,11 @@ CREATE POLICY "Users can update their assigned tasks or admins/PMs can update an
 ON public.tasks
 FOR UPDATE
 USING (
-  (assignee_id IN (SELECT contact_id FROM public.profiles WHERE id = (select auth.uid()) AND contact_id IS NOT NULL)) -- Own assigned tasks (via contact_id)
+  (assignee_id IN (SELECT contact_id FROM public.profiles WHERE id = (select auth.uid()) AND contact_id IS NOT NULL))
   OR
   (project_id IN (
     SELECT id FROM public.projects 
-    WHERE project_manager_id = auth.uid() OR get_user_role() = 'Admin'
+    WHERE project_manager_id = (select auth.uid()) OR (select get_user_role()) = 'Admin'
   ))
 );
 
@@ -2444,6 +2509,58 @@ USING (
     WHERE project_manager_id = (select auth.uid()) OR (select get_user_role()) = 'Admin' OR created_by_user_id = (select auth.uid())
   )
 );
+
+-- ============================================================================
+-- TASK_DEPENDENCIES TABLE POLICIES
+-- ============================================================================
+
+CREATE POLICY "Users can see task dependencies for tasks they can see"
+ON public.task_dependencies FOR SELECT
+USING (
+  task_id IN (SELECT id FROM public.tasks)
+  AND successor_task_id IN (SELECT id FROM public.tasks)
+);
+
+CREATE POLICY "Users can create task dependencies for tasks they can update"
+ON public.task_dependencies FOR INSERT
+WITH CHECK (
+  task_id IN (SELECT id FROM public.tasks)
+  AND successor_task_id IN (SELECT id FROM public.tasks)
+);
+
+CREATE POLICY "Users can update task dependencies for tasks they can update"
+ON public.task_dependencies FOR UPDATE
+USING (
+  task_id IN (SELECT id FROM public.tasks)
+  AND successor_task_id IN (SELECT id FROM public.tasks)
+);
+
+CREATE POLICY "Users can delete task dependencies for tasks they can update"
+ON public.task_dependencies FOR DELETE
+USING (
+  task_id IN (SELECT id FROM public.tasks)
+  AND successor_task_id IN (SELECT id FROM public.tasks)
+);
+
+-- ============================================================================
+-- PROJECT_TEMPLATES TABLE POLICIES
+-- ============================================================================
+
+CREATE POLICY "Users can view templates in their organization"
+ON public.project_templates FOR SELECT
+USING (organization_id = (select get_user_organization_id()));
+
+CREATE POLICY "Users can create templates in their organization"
+ON public.project_templates FOR INSERT
+WITH CHECK (organization_id = (select get_user_organization_id()));
+
+CREATE POLICY "Users can update templates in their organization"
+ON public.project_templates FOR UPDATE
+USING (organization_id = (select get_user_organization_id()));
+
+CREATE POLICY "Users can delete templates in their organization"
+ON public.project_templates FOR DELETE
+USING (organization_id = (select get_user_organization_id()));
 
 -- ============================================================================
 -- USER PREFERENCES TABLE POLICIES
@@ -2509,29 +2626,18 @@ USING (user_id = (select auth.uid()));
 -- INVITATIONS TABLE POLICIES
 -- ============================================================================
 
--- Invitations SELECT policy (public token access + authenticated users)
--- Public users: can read pending invitations by token (for invite acceptance)
--- Authenticated users: can see invitations they sent or that match their email
-CREATE POLICY "Public can read pending invitations by token, users can see their invitations"
+-- Invitations SELECT policy: no anon access to list invitations (prevents enumeration).
+-- Authenticated users: can see invitations they sent or that match their email.
+-- For invite acceptance by token, use RPC get_invitation_by_token(invitation_token) instead.
+CREATE POLICY "Authenticated users can see their invitations"
 ON public.invitations
 FOR SELECT
 USING (
-  -- Public access: any pending invitation with a token (for invite acceptance page)
-  (
-    status = 'pending'
-    AND invitation_token IS NOT NULL
-  )
-  OR
-  -- Authenticated users can see invitations they sent
-  (
-    auth.uid() IS NOT NULL
-    AND invited_by_user_id = auth.uid()
-  )
-  OR
-  -- Authenticated users can see invitations sent to their email
-  (
-    auth.uid() IS NOT NULL
-    AND email IN (
+  (select auth.uid()) IS NOT NULL
+  AND (
+    invited_by_user_id = (select auth.uid())
+    OR
+    email IN (
       SELECT c.email
       FROM public.profiles p
       JOIN public.contacts c ON p.contact_id = c.id
@@ -2540,15 +2646,29 @@ USING (
   )
 );
 
+-- RPC for invite acceptance page: fetch single invitation by token (anon can call).
+-- Use from frontend: supabase.rpc('get_invitation_by_token', { invitation_token: token })
+CREATE OR REPLACE FUNCTION public.get_invitation_by_token(invitation_token_param TEXT)
+RETURNS SETOF public.invitations
+LANGUAGE sql
+SECURITY DEFINER
+SET search_path = public
+STABLE
+AS $$
+  SELECT * FROM public.invitations
+  WHERE invitation_token = invitation_token_param
+    AND status = 'pending'
+    AND (expires_at IS NULL OR expires_at > now())
+  LIMIT 1;
+$$;
+
 -- Invitations INSERT policy
 CREATE POLICY "Authenticated users can create invitations"
 ON public.invitations
 FOR INSERT
 WITH CHECK (
-  auth.uid() IS NOT NULL
-  AND (
-    invited_by_user_id = auth.uid() -- Can only create invitations as themselves
-  )
+  (select auth.uid()) IS NOT NULL
+  AND invited_by_user_id = (select auth.uid())
 );
 
 -- Invitations UPDATE policy
@@ -2698,6 +2818,12 @@ CREATE INDEX IF NOT EXISTS idx_project_contacts_contact_id ON project_contacts(c
 CREATE INDEX IF NOT EXISTS idx_project_phases_project_id ON project_phases(project_id);
 CREATE INDEX IF NOT EXISTS idx_tasks_project_id ON tasks(project_id);
 CREATE INDEX IF NOT EXISTS idx_tasks_assignee_id ON tasks(assignee_id);
+CREATE INDEX IF NOT EXISTS idx_task_dependencies_task_id ON task_dependencies(task_id);
+CREATE INDEX IF NOT EXISTS idx_task_dependencies_successor_task_id ON task_dependencies(successor_task_id);
+CREATE INDEX IF NOT EXISTS idx_tasks_start_date ON tasks(start_date) WHERE start_date IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_tasks_is_milestone ON tasks(is_milestone) WHERE is_milestone = true;
+CREATE INDEX IF NOT EXISTS idx_project_templates_organization_id ON project_templates(organization_id);
+CREATE INDEX IF NOT EXISTS idx_project_templates_created_at ON project_templates(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_user_preferences_user_id ON user_preferences(user_id);
 
 -- Audit field indexes

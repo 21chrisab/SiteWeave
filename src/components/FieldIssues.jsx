@@ -287,7 +287,7 @@ const FieldIssues = ({ projectId }) => {
     const closedCount = fieldIssues.filter(i => i.status === 'closed').length;
 
     return (
-        <div className="p-6 bg-white rounded-xl shadow-sm border border-gray-200">
+        <div className="p-6 bg-white rounded-xl shadow-xs border border-gray-200">
             <div className="flex justify-between items-center mb-6">
                 <div className="flex items-center gap-4">
                     <h2 className="text-xl font-bold">Field Issues ({fieldIssues.length})</h2>
@@ -306,7 +306,7 @@ const FieldIssues = ({ projectId }) => {
                 </div>
                 <button 
                     onClick={() => setShowCreateModal(true)}
-                    className="px-4 py-2 text-sm font-semibold text-white bg-blue-600 rounded-lg shadow-sm hover:bg-blue-700"
+                    className="px-4 py-2 text-sm font-semibold text-white bg-blue-600 rounded-lg shadow-xs hover:bg-blue-700"
                 >
                     + Create Issue
                 </button>

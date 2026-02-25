@@ -1020,7 +1020,7 @@ function CalendarView() {
                 {/* Main Calendar */}
                 <main 
                     data-onboarding="calendar-container"
-                    className="flex-1 bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden"
+                    className="flex-1 bg-white rounded-xl shadow-xs border border-gray-200 overflow-hidden"
                 >
                     {/* Outlook-style Header */}
                     <div className="bg-white border-b border-gray-200 px-6 py-4">
@@ -1052,7 +1052,7 @@ function CalendarView() {
                                         onClick={() => handleViewChange('timeGridDay')}
                                         className={`px-3 py-1 text-sm font-medium rounded-md transition-colors ${
                                             currentView === 'timeGridDay' 
-                                                ? 'bg-white text-gray-900 shadow-sm' 
+                                                ? 'bg-white text-gray-900 shadow-xs' 
                                                 : 'text-gray-700 hover:bg-white hover:text-gray-900'
                                         }`}
                                     >
@@ -1062,7 +1062,7 @@ function CalendarView() {
                                         onClick={() => handleViewChange('timeGridWeek')}
                                         className={`px-3 py-1 text-sm font-medium rounded-md transition-colors ${
                                             currentView === 'timeGridWeek' 
-                                                ? 'bg-white text-gray-900 shadow-sm' 
+                                                ? 'bg-white text-gray-900 shadow-xs' 
                                                 : 'text-gray-700 hover:bg-white hover:text-gray-900'
                                         }`}
                                     >
@@ -1072,7 +1072,7 @@ function CalendarView() {
                                         onClick={() => handleViewChange('dayGridMonth')}
                                         className={`px-3 py-1 text-sm font-medium rounded-md transition-colors ${
                                             currentView === 'dayGridMonth' 
-                                                ? 'bg-white text-gray-900 shadow-sm' 
+                                                ? 'bg-white text-gray-900 shadow-xs' 
                                                 : 'text-gray-700 hover:bg-white hover:text-gray-900'
                                         }`}
                                     >

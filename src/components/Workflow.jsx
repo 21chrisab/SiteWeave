@@ -212,12 +212,12 @@ const Workflow = ({ projectId }) => {
     };
 
     return (
-        <div className="p-6 bg-white rounded-xl shadow-sm border border-gray-200">
+        <div className="p-6 bg-white rounded-xl shadow-xs border border-gray-200">
             <div className="flex justify-between items-center mb-6">
                 <h2 className="text-xl font-bold">Workflows ({workflows.length})</h2>
                 <button 
                     onClick={() => setShowCreateModal(true)}
-                    className="px-4 py-2 text-sm font-semibold text-white bg-blue-600 rounded-lg shadow-sm hover:bg-blue-700"
+                    className="px-4 py-2 text-sm font-semibold text-white bg-blue-600 rounded-lg shadow-xs hover:bg-blue-700"
                 >
                     + Create Workflow
                 </button>
@@ -432,7 +432,7 @@ const Workflow = ({ projectId }) => {
                                                                 {isCurrentStep && (
                                                                     <button
                                                                         onClick={() => handleStepComplete(workflow.id, index)}
-                                                                        className="mt-3 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium transition-colors shadow-sm"
+                                                                        className="mt-3 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium transition-colors shadow-xs"
                                                                     >
                                                                         {stepNumber === workflowSteps.length 
                                                                             ? '✓ Complete Final Step' 

@@ -10,9 +10,11 @@
  * @param {string} newName - Name for the duplicated project
  * @param {string} organizationId - Organization ID
  * @param {Date|string} newStartDate - New start date for the project
+ * @param {{ address?: string, project_number?: string }} [overrides] - Optional address and project number for the copy
+ * @param {string} [currentUserId] - Auth user ID of the user performing the duplicate (used for created_by_user_id and project_manager_id)
  * @returns {Promise<{success: boolean, newProjectId?: string, error?: string}>}
  */
-export async function duplicateProject(supabase, projectId, newName, organizationId, newStartDate) {
+export async function duplicateProject(supabase, projectId, newName, organizationId, newStartDate, overrides = {}, currentUserId = null) {
   try {
     // Get original project
     const { data: originalProject, error: projectError } = await supabase
@@ -51,7 +53,8 @@ export async function duplicateProject(supabase, projectId, newName, organizatio
       .from('projects')
       .insert({
         name: newName,
-        address: originalProject.address,
+        address: overrides.address !== undefined ? overrides.address : originalProject.address,
+        project_number: overrides.project_number !== undefined ? overrides.project_number : originalProject.project_number,
         status: originalProject.status || 'Planning',
         status_color: originalProject.status_color,
         project_type: originalProject.project_type,
@@ -60,8 +63,8 @@ export async function duplicateProject(supabase, projectId, newName, organizatio
         milestones: originalProject.milestones,
         color: originalProject.color,
         organization_id: organizationId,
-        created_by_user_id: originalProject.created_by_user_id,
-        project_manager_id: originalProject.project_manager_id
+        created_by_user_id: currentUserId ?? originalProject.created_by_user_id,
+        project_manager_id: currentUserId ?? originalProject.project_manager_id
       })
       .select()
       .single();
@@ -93,29 +96,63 @@ export async function duplicateProject(supabase, projectId, newName, organizatio
         .insert(newPhases);
     }
 
-    // Duplicate tasks (structure only, mark incomplete, clear assignees, shift due_dates)
+    // Duplicate tasks (structure only, mark incomplete, clear assignees, shift dates and schedule fields)
     const { data: tasksToDuplicate } = await supabase
       .from('tasks')
       .select('*')
       .eq('project_id', projectId)
       .order('created_at', { ascending: true });
 
+    let oldTaskIdToNewId = {};
     if (tasksToDuplicate && tasksToDuplicate.length > 0) {
       const newTasks = tasksToDuplicate.map(task => ({
         project_id: newProject.id,
         text: task.text,
         due_date: task.due_date ? shiftDate(task.due_date, deltaDays) : null,
+        start_date: task.start_date ? shiftDate(task.start_date, deltaDays) : null,
+        duration_days: task.duration_days,
+        is_milestone: task.is_milestone ?? false,
         priority: task.priority,
-        completed: false, // Mark all as incomplete
-        assignee_id: null, // Clear assignees
+        completed: false,
+        assignee_id: null,
         recurrence: task.recurrence,
         organization_id: organizationId
-        // Note: parent_task_id and is_recurring_instance are excluded
       }));
 
-      await supabase
+      const { data: insertedTasks, error: tasksInsertError } = await supabase
         .from('tasks')
-        .insert(newTasks);
+        .insert(newTasks)
+        .select('id');
+
+      if (tasksInsertError) {
+        console.error('Error inserting duplicated tasks:', tasksInsertError);
+        return { success: false, error: tasksInsertError.message };
+      }
+      // Map old task id -> new task id by insert order
+      if (insertedTasks && insertedTasks.length === tasksToDuplicate.length) {
+        tasksToDuplicate.forEach((t, i) => { oldTaskIdToNewId[t.id] = insertedTasks[i].id; });
+      }
+
+      // Copy task_dependencies (remap to new task ids)
+      const oldTaskIds = tasksToDuplicate.map(t => t.id);
+      const { data: deps } = await supabase
+        .from('task_dependencies')
+        .select('task_id, successor_task_id, dependency_type, lag_days')
+        .in('task_id', oldTaskIds);
+
+      if (deps && deps.length > 0) {
+        const newDeps = deps
+          .filter(d => oldTaskIdToNewId[d.task_id] && oldTaskIdToNewId[d.successor_task_id])
+          .map(d => ({
+            task_id: oldTaskIdToNewId[d.task_id],
+            successor_task_id: oldTaskIdToNewId[d.successor_task_id],
+            dependency_type: d.dependency_type || 'finish_to_start',
+            lag_days: d.lag_days ?? 0
+          }));
+        if (newDeps.length > 0) {
+          await supabase.from('task_dependencies').insert(newDeps);
+        }
+      }
     }
 
     // Create a message channel for the new project

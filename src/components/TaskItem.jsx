@@ -8,6 +8,7 @@ const TaskItem = memo(function TaskItem({ task, onToggle, onEdit, onDelete, isSe
     const { i18n } = useTranslation();
     const [isEditing, setIsEditing] = useState(false);
     const [editText, setEditText] = useState(task.text);
+    const [editStartDate, setEditStartDate] = useState(task.start_date || '');
     const [editDueDate, setEditDueDate] = useState(task.due_date || '');
     const [editPriority, setEditPriority] = useState(task.priority);
     
@@ -26,6 +27,7 @@ const TaskItem = memo(function TaskItem({ task, onToggle, onEdit, onDelete, isSe
     const handleSaveEdit = () => {
         onEdit(task.id, {
             text: editText,
+            start_date: editStartDate || null,
             due_date: editDueDate || null,
             priority: editPriority
         });
@@ -34,6 +36,7 @@ const TaskItem = memo(function TaskItem({ task, onToggle, onEdit, onDelete, isSe
 
     const handleCancelEdit = () => {
         setEditText(task.text);
+        setEditStartDate(task.start_date || '');
         setEditDueDate(task.due_date || '');
         setEditPriority(task.priority);
         setIsEditing(false);
@@ -50,11 +53,19 @@ const TaskItem = memo(function TaskItem({ task, onToggle, onEdit, onDelete, isSe
                         className="w-full p-2 border rounded-lg"
                         placeholder="Task description"
                     />
-                    <div className="flex gap-3 items-end">
-                        <div className="flex-1">
+                    <div className="flex gap-3 items-end flex-wrap">
+                        <div className="flex-1 min-w-[120px]">
+                            <DateDropdown 
+                                value={editStartDate} 
+                                onChange={setEditStartDate}
+                                label="Start Date"
+                            />
+                        </div>
+                        <div className="flex-1 min-w-[120px]">
                             <DateDropdown 
                                 value={editDueDate} 
                                 onChange={setEditDueDate}
+                                label="End Date"
                             />
                         </div>
                         <select
@@ -92,7 +103,7 @@ const TaskItem = memo(function TaskItem({ task, onToggle, onEdit, onDelete, isSe
                 isSelected ? 'bg-blue-50 border border-blue-200' : ''
             } ${task.completed ? 'bg-green-50/30 hover:bg-green-50/50 border-l-4 border-l-green-400' : 'hover:bg-gray-50'}`}
             role="listitem"
-            aria-label={`Task: ${task.text}, Priority: ${task.priority}, Due: ${formatDate(task.due_date)}`}
+            aria-label={`Task: ${task.text}, Priority: ${task.priority}, Start: ${formatDate(task.start_date)}, End: ${formatDate(task.due_date)}`}
         >
             <div className="flex items-center gap-4">
                 {/* Always show completion checkbox that directly toggles task completion */}
@@ -102,7 +113,7 @@ const TaskItem = memo(function TaskItem({ task, onToggle, onEdit, onDelete, isSe
                         checked={task.completed} 
                         onChange={() => onToggle(task.id, task.completed)}
                         className={`h-5 w-5 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer transition-all ${
-                            task.completed ? 'hover:scale-105 hover:shadow-sm' : ''
+                            task.completed ? 'hover:scale-105 hover:shadow-xs' : ''
                         }`}
                         title={task.completed ? 'Click to uncomplete task' : 'Click to complete task'}
                         aria-label={task.completed ? `Mark task as incomplete: ${task.text}` : `Mark task as complete: ${task.text}`}
@@ -118,7 +129,10 @@ const TaskItem = memo(function TaskItem({ task, onToggle, onEdit, onDelete, isSe
                         {task.text}
                     </p>
                     <p className={`text-sm transition-all ${task.completed ? 'text-gray-400' : 'text-gray-500'}`}>
-                        Due: {formatDate(task.due_date)}
+                        {task.start_date && <span>Start: {formatDate(task.start_date)}</span>}
+                        {task.start_date && task.due_date && ' · '}
+                        {task.due_date && <span>End: {formatDate(task.due_date)}</span>}
+                        {!task.start_date && !task.due_date && 'No dates'}
                     </p>
                 </div>
             </div>

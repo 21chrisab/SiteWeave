@@ -1,3 +1,7 @@
+/**
+ * App context for web app. Mirrors root src/context/AppContext.jsx with web-specific behavior.
+ * TODO: Refactor - Establish single source of truth (e.g. share via packages/ or document desktop vs web feature flags).
+ */
 import React, { createContext, useContext, useEffect, useReducer, useState, useRef } from 'react';
 import { createSupabaseClient } from '@siteweave/core-logic';
 import supabaseElectronAuth from '../utils/supabaseElectronAuth';
@@ -91,6 +95,7 @@ const getInitialState = () => {
     selectedChannelId: null,
     projects: [], contacts: [], tasks: [], files: [], calendarEvents: [], messageChannels: [], messages: [], activityLog: [],
     user: null, // Changed from hardcoded user to null for proper auth
+    userContactId: null, // The user's linked contact_id (from profiles table) — used for matching assignee_id on tasks
     userPreferences: null, // Add user preferences for onboarding
     currentOrganization: null, // Current organization context
     userRole: null, // User's role with permissions
@@ -132,7 +137,10 @@ function appReducer(state, action) {
       return newState;
     case 'SET_PROJECT': return { ...state, selectedProjectId: action.payload };
     case 'SET_CHANNEL': return { ...state, selectedChannelId: action.payload, activeView: 'Messages' };
-    case 'SET_USER': return { ...state, user: action.payload };
+    case 'SET_USER': 
+      // When user is cleared (logout), also clear userContactId to prevent stale data
+      return { ...state, user: action.payload, userContactId: action.payload ? state.userContactId : null };
+    case 'SET_USER_CONTACT_ID': return { ...state, userContactId: action.payload };
     case 'SET_AUTH_LOADING': return { ...state, authLoading: action.payload };
     case 'ADD_PROJECT': 
       newState = { ...state, projects: [...state.projects, action.payload] };
@@ -150,6 +158,10 @@ function appReducer(state, action) {
     case 'UPDATE_TASK': return { ...state, tasks: state.tasks.map(task => task.id === action.payload.id ? action.payload : task) };
     case 'DELETE_TASK': return { ...state, tasks: state.tasks.filter(task => task.id !== action.payload) };
     case 'REORDER_TASKS': return { ...state, tasks: action.payload };
+    case 'SET_TASKS':
+      newState = { ...state, tasks: action.payload };
+      saveStateToStorage(newState);
+      return newState;
     case 'ADD_FILE': return { ...state, files: [...state.files, action.payload] };
     case 'ADD_EVENT': return { ...state, calendarEvents: [...state.calendarEvents, action.payload] };
     case 'UPDATE_EVENT': return { 
@@ -162,7 +174,6 @@ function appReducer(state, action) {
       ...state, 
       calendarEvents: state.calendarEvents.filter(event => event.id !== action.payload) 
     };
-<<<<<<< HEAD
     case 'ADD_MESSAGE': {
       // Prevent duplicates
       const exists = state.messages.some(m => m.id === action.payload.id);
@@ -185,10 +196,6 @@ function appReducer(state, action) {
       const filteredMessages = state.messages.filter(m => m.channel_id !== channelId);
       return { ...state, messages: [...filteredMessages, ...newMessages] };
     }
-=======
-    case 'ADD_MESSAGE': return { ...state, messages: [...state.messages, action.payload] };
-    case 'UPDATE_MESSAGE': return { ...state, messages: state.messages.map(m => m.id === action.payload.id ? action.payload : m) };
->>>>>>> aa0293334131d3c7e8b85965aa6dc815849ebeb6
     case 'ADD_CHANNEL': return { ...state, messageChannels: [...state.messageChannels, action.payload] };
     case 'ADD_ACTIVITY': return { ...state, activityLog: [action.payload, ...state.activityLog].slice(0, 50) }; // Keep latest 50
     case 'ADD_CONTACT': {
@@ -218,8 +225,8 @@ function appReducer(state, action) {
       contacts: state.contacts.filter(contact => contact.id !== action.payload) 
     };
     case 'ADD_PROJECT_CONTACT': {
-      const contactId = action.payload.contact_id || action.payload.contact_id;
-      const projectId = action.payload.project_id || action.payload.project_id;
+      const contactId = action.payload.contact_id;
+      const projectId = action.payload.project_id;
       
       // Check if contact exists in state
       const contactExists = state.contacts.some(c => c.id === contactId);
@@ -350,8 +357,10 @@ export const AppProvider = ({ children }) => {
             const activeViewToUse = currentActiveViewRef.current && currentActiveViewRef.current !== 'Dashboard' 
               ? currentActiveViewRef.current 
               : (cachedData.activeView || 'Dashboard');
+            // Omit tasks so we don't overwrite in-memory tasks loaded by project view
+            const { tasks: _omitTasks, ...rest } = cachedData;
             dispatch({ type: 'SET_DATA', payload: { 
-              ...cachedData, 
+              ...rest, 
               activeView: activeViewToUse,
               isLoading: false 
             } });
@@ -390,73 +399,7 @@ export const AppProvider = ({ children }) => {
             sessionStorage.removeItem(STORAGE_USER_KEY);
           } else if (session?.user) {
             dispatch({ type: 'SET_USER', payload: session.user });
-<<<<<<< HEAD
-            
-            // Check for pending invitation in user metadata and complete it
-            const pendingInvitationId = session.user.user_metadata?.pending_invitation_id;
-            if (pendingInvitationId && (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED')) {
-              try {
-                const pendingOrgId = session.user.user_metadata?.pending_organization_id;
-                const pendingRoleId = session.user.user_metadata?.pending_role_id;
-                const pendingContactId = session.user.user_metadata?.pending_contact_id;
-                
-                if (pendingOrgId) {
-                  console.log('Completing pending invitation:', pendingInvitationId);
-                  
-                  // Update profile with organization
-                  const { error: profileError } = await supabaseClient
-                    .from('profiles')
-                    .update({
-                      organization_id: pendingOrgId,
-                      role_id: pendingRoleId || null,
-                      contact_id: pendingContactId || null
-                    })
-                    .eq('id', session.user.id);
-
-                  if (!profileError) {
-                    // Mark invitation as accepted
-                    await supabaseClient
-                      .from('invitations')
-                      .update({
-                        status: 'accepted',
-                        accepted_at: new Date().toISOString()
-                      })
-                      .eq('id', pendingInvitationId);
-
-                    // Clear pending invitation from metadata
-                    await supabaseClient.auth.updateUser({
-                      data: {
-                        pending_invitation_id: null,
-                        pending_organization_id: null,
-                        pending_role_id: null,
-                        pending_contact_id: null
-                      }
-                    });
-
-                    console.log('Pending invitation completed successfully');
-                  } else {
-                    console.error('Error completing pending invitation:', profileError);
-                  }
-                }
-              } catch (pendingErr) {
-                console.error('Error handling pending invitation:', pendingErr);
-                // Don't block login if this fails
-              }
-=======
-            // Restore cached data immediately when user is set, but preserve current activeView
-            const cachedData = loadStateFromStorage(session.user.id);
-            if (cachedData) {
-              // Preserve current activeView if it's already set (user is navigating)
-              const activeViewToUse = currentActiveViewRef.current && currentActiveViewRef.current !== 'Dashboard' 
-                ? currentActiveViewRef.current 
-                : (cachedData.activeView || 'Dashboard');
-              dispatch({ type: 'SET_DATA', payload: { 
-                ...cachedData, 
-                activeView: activeViewToUse,
-                isLoading: false 
-              } });
->>>>>>> aa0293334131d3c7e8b85965aa6dc815849ebeb6
-            }
+            // Do not restore cache here (e.g. on token refresh) so we don't overwrite in-memory state like project tasks
           } else {
             dispatch({ type: 'SET_USER', payload: null });
             // Clear cached data on logout
@@ -720,6 +663,11 @@ export const AppProvider = ({ children }) => {
             }
           } else if (finalProfile?.contact_id) {
             contactId = finalProfile.contact_id;
+          }
+          
+          // Store the user's contact_id in global state so components can match against assignee_id
+          if (contactId) {
+            dispatch({ type: 'SET_USER_CONTACT_ID', payload: contactId });
           }
           
           // Load organization and user role

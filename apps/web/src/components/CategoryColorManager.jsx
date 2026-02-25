@@ -294,7 +294,7 @@ function CategoryColorManager({ isOpen, onClose }) {
                         {categories.map((category) => (
                             <div key={category.id} className="flex items-center gap-3 p-3 hover:bg-gray-50 rounded-lg transition-colors">
                                 {/* Color Picker */}
-                                <div className="flex-shrink-0">
+                                <div className="shrink-0">
                                     <input
                                         type="color"
                                         value={category.color}
@@ -344,7 +344,7 @@ function CategoryColorManager({ isOpen, onClose }) {
                                 </div>
 
                                 {/* Delete Button */}
-                                <div className="flex-shrink-0">
+                                <div className="shrink-0">
                                     <button
                                         onClick={() => handleDeleteCategory(category.id)}
                                         className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"

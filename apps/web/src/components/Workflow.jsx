@@ -81,7 +81,7 @@ const Workflow = ({ projectId }) => {
             setIsLoading(true);
             const { data, error } = await supabaseClient
                 .from('tasks')
-                .select('*')
+                .select('id, text, project_id, workflow_steps, current_workflow_step, completed, created_at')
                 .eq('project_id', projectId)
                 .not('workflow_steps', 'is', null);
 
@@ -245,12 +245,12 @@ const Workflow = ({ projectId }) => {
     };
 
     return (
-        <div className="p-6 bg-white rounded-xl shadow-sm border border-gray-200">
+        <div className="p-6 bg-white rounded-xl shadow-xs border border-gray-200">
             <div className="flex justify-between items-center mb-6">
                 <h2 className="text-xl font-bold">Workflows ({workflows.length})</h2>
                 <button 
                     onClick={() => setShowCreateModal(true)}
-                    className="px-4 py-2 text-sm font-semibold text-white bg-blue-600 rounded-lg shadow-sm hover:bg-blue-700"
+                    className="px-4 py-2 text-sm font-semibold text-white bg-blue-600 rounded-lg shadow-xs hover:bg-blue-700"
                 >
                     + Create Workflow
                 </button>
@@ -342,7 +342,7 @@ const Workflow = ({ projectId }) => {
                                                     
                                                     return (
                                                         <React.Fragment key={index}>
-                                                            <div className="flex flex-col items-center flex-shrink-0">
+                                                            <div className="flex flex-col items-center shrink-0">
                                                                 <div className={`flex items-center justify-center w-8 h-8 rounded-full text-xs font-semibold transition-all ${
                                                                     stepIsCompleted
                                                                         ? 'bg-green-600 text-white shadow-md' 
@@ -412,7 +412,7 @@ const Workflow = ({ projectId }) => {
                                                         }`}
                                                     >
                                                         <div className="flex items-start gap-3">
-                                                            <div className={`flex items-center justify-center w-8 h-8 rounded-full text-xs font-semibold flex-shrink-0 ${
+                                                            <div className={`flex items-center justify-center w-8 h-8 rounded-full text-xs font-semibold shrink-0 ${
                                                                 isCompleted
                                                                     ? 'bg-green-600 text-white' 
                                                                     : isCurrentStep
@@ -447,17 +447,17 @@ const Workflow = ({ projectId }) => {
                                                                         )}
                                                                     </div>
                                                                     {isCompleted && (
-                                                                        <span className="px-2 py-1 text-xs font-semibold rounded-full bg-green-100 text-green-800 flex-shrink-0">
+                                                                        <span className="px-2 py-1 text-xs font-semibold rounded-full bg-green-100 text-green-800 shrink-0">
                                                                             Done
                                                                         </span>
                                                                     )}
                                                                     {isCurrentStep && (
-                                                                        <span className="px-2 py-1 text-xs font-semibold rounded-full bg-blue-100 text-blue-800 flex-shrink-0">
+                                                                        <span className="px-2 py-1 text-xs font-semibold rounded-full bg-blue-100 text-blue-800 shrink-0">
                                                                             Current
                                                                         </span>
                                                                     )}
                                                                     {isPending && (
-                                                                        <span className="px-2 py-1 text-xs font-semibold rounded-full bg-gray-100 text-gray-600 flex-shrink-0">
+                                                                        <span className="px-2 py-1 text-xs font-semibold rounded-full bg-gray-100 text-gray-600 shrink-0">
                                                                             Pending
                                                                         </span>
                                                                     )}
@@ -465,7 +465,7 @@ const Workflow = ({ projectId }) => {
                                                                 {isCurrentStep && (
                                                                     <button
                                                                         onClick={() => handleStepComplete(workflow.id, index)}
-                                                                        className="mt-3 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium transition-colors shadow-sm"
+                                                                        className="mt-3 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium transition-colors shadow-xs"
                                                                     >
                                                                         {stepNumber === workflowSteps.length 
                                                                             ? '✓ Complete Final Step' 

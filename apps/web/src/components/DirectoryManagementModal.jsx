@@ -633,7 +633,7 @@ function DirectoryManagementModal({ show, onClose }) {
                   users.map(member => (
                     <div key={member.id} className="p-4 flex items-center justify-between hover:bg-gray-50">
                       <div className="flex items-center space-x-4 flex-1">
-                        <div className="flex-shrink-0">
+                        <div className="shrink-0">
                           {member.contacts?.avatar_url && !failedImages.has(member.id) ? (
                             <img
                               src={member.contacts.avatar_url}

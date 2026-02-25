@@ -858,7 +858,7 @@ function SetupWizardModal({ show, onComplete }) {
                           setEditingRoleName(false);
                         }
                       }}
-                      className="flex-1 text-xl font-bold text-gray-900 bg-transparent border-b-2 border-blue-500 focus:outline-none"
+                      className="flex-1 text-xl font-bold text-gray-900 bg-transparent border-b-2 border-blue-500 focus:outline-hidden"
                       autoFocus
                     />
                     <button
@@ -982,7 +982,7 @@ function SetupWizardModal({ show, onComplete }) {
                 onClick={() => setInputMode('email')}
                 className={`flex-1 px-4 py-2 rounded-md text-sm font-medium transition-colors ${
                   inputMode === 'email'
-                    ? 'bg-white text-blue-700 shadow-sm'
+                    ? 'bg-white text-blue-700 shadow-xs'
                     : 'text-gray-600 hover:text-gray-900'
                 }`}
               >
@@ -992,7 +992,7 @@ function SetupWizardModal({ show, onComplete }) {
                 onClick={() => setInputMode('managed')}
                 className={`flex-1 px-4 py-2 rounded-md text-sm font-medium transition-colors ${
                   inputMode === 'managed'
-                    ? 'bg-white text-blue-700 shadow-sm'
+                    ? 'bg-white text-blue-700 shadow-xs'
                     : 'text-gray-600 hover:text-gray-900'
                 }`}
               >
@@ -1067,7 +1067,7 @@ function SetupWizardModal({ show, onComplete }) {
 
                   {/* Credential Card Preview */}
                   {previewCredentials && managedInput.fullName && (
-                    <div className="mt-3 p-4 bg-gradient-to-br from-gray-50 to-gray-100 rounded-lg border-2 border-gray-300 shadow-sm">
+                    <div className="mt-3 p-4 bg-gradient-to-br from-gray-50 to-gray-100 rounded-lg border-2 border-gray-300 shadow-xs">
                       <div className="flex items-center justify-between mb-3">
                         <div className="flex items-center space-x-2">
                           <div className="w-10 h-10 bg-blue-600 rounded-full flex items-center justify-center text-white font-bold text-lg">

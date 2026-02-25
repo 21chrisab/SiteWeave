@@ -465,7 +465,7 @@ function MessagesView() {
         <div className="flex h-[calc(100vh-4rem)]">
             <aside 
                 data-onboarding="message-channels"
-                className="w-80 bg-white rounded-l-xl shadow-sm border border-gray-200 flex flex-col p-4"
+                className="w-80 bg-white rounded-l-xl shadow-xs border border-gray-200 flex flex-col p-4"
             >
                 <h2 className="text-xl font-bold mb-4 px-2">Projects</h2>
                 <ul className="space-y-1 overflow-y-auto flex-1">
@@ -476,7 +476,7 @@ function MessagesView() {
                                 className={`flex justify-between items-center px-3 py-2 rounded-lg cursor-pointer ${state.selectedChannelId === channel.id ? 'bg-blue-100 text-blue-800' : 'hover:bg-gray-100'}`}>
                                 <span className="font-semibold truncate flex-1 mr-2"># {project?.name || channel.name}</span>
                                 {(unreadCounts[channel.id] > 0 || project?.notification_count > 0) && (
-                                    <span className="bg-red-500 text-white text-xs px-2 py-0.5 rounded-full flex-shrink-0">
+                                    <span className="bg-red-500 text-white text-xs px-2 py-0.5 rounded-full shrink-0">
                                         {unreadCounts[channel.id] || project?.notification_count || 0}
                                     </span>
                                 )}
@@ -485,7 +485,7 @@ function MessagesView() {
                     })}
                 </ul>
             </aside>
-            <main className="flex-1 bg-white rounded-r-xl shadow-sm border-t border-r border-b border-gray-200 flex flex-col overflow-hidden">
+            <main className="flex-1 bg-white rounded-r-xl shadow-xs border-t border-r border-b border-gray-200 flex flex-col overflow-hidden">
                 {activeChannel ? (
                     <>
                         <header className="p-4 border-b border-gray-200 flex justify-between items-center gap-4">
@@ -528,7 +528,7 @@ function MessagesView() {
                             onScroll={handleScroll}
                         >
                             {isDragging && (
-                                <div className="fixed inset-0 bg-blue-500 bg-opacity-20 z-50 flex items-center justify-center pointer-events-none">
+                                <div className="fixed inset-0 bg-blue-500/20 z-50 flex items-center justify-center pointer-events-none">
                                     <div className="bg-white rounded-lg p-8 shadow-lg border-2 border-blue-500 border-dashed">
                                         <p className="text-lg font-semibold text-blue-600">Drop file to upload</p>
                                     </div>
