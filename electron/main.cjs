@@ -57,10 +57,19 @@ if (!VITE_DEV_SERVER_URL && autoUpdater && typeof autoUpdater.autoDownload !== '
   autoUpdater.autoInstallOnAppQuit = true;
 }
 
-// Check for updates 5 seconds after app starts (gives UI time to load)
+// Check for updates 5 seconds after app starts (fallback if renderer never signals ready)
 setTimeout(() => {
-  autoUpdater.checkForUpdatesAndNotify();
+  if (autoUpdater && typeof autoUpdater.checkForUpdatesAndNotify === 'function') {
+    autoUpdater.checkForUpdatesAndNotify();
+  }
 }, 5000);
+
+// When renderer has attached update listeners, run a check immediately so we don't miss the event
+ipcMain.on('update-listeners-ready', () => {
+  if (autoUpdater && typeof autoUpdater.checkForUpdatesAndNotify === 'function') {
+    autoUpdater.checkForUpdatesAndNotify();
+  }
+});
 
 // OAuth Server for loopback method
 function startOAuthServer() {
@@ -472,13 +481,22 @@ autoUpdater.on('update-downloaded', () => {
 });
 
 autoUpdater.on('error', (error) => {
-  // Only log 404/latest.yml errors to console, don't send to UI
-  if (error.message && (error.message.includes('latest.yml') || error.message.includes('404'))) {
-    console.log('Update check: No release artifacts found (this is normal for new releases)', error.message);
+  const msg = error.message || String(error);
+  if (msg.includes('latest.yml') || msg.includes('404') || msg.includes('No published versions')) {
+    console.log('Update check: No release artifacts found (normal for new releases)', msg);
     return;
   }
-  // For other errors, log to console only (don't show UI)
-  console.error('Auto-updater error:', error.message || error);
+  console.error('Auto-updater error:', msg);
+  mainWindow?.webContents.send('update-error', msg);
+});
+
+autoUpdater.on('download-progress', (progressObj) => {
+  mainWindow?.webContents.send('update-download-progress', {
+    percent: progressObj.percent,
+    bytesPerSecond: progressObj.bytesPerSecond,
+    transferred: progressObj.transferred,
+    total: progressObj.total
+  });
 });
 
 // IPC handlers
@@ -490,20 +508,44 @@ ipcMain.handle('install-update', () => {
   autoUpdater.quitAndInstall();
 });
 
+function isRetryableUpdateError(err) {
+  const msg = (err && (err.message || err)) || '';
+  return /504|502|503|ETIMEDOUT|ECONNRESET|network/i.test(String(msg));
+}
+
 ipcMain.handle('check-for-updates', async () => {
-  try {
-    const result = await autoUpdater.checkForUpdates();
-    // Return only serializable data
+  const runCheck = async () => {
+    const result = await autoUpdater.checkForUpdatesAndNotify();
+    const info = result?.updateInfo;
+    if (info && typeof autoUpdater.downloadUpdate === 'function') {
+      autoUpdater.downloadUpdate().catch((dlErr) => {
+        console.error('Auto-updater download error:', dlErr.message || dlErr);
+        mainWindow?.webContents.send('update-error', dlErr.message || String(dlErr));
+      });
+    }
     return {
       success: true,
-      updateInfo: result?.updateInfo ? {
-        version: result.updateInfo.version,
-        releaseDate: result.updateInfo.releaseDate,
-        path: result.updateInfo.path
+      updateInfo: info ? {
+        version: info.version,
+        releaseDate: info.releaseDate,
+        path: info.path
       } : null
     };
+  };
+  try {
+    return await runCheck();
   } catch (error) {
-    // Return serializable error
+    if (isRetryableUpdateError(error)) {
+      await new Promise(r => setTimeout(r, 2500));
+      try {
+        return await runCheck();
+      } catch (retryErr) {
+        return {
+          success: false,
+          error: (retryErr.message || String(retryErr)) + ' (retry failed)'
+        };
+      }
+    }
     return {
       success: false,
       error: error.message || String(error)

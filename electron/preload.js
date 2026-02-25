@@ -87,6 +87,15 @@ try {
       }
     },
 
+    /** Tell main process that update listeners are ready so it can run the first check (avoids missing update-available) */
+    notifyUpdateListenersReady: () => {
+      try {
+        ipcRenderer.send('update-listeners-ready');
+      } catch (error) {
+        console.error('Error notifying update listeners ready:', error);
+      }
+    },
+
     // OAuth server control
     startOAuthServer: () => {
       try {

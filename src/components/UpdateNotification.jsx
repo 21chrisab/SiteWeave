@@ -1,40 +1,59 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import Icon from './Icon';
 
-/**
- * UpdateNotification - Shows notifications for app updates
- * Only works in Electron (desktop app)
- */
 function UpdateNotification() {
   const [updateAvailable, setUpdateAvailable] = useState(false);
   const [updateDownloaded, setUpdateDownloaded] = useState(false);
   const [isElectron, setIsElectron] = useState(false);
+  const [checking, setChecking] = useState(false);
+  const [checkMessage, setCheckMessage] = useState(null);
+  const [appVersion, setAppVersion] = useState('');
+  const [downloadPercent, setDownloadPercent] = useState(null);
+  const [updateError, setUpdateError] = useState(null);
+  const [newVersion, setNewVersion] = useState('');
+  const listenersReadySent = useRef(false);
 
   useEffect(() => {
-    // Check if running in Electron
-    const checkElectron = window.electronAPI !== undefined;
-    setIsElectron(checkElectron);
+    const hasElectron = typeof window !== 'undefined' && window.electronAPI !== undefined;
+    setIsElectron(hasElectron);
+    if (!hasElectron || !window.electronAPI) return;
 
-    if (!checkElectron) return;
-
-    // Listen for update events from Electron main process
-    const handleUpdateAvailable = () => {
-      console.log('Update available');
+    window.electronAPI.onUpdateAvailable(() => {
       setUpdateAvailable(true);
-    };
+      setCheckMessage(null);
+      setUpdateError(null);
+    });
 
-    const handleUpdateDownloaded = () => {
-      console.log('Update downloaded');
+    window.electronAPI.onUpdateDownloaded(() => {
       setUpdateDownloaded(true);
       setUpdateAvailable(false);
-    };
+      setDownloadPercent(null);
+      setCheckMessage(null);
+      setUpdateError(null);
+    });
 
-    // Set up listeners via electronAPI
-    if (window.electronAPI) {
-      window.electronAPI.onUpdateAvailable(handleUpdateAvailable);
-      window.electronAPI.onUpdateDownloaded(handleUpdateDownloaded);
+    window.electronAPI.onUpdateError?.((err) => {
+      setUpdateError(err);
+      setDownloadPercent(null);
+    });
+
+    window.electronAPI.onUpdateDownloadProgress?.((p) => {
+      if (p && p.percent != null) {
+        setDownloadPercent(Math.round(p.percent));
+        setUpdateError(null);
+      }
+    });
+
+    if (!listenersReadySent.current) {
+      listenersReadySent.current = true;
+      window.electronAPI.notifyUpdateListenersReady?.();
     }
   }, []);
+
+  useEffect(() => {
+    if (!isElectron || !window.electronAPI?.getAppVersion) return;
+    window.electronAPI.getAppVersion().then((v) => setAppVersion(v || ''));
+  }, [isElectron]);
 
   const handleInstallUpdate = async () => {
     if (window.electronAPI?.installUpdate) {
@@ -43,26 +62,37 @@ function UpdateNotification() {
   };
 
   const handleCheckForUpdates = async () => {
-    if (window.electronAPI?.checkForUpdates) {
+    if (!window.electronAPI?.checkForUpdates) return;
+    setChecking(true);
+    setCheckMessage(null);
+    setUpdateError(null);
+    setDownloadPercent(null);
+    try {
       const result = await window.electronAPI.checkForUpdates();
       if (result?.success) {
         if (result.updateInfo) {
           setUpdateAvailable(true);
+          setNewVersion(result.updateInfo.version || '');
         } else {
-          alert('You are running the latest version!');
+          setCheckMessage("You're on the latest version.");
         }
       } else {
-        console.error('Update check failed:', result?.error);
+        const err = result?.error || 'Check failed';
+        setCheckMessage(err.length > 80 ? err.slice(0, 77) + '...' : err);
       }
+    } finally {
+      setChecking(false);
+      setTimeout(() => setCheckMessage(null), 6000);
     }
   };
 
   const handleDismiss = () => {
     setUpdateAvailable(false);
     setUpdateDownloaded(false);
+    setDownloadPercent(null);
+    setUpdateError(null);
   };
 
-  // Don't render anything if not in Electron
   if (!isElectron) return null;
 
   // Update downloaded - ready to install
@@ -71,24 +101,24 @@ function UpdateNotification() {
       <div className="fixed bottom-4 right-4 max-w-md bg-green-50 border border-green-200 rounded-lg shadow-lg p-4 z-50 animate-slide-up">
         <div className="flex items-start gap-3">
           <div className="flex-shrink-0 w-10 h-10 bg-green-100 rounded-full flex items-center justify-center">
-            <Icon 
+            <Icon
               path="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
               className="w-6 h-6 text-green-600"
             />
           </div>
           <div className="flex-1 min-w-0">
             <h3 className="text-sm font-semibold text-green-900 mb-1">
-              Update Downloaded
+              Update Ready to Install{newVersion ? ` (v${newVersion})` : ''}
             </h3>
             <p className="text-sm text-green-700 mb-3">
-              A new version has been downloaded and is ready to install. Restart the app to apply the update.
+              A new version has been downloaded. Restart the app to apply the update.
             </p>
             <div className="flex gap-2">
               <button
                 onClick={handleInstallUpdate}
                 className="px-3 py-1.5 bg-green-600 text-white text-sm font-medium rounded hover:bg-green-700 transition-colors"
               >
-                Restart & Install
+                Restart &amp; Install
               </button>
               <button
                 onClick={handleDismiss}
@@ -98,14 +128,8 @@ function UpdateNotification() {
               </button>
             </div>
           </div>
-          <button
-            onClick={handleDismiss}
-            className="flex-shrink-0 text-green-400 hover:text-green-600 transition-colors"
-          >
-            <Icon 
-              path="M6 18L18 6M6 6l12 12"
-              className="w-5 h-5"
-            />
+          <button onClick={handleDismiss} className="flex-shrink-0 text-green-400 hover:text-green-600 transition-colors">
+            <Icon path="M6 18L18 6M6 6l12 12" className="w-5 h-5" />
           </button>
         </div>
       </div>
@@ -118,34 +142,76 @@ function UpdateNotification() {
       <div className="fixed bottom-4 right-4 max-w-md bg-blue-50 border border-blue-200 rounded-lg shadow-lg p-4 z-50 animate-slide-up">
         <div className="flex items-start gap-3">
           <div className="flex-shrink-0 w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
-            <Icon 
+            <Icon
               path="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"
               className="w-6 h-6 text-blue-600"
             />
           </div>
           <div className="flex-1 min-w-0">
             <h3 className="text-sm font-semibold text-blue-900 mb-1">
-              Update Available
+              Update Available{newVersion ? ` (v${newVersion})` : ''}
             </h3>
-            <p className="text-sm text-blue-700">
-              Downloading the latest version in the background...
-            </p>
+            {updateError ? (
+              <div>
+                <p className="text-sm text-red-600 mb-2">Download failed: {updateError.length > 60 ? updateError.slice(0, 57) + '...' : updateError}</p>
+                <button
+                  onClick={handleCheckForUpdates}
+                  disabled={checking}
+                  className="px-3 py-1.5 bg-blue-600 text-white text-sm font-medium rounded hover:bg-blue-700 transition-colors disabled:opacity-60"
+                >
+                  {checking ? 'Retrying...' : 'Try Again'}
+                </button>
+              </div>
+            ) : downloadPercent != null ? (
+              <div>
+                <p className="text-sm text-blue-700 mb-1">Downloading... {downloadPercent}%</p>
+                <div className="w-full bg-blue-200 rounded-full h-2">
+                  <div className="bg-blue-600 h-2 rounded-full transition-all" style={{ width: `${downloadPercent}%` }} />
+                </div>
+              </div>
+            ) : (
+              <p className="text-sm text-blue-700">Downloading the latest version in the background...</p>
+            )}
           </div>
-          <button
-            onClick={handleDismiss}
-            className="flex-shrink-0 text-blue-400 hover:text-blue-600 transition-colors"
-          >
-            <Icon 
-              path="M6 18L18 6M6 6l12 12"
-              className="w-5 h-5"
-            />
+          <button onClick={handleDismiss} className="flex-shrink-0 text-blue-400 hover:text-blue-600 transition-colors">
+            <Icon path="M6 18L18 6M6 6l12 12" className="w-5 h-5" />
           </button>
         </div>
       </div>
     );
   }
 
-  return null;
+  // Default: "Check for updates" button
+  return (
+    <div className="fixed bottom-4 right-4 z-40 flex flex-col items-end gap-1">
+      {checkMessage && (
+        <div className="max-w-xs rounded-lg bg-gray-800 px-3 py-2 text-xs text-white shadow-lg">
+          {checkMessage}
+        </div>
+      )}
+      <button
+        type="button"
+        onClick={handleCheckForUpdates}
+        disabled={checking}
+        className="flex items-center gap-2 rounded-full border border-gray-300 bg-white px-3 py-1.5 text-sm text-gray-600 shadow-sm transition hover:border-gray-400 hover:bg-gray-50 disabled:opacity-60"
+      >
+        {checking ? (
+          <>
+            <span className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-gray-300 border-t-gray-600" />
+            Checking...
+          </>
+        ) : (
+          <>
+            <Icon path="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" className="w-4 h-4 text-gray-500" />
+            Check for updates
+          </>
+        )}
+      </button>
+      {appVersion && (
+        <span className="text-xs text-gray-400">v{appVersion}</span>
+      )}
+    </div>
+  );
 }
 
 export default UpdateNotification;
