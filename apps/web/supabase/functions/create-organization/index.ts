@@ -77,13 +77,14 @@ serve(async (req) => {
 
     console.log(`Organization created: ${org.id}`)
 
-    // 2. Create OrganizationAdmin role
+    // 2. Create Org Admin role (same name and permissions as create-org-admin flow)
     const { data: adminRole, error: roleError } = await supabaseAdmin
       .from('roles')
       .insert({
         organization_id: org.id,
-        name: 'OrganizationAdmin',
+        name: 'Org Admin',
         permissions: {
+          can_manage_team: true,
           can_manage_users: true,
           can_manage_roles: true,
           can_create_projects: true,
@@ -94,7 +95,9 @@ serve(async (req) => {
           can_manage_contacts: true,
           can_create_tasks: true,
           can_edit_tasks: true,
-          can_delete_tasks: true
+          can_delete_tasks: true,
+          can_send_messages: true,
+          can_manage_progress_reports: true
         },
         is_system_role: true
       })

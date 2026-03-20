@@ -72,7 +72,8 @@ serve(async (req) => {
           can_create_tasks: true,
           can_edit_tasks: true,
           can_delete_tasks: true,
-          can_send_messages: true
+          can_send_messages: true,
+          can_manage_progress_reports: true
         },
         is_system_role: true
       })
@@ -138,7 +139,8 @@ serve(async (req) => {
           can_create_tasks: true,
           can_edit_tasks: true,
           can_delete_tasks: true,
-          can_send_messages: true
+          can_send_messages: true,
+          can_manage_progress_reports: true
         },
         is_system_role: true
       })

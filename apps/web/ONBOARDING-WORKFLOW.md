@@ -24,7 +24,7 @@ You type his:
 The database:
 1. Creates `Organization ID: 101`
 2. Creates the first User Profile for him linked to `organization_id: 101`
-3. Creates a default "OrganizationAdmin" role with full permissions
+3. Creates a default **Org Admin** role with full permissions (aligned with `create-org-admin`)
 4. Sends an invitation email to the owner
 5. Generates a **"One-Time Setup Link"**
 
@@ -47,12 +47,12 @@ const handleCreateOrganization = async (e) => {
     .select()
     .single();
 
-  // 2. Create OrganizationAdmin role
+  // 2. Create Org Admin role (see create-organization edge function)
   const { data: adminRole } = await supabaseClient
     .from('roles')
     .insert({
       organization_id: org.id,
-      name: 'OrganizationAdmin',
+      name: 'Org Admin',
       permissions: { can_manage_users: true, can_manage_roles: true, ... }
     })
     .select()

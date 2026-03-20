@@ -18,7 +18,8 @@ export async function logActivity({
     entityName,
     projectId,
     user,
-    details = null
+    details = null,
+    organizationId = null,
 }) {
     try {
         if (!user || !user.id) {
@@ -26,8 +27,24 @@ export async function logActivity({
             return;
         }
 
+        let orgId = organizationId;
+        if (!orgId && projectId) {
+            const { data: proj, error: projErr } = await supabaseClient
+                .from('projects')
+                .select('organization_id')
+                .eq('id', projectId)
+                .maybeSingle();
+            if (projErr) console.error('activity_log: could not resolve organization:', projErr);
+            orgId = proj?.organization_id ?? null;
+        }
+        if (!orgId) {
+            console.warn('Cannot log activity: missing organization_id (set organizationId or projectId)');
+            return;
+        }
+
         const activityData = {
             user_id: user.id,
+            organization_id: orgId,
             user_name: user.user_metadata?.full_name || user.email || 'Unknown User',
             user_avatar: user.user_metadata?.avatar_url || null,
             action,
@@ -35,7 +52,7 @@ export async function logActivity({
             entity_id: entityId,
             entity_name: entityName,
             project_id: projectId,
-            details: details ? JSON.stringify(details) : null
+            details: details ?? null,
         };
 
         const { error } = await supabaseClient
@@ -63,6 +80,7 @@ export function logTaskCreated(task, user, projectId) {
         entityId: task.id,
         entityName: task.text,
         projectId: projectId,
+        organizationId: task.organization_id,
         user,
         details: { priority: task.priority, due_date: task.due_date }
     });
@@ -75,6 +93,7 @@ export function logTaskCompleted(task, user, projectId) {
         entityId: task.id,
         entityName: task.text,
         projectId: projectId,
+        organizationId: task.organization_id,
         user
     });
 }
@@ -86,6 +105,7 @@ export function logTaskUncompleted(task, user, projectId) {
         entityId: task.id,
         entityName: task.text,
         projectId: projectId,
+        organizationId: task.organization_id,
         user
     });
 }
@@ -97,6 +117,7 @@ export function logTaskUpdated(task, user, projectId, changes) {
         entityId: task.id,
         entityName: task.text,
         projectId: projectId,
+        organizationId: task.organization_id,
         user,
         details: changes
     });
@@ -109,6 +130,7 @@ export function logTaskDeleted(task, user, projectId) {
         entityId: task.id,
         entityName: task.text,
         projectId: projectId,
+        organizationId: task.organization_id,
         user
     });
 }
@@ -120,6 +142,7 @@ export function logProjectCreated(project, user) {
         entityId: project.id,
         entityName: project.name,
         projectId: project.id,
+        organizationId: project.organization_id,
         user
     });
 }
@@ -143,8 +166,8 @@ export function logContactCreated(contact, user, projectId = null) {
         entityId: contact.id,
         entityName: contact.name,
         projectId: projectId,
+        organizationId: contact.organization_id,
         user,
         details: { role: contact.role, type: contact.type }
     });
 }
-

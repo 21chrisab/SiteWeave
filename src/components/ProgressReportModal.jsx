@@ -10,6 +10,7 @@ import {
   sendManualReport,
   exportReportToPDF,
 } from '@siteweave/core-logic';
+import { saveProgressReportPdf } from '../utils/saveProgressReportPdf';
 
 /**
  * Progress Report Modal Component
@@ -88,9 +89,26 @@ function ProgressReportModal({ projectId, onClose }) {
   const handleExportPDF = async (scheduleId) => {
     try {
       const result = await exportReportToPDF(supabaseClient, scheduleId);
-      addToast('PDF export ready', 'success');
-      // In a real implementation, would open PDF in new window or download
-      console.log('PDF result:', result);
+      if (!result?.html) {
+        addToast('Export did not return a document.', 'error');
+        return;
+      }
+      const baseTitle =
+        (result.subject || 'progress-report').replace(/[^\w\s-]/g, '').trim().slice(0, 80) ||
+        'progress-report';
+      const saveResult = await saveProgressReportPdf(result.html, {
+        defaultFilename: `${baseTitle}.pdf`,
+      });
+      if (!saveResult.ok) {
+        addToast(saveResult.error || 'Could not save PDF.', 'error');
+        return;
+      }
+      if (saveResult.canceled) return;
+      if (saveResult.method === 'electron' && saveResult.path) {
+        addToast(`PDF saved: ${saveResult.path}`, 'success');
+      } else {
+        addToast('PDF downloaded.', 'success');
+      }
     } catch (error) {
       addToast('Error exporting PDF: ' + error.message, 'error');
     }

@@ -3,9 +3,12 @@
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { buildProgressReportEmail } from '../_shared/progressReportEmailTemplates.ts'
 
-// Required for sending: set RESEND_API_KEY and verify the "from" domain (e.g. notifications@siteweave.org) in Resend.
+// RESEND_API_KEY required to send. RESEND_FROM optional (verified domain in Resend). See docs/email-deliverability-resend.md (SPF/DKIM/DMARC).
 const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY')
+const RESEND_FROM =
+  Deno.env.get('RESEND_FROM') ?? 'SiteWeave Notifications <notifications@siteweave.org>'
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
@@ -25,7 +28,43 @@ serve(async (req) => {
   }
 
   try {
-    const { schedule_id, test_email, is_test, is_manual } = await req.json()
+    const body = await req.json()
+    const { schedule_id, test_email, is_test, is_manual } = body
+
+    const supabaseUrl = Deno.env.get('SUPABASE_URL')!
+    const supabaseServiceKey = (Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '').trim()
+    const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY') ?? ''
+
+    const authHeader = req.headers.get('Authorization') ?? ''
+    const token = authHeader.replace(/^Bearer\s+/i, '').trim()
+    const isServiceRole = token === supabaseServiceKey
+
+    let callerUserId: string | null = null
+    if (!isServiceRole) {
+      if (!token) {
+        return new Response(JSON.stringify({ error: 'Missing authorization' }), {
+          status: 401,
+          headers: { 'Content-Type': 'application/json', ...corsHeaders },
+        })
+      }
+      if (!supabaseAnonKey) {
+        return new Response(JSON.stringify({ error: 'Server misconfiguration: missing anon key' }), {
+          status: 500,
+          headers: { 'Content-Type': 'application/json', ...corsHeaders },
+        })
+      }
+      const supabaseJwt = createClient(supabaseUrl, supabaseAnonKey, {
+        auth: { persistSession: false, autoRefreshToken: false },
+      })
+      const { data: { user }, error: jwtError } = await supabaseJwt.auth.getUser(token)
+      if (jwtError || !user) {
+        return new Response(
+          JSON.stringify({ error: 'Invalid or expired session. Sign in again.' }),
+          { status: 401, headers: { 'Content-Type': 'application/json', ...corsHeaders } },
+        )
+      }
+      callerUserId = user.id
+    }
 
     if (!schedule_id) {
       return new Response(
@@ -40,8 +79,6 @@ serve(async (req) => {
       )
     }
 
-    const supabaseUrl = Deno.env.get('SUPABASE_URL')!
-    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
     const supabase = createClient(supabaseUrl, supabaseServiceKey)
 
     // Fetch schedule configuration
@@ -64,8 +101,52 @@ serve(async (req) => {
       )
     }
 
-    // Check approval status if required (skip for test sends)
-    if (!is_test && schedule.requires_approval && schedule.approval_status !== 'approved') {
+    // User-initiated calls: must belong to the schedule's org and have permission
+    if (!isServiceRole && callerUserId) {
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('organization_id, role_id, is_super_admin')
+        .eq('id', callerUserId)
+        .maybeSingle()
+
+      if (!profile) {
+        return new Response(JSON.stringify({ error: 'Profile not found' }), {
+          status: 403,
+          headers: { 'Content-Type': 'application/json', ...corsHeaders },
+        })
+      }
+      if (!profile.is_super_admin) {
+        if (profile.organization_id !== schedule.organization_id) {
+          return new Response(JSON.stringify({ error: 'Not allowed for this organization' }), {
+            status: 403,
+            headers: { 'Content-Type': 'application/json', ...corsHeaders },
+          })
+        }
+        if (!profile.role_id) {
+          return new Response(JSON.stringify({ error: 'No role assigned' }), {
+            status: 403,
+            headers: { 'Content-Type': 'application/json', ...corsHeaders },
+          })
+        }
+        const { data: roleRow } = await supabase
+          .from('roles')
+          .select('permissions')
+          .eq('id', profile.role_id)
+          .maybeSingle()
+
+        const perms = roleRow?.permissions as Record<string, unknown> | undefined
+        if (perms?.can_manage_progress_reports !== true) {
+          return new Response(
+            JSON.stringify({ error: 'Missing permission to send progress reports' }),
+            { status: 403, headers: { 'Content-Type': 'application/json', ...corsHeaders } },
+          )
+        }
+      }
+    }
+
+    // Check approval status if required (skip for test sends and explicit manual sends)
+    const skipApprovalCheck = is_test || is_manual
+    if (!skipApprovalCheck && schedule.requires_approval && schedule.approval_status !== 'approved') {
       return new Response(
         JSON.stringify({ error: 'Report requires approval before sending' }),
         { 
@@ -78,15 +159,41 @@ serve(async (req) => {
       )
     }
 
-    // Generate report data using functions.invoke() which handles
-    // the apikey + Authorization headers automatically.
-    const { data: generateResult, error: generateError } = await supabase.functions.invoke(
-      'generate-progress-report',
-      { body: { schedule_id } }
-    )
+    // Call generate-progress-report via fetch (edge-to-edge functions.invoke is unreliable:
+    // inner calls often miss apikey / auth and return non-2xx without a clear body on the client).
+    const baseUrl = supabaseUrl.replace(/\/$/, '')
+    const genResponse = await fetch(`${baseUrl}/functions/v1/generate-progress-report`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${supabaseServiceKey}`,
+        apikey: supabaseServiceKey,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ schedule_id }),
+    })
 
-    if (generateError) {
-      throw new Error(`Failed to generate report: ${generateError.message}`)
+    let generateResult: Record<string, unknown> | null = null
+    try {
+      generateResult = await genResponse.json() as Record<string, unknown>
+    } catch {
+      return new Response(
+        JSON.stringify({ error: 'Generate report returned invalid JSON' }),
+        {
+          status: 502,
+          headers: { 'Content-Type': 'application/json', ...corsHeaders },
+        },
+      )
+    }
+
+    if (!genResponse.ok) {
+      const errMsg =
+        typeof generateResult?.error === 'string'
+          ? generateResult.error
+          : `Generate report failed (${genResponse.status})`
+      return new Response(JSON.stringify({ error: errMsg, details: generateResult }), {
+        status: genResponse.status >= 400 && genResponse.status < 600 ? genResponse.status : 502,
+        headers: { 'Content-Type': 'application/json', ...corsHeaders },
+      })
     }
 
     const report_data = generateResult?.report_data
@@ -116,11 +223,11 @@ serve(async (req) => {
       email_signature: null
     }
 
-    // Generate email template based on template type
-    const emailContent = generateEmailTemplate(
-      filtered_data,
+    const emailContent = buildProgressReportEmail(
+      report_data as Record<string, unknown>,
+      filtered_data as Record<string, unknown>,
       schedule,
-      brandingData
+      brandingData,
     )
 
     // Determine recipients (null-safe: relation may be missing or empty)
@@ -158,7 +265,7 @@ serve(async (req) => {
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          from: 'SiteWeave Notifications <notifications@siteweave.org>',
+          from: RESEND_FROM,
           to: recipients,
           subject: emailContent.subject,
           html: emailContent.html,
@@ -252,33 +359,6 @@ serve(async (req) => {
     )
   }
 })
-
-// Generate email template based on template type
-function generateEmailTemplate(reportData, schedule, branding) {
-  // Import template generators (simplified - in real implementation would use shared module)
-  const templateType = schedule.template_type || 'internal_detailed'
-  
-  // For now, return a basic structure
-  // In production, this would call the actual template generator functions
-  const subject = schedule.custom_subject || `Progress Report: ${reportData.project_name || reportData.organization_name}`
-  
-  const html = `
-    <!DOCTYPE html>
-    <html>
-    <head><meta charset="utf-8"></head>
-    <body style="font-family: Arial, sans-serif; padding: 20px;">
-      <h1>${subject}</h1>
-      <p>This is a progress report for ${reportData.organization_name}</p>
-      ${schedule.custom_message ? `<p>${schedule.custom_message}</p>` : ''}
-      <p>Report generated on ${new Date().toLocaleDateString()}</p>
-    </body>
-    </html>
-  `
-  
-  const text = `${subject}\n\nThis is a progress report for ${reportData.organization_name}\n\nReport generated on ${new Date().toLocaleDateString()}`
-  
-  return { subject, html, text }
-}
 
 // frequency_value: weekly/bi-weekly = day of week 0-6 (0=Sunday); monthly = 1, 15, or -1 (last day)
 function calculateNextSendDate(frequency, frequencyValue, lastSentAt) {

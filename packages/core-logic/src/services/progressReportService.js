@@ -4,6 +4,46 @@
  */
 
 /**
+ * @param {import('@supabase/supabase-js').FunctionsHttpError | Error | null} error
+ * @returns {string}
+ */
+function messageFromFunctionsError(error) {
+  if (!error) return 'Unknown error';
+  const base = error.message || String(error);
+  const body = error.context?.body;
+  if (!body) return base;
+  try {
+    const parsed = typeof body === 'string' ? JSON.parse(body) : body;
+    if (parsed && typeof parsed.error === 'string') return parsed.error;
+    if (parsed && typeof parsed.message === 'string') return parsed.message;
+  } catch {
+    /* ignore */
+  }
+  return base;
+}
+
+/**
+ * Fresh access token for Edge Function calls (explicit header helps Electron / some clients).
+ * @param {import('@supabase/supabase-js').SupabaseClient} supabase
+ * @returns {Promise<Record<string, string>>}
+ */
+async function invokeAuthHeaders(supabase) {
+  let { data: { session }, error } = await supabase.auth.getSession();
+  if (error || !session?.access_token) {
+    throw new Error('You must be signed in to use this feature.');
+  }
+  const expMs = (session.expires_at ?? 0) * 1000;
+  if (expMs < Date.now() + 30_000) {
+    const { data: refreshed, error: refErr } = await supabase.auth.refreshSession();
+    if (refErr || !refreshed.session?.access_token) {
+      throw new Error('Session expired. Please sign in again.');
+    }
+    session = refreshed.session;
+  }
+  return { Authorization: `Bearer ${session.access_token}` };
+}
+
+/**
  * Create a new progress report schedule
  * @param {import('@supabase/supabase-js').SupabaseClient} supabase - Supabase client
  * @param {Object} scheduleData - Schedule configuration
@@ -350,7 +390,9 @@ export function formatFrequencyLabel(frequency, frequencyValue = null) {
  * @returns {Promise<Object>} Result from edge function
  */
 export async function testSendProgressReport(supabase, scheduleId, testEmail) {
+  const headers = await invokeAuthHeaders(supabase);
   const { data, error } = await supabase.functions.invoke('send-progress-report', {
+    headers,
     body: {
       schedule_id: scheduleId,
       test_email: testEmail,
@@ -358,7 +400,7 @@ export async function testSendProgressReport(supabase, scheduleId, testEmail) {
     }
   });
   
-  if (error) throw error;
+  if (error) throw new Error(messageFromFunctionsError(error));
   return data;
 }
 
@@ -369,14 +411,16 @@ export async function testSendProgressReport(supabase, scheduleId, testEmail) {
  * @returns {Promise<Object>} Result from edge function
  */
 export async function sendManualReport(supabase, scheduleId) {
+  const headers = await invokeAuthHeaders(supabase);
   const { data, error } = await supabase.functions.invoke('send-progress-report', {
+    headers,
     body: {
       schedule_id: scheduleId,
       is_manual: true
     }
   });
   
-  if (error) throw error;
+  if (error) throw new Error(messageFromFunctionsError(error));
   
   // Update last_sent_at
   await updateProgressReportSchedule(supabase, scheduleId, {
@@ -393,12 +437,14 @@ export async function sendManualReport(supabase, scheduleId) {
  * @returns {Promise<string>} PDF URL or buffer
  */
 export async function exportReportToPDF(supabase, scheduleId) {
+  const headers = await invokeAuthHeaders(supabase);
   const { data, error } = await supabase.functions.invoke('export-progress-report-pdf', {
+    headers,
     body: {
       schedule_id: scheduleId
     }
   });
   
-  if (error) throw error;
+  if (error) throw new Error(messageFromFunctionsError(error));
   return data;
 }

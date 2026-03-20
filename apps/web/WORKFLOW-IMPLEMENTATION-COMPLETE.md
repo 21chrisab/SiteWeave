@@ -16,7 +16,7 @@ The **Construction Industry B2B Onboarding Workflow** has been fully implemented
 - Input: Company Name, Owner Name, Owner Email
 - Automatically creates:
   - Organization record
-  - OrganizationAdmin role with full permissions
+  - Org Admin role with full permissions
   - Contact record for the owner
   - Invitation with setup link
 - Displays one-time setup link to hand to the client

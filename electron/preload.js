@@ -125,6 +125,16 @@ try {
       }
     },
 
+    /** Save full HTML document as a real PDF via Chromium print (avoids window.open / about: issues). */
+    saveHtmlAsPdf: (payload) => {
+      try {
+        return ipcRenderer.invoke('save-html-as-pdf', payload);
+      } catch (error) {
+        console.error('Error saving HTML as PDF:', error);
+        return Promise.resolve({ success: false, error: String(error) });
+      }
+    },
+
     // OAuth callback sender
     sendOAuthCallback: (data) => {
       try {
@@ -172,6 +182,7 @@ try {
     startOAuthServer: () => Promise.resolve(),
     stopOAuthServer: () => Promise.resolve(),
     openExternal: (url) => window.open(url, '_blank'),
+    saveHtmlAsPdf: () => Promise.resolve({ unsupported: true }),
     sendOAuthCallback: () => Promise.resolve(),
     exchangeOAuthToken: () => Promise.reject(new Error('exchangeOAuthToken not available in fallback'))
   });

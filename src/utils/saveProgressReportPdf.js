@@ -1,0 +1,99 @@
+/**
+ * Save progress report HTML as a real .pdf file.
+ *
+ * - **Electron**: uses a hidden BrowserWindow + printToPDF + Save dialog (no window.open — avoids
+ *   `about:` / shell.openExternal issues when popups are denied).
+ * - **Browser / fallback**: html2canvas + jsPDF (downloads a PDF; may be large for very long reports).
+ */
+
+/**
+ * @param {string} html - Full HTML document from export edge function
+ * @param {object} [options]
+ * @param {string} [options.defaultFilename] - e.g. "Q1 Report.pdf"
+ * @returns {Promise<{ ok: true, path?: string, canceled?: boolean, method?: 'electron'|'jspdf' } | { ok: false, error: string }>}
+ */
+export async function saveProgressReportPdf(html, options = {}) {
+  if (!html || typeof html !== 'string') {
+    return { ok: false, error: 'No report content to save.' };
+  }
+
+  let defaultFilename = options.defaultFilename || 'progress-report.pdf';
+  defaultFilename = defaultFilename.replace(/[\\/]/g, '_');
+  if (!defaultFilename.toLowerCase().endsWith('.pdf')) {
+    defaultFilename = defaultFilename.replace(/\.html$/i, '') + '.pdf';
+  }
+
+  if (typeof window !== 'undefined' && window.electronAPI?.saveHtmlAsPdf) {
+    const res = await window.electronAPI.saveHtmlAsPdf({
+      html,
+      defaultFilename,
+    });
+    if (res?.canceled) return { ok: true, canceled: true, method: 'electron' };
+    if (res?.unsupported) {
+      /* preload fallback — use jsPDF path */
+    } else if (res?.success) {
+      return { ok: true, path: res.path, method: 'electron' };
+    } else if (res?.error) {
+      return { ok: false, error: res.error };
+    }
+  }
+
+  try {
+    await savePdfWithJsPdf(html, defaultFilename);
+    return { ok: true, method: 'jspdf' };
+  } catch (e) {
+    return { ok: false, error: e?.message || String(e) };
+  }
+}
+
+async function savePdfWithJsPdf(html, filename) {
+  const [jspdfMod, html2canvasMod] = await Promise.all([
+    import('jspdf'),
+    import('html2canvas'),
+  ]);
+  const JsPDF = jspdfMod.default;
+  const html2canvas = html2canvasMod.default;
+
+  const parser = new DOMParser();
+  const parsed = parser.parseFromString(html, 'text/html');
+
+  const wrap = document.createElement('div');
+  wrap.style.cssText =
+    'position:fixed;left:-9999px;top:0;width:794px;max-width:794px;background:#ffffff;box-sizing:border-box;padding:16px;';
+  wrap.append(...Array.from(parsed.body.childNodes));
+  document.body.appendChild(wrap);
+
+  await new Promise((r) => setTimeout(r, 600));
+
+  const canvas = await html2canvas(wrap, {
+    scale: 2,
+    useCORS: true,
+    allowTaint: true,
+    logging: false,
+    windowWidth: 794,
+  });
+
+  document.body.removeChild(wrap);
+
+  const pdf = new JsPDF({ orientation: 'p', unit: 'mm', format: 'a4' });
+  const pageWidth = pdf.internal.pageSize.getWidth();
+  const pageHeight = pdf.internal.pageSize.getHeight();
+  const imgWidth = pageWidth;
+  const imgHeight = (canvas.height * imgWidth) / canvas.width;
+  const imgData = canvas.toDataURL('image/jpeg', 0.92);
+
+  let heightLeft = imgHeight;
+  let position = 0;
+
+  pdf.addImage(imgData, 'JPEG', 0, position, imgWidth, imgHeight);
+  heightLeft -= pageHeight;
+
+  while (heightLeft > 0) {
+    position = heightLeft - imgHeight;
+    pdf.addPage();
+    pdf.addImage(imgData, 'JPEG', 0, position, imgWidth, imgHeight);
+    heightLeft -= pageHeight;
+  }
+
+  pdf.save(filename);
+}

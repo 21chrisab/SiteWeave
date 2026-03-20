@@ -30,14 +30,11 @@ function TaskModal({ project, onClose, onSave, isLoading = false }) {
     
     // Also include org admins even if not in project_contacts
     // This allows org admins to be assigned tasks on any project in their organization
-    // Check for both "Org Admin" and "OrganizationAdmin" role names
-    const orgAdmins = state.contacts.filter(contact => 
-        contact.is_internal && 
+    const orgAdmins = state.contacts.filter(contact =>
+        contact.is_internal &&
         contact.organization_id === project.organization_id &&
-        contact.role_name && 
-        (contact.role_name.toLowerCase() === 'org admin' || 
-         contact.role_name.toLowerCase() === 'organizationadmin' ||
-         contact.role_name.toLowerCase().includes('admin'))
+        contact.role_name &&
+        contact.role_name.toLowerCase() === 'org admin'
     );
     
     // Combine and deduplicate by contact id

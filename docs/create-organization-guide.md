@@ -132,8 +132,8 @@ When you call the edge function, it:
    - Slug: "miller-construction"
    - Status: Active
 
-2. **Creates OrganizationAdmin Role**
-   - Full permissions
+2. **Creates Org Admin Role**
+   - Full permissions (same as the `create-org-admin` flow), including progress reports
    - Linked to organization
 
 3. **Creates Contact**

@@ -1,4 +1,5 @@
-const { app, BrowserWindow, Menu, shell, protocol, ipcMain } = require('electron');
+// NOTE: Vite bundles electron/main.cjs as dist-electron/main.cjs (package.json "main"). Keep IPC handlers in sync with main.cjs.
+const { app, BrowserWindow, Menu, shell, protocol, ipcMain, dialog } = require('electron');
 const { autoUpdater } = require('electron-updater');
 const path = require('path');
 const { createServer } = require('http');
@@ -453,6 +454,75 @@ autoUpdater.on('download-progress', (progressObj) => {
 });
 
 // IPC handlers
+ipcMain.handle('save-html-as-pdf', async (event, { html, defaultFilename }) => {
+  if (!html || typeof html !== 'string') {
+    return { success: false, error: 'Missing HTML content' };
+  }
+
+  let baseName = (defaultFilename && String(defaultFilename).replace(/[\\/]/g, '_')) || 'progress-report.pdf';
+  if (!baseName.toLowerCase().endsWith('.pdf')) baseName += '.pdf';
+  const defaultPath = path.join(app.getPath('downloads'), baseName);
+
+  const { filePath, canceled } = await dialog.showSaveDialog(mainWindow || undefined, {
+    title: 'Save progress report as PDF',
+    defaultPath,
+    filters: [{ name: 'PDF', extensions: ['pdf'] }],
+  });
+
+  if (canceled || !filePath) {
+    return { canceled: true };
+  }
+
+  const tmpHtml = path.join(app.getPath('temp'), `siteweave-report-${Date.now()}.html`);
+  fs.writeFileSync(tmpHtml, html, 'utf8');
+
+  const hidden = new BrowserWindow({
+    show: false,
+    width: 1024,
+    height: 1400,
+    webPreferences: {
+      nodeIntegration: false,
+      contextIsolation: true,
+      webSecurity: false,
+    },
+  });
+
+  try {
+    await new Promise((resolve, reject) => {
+      const t = setTimeout(() => reject(new Error('Timed out loading report for PDF')), 30000);
+      hidden.webContents.once('did-finish-load', () => {
+        clearTimeout(t);
+        resolve();
+      });
+      hidden.webContents.once('did-fail-load', (_e, _code, desc) => {
+        clearTimeout(t);
+        reject(new Error(desc || 'Failed to load report'));
+      });
+      hidden.loadFile(tmpHtml).catch(reject);
+    });
+
+    await new Promise((r) => setTimeout(r, 400));
+
+    const pdfBuffer = await hidden.webContents.printToPDF({
+      printBackground: true,
+      margins: { marginType: 'default' },
+    });
+
+    fs.writeFileSync(filePath, pdfBuffer);
+    return { success: true, path: filePath };
+  } catch (err) {
+    console.error('save-html-as-pdf:', err);
+    return { success: false, error: err.message || String(err) };
+  } finally {
+    hidden.destroy();
+    try {
+      fs.unlinkSync(tmpHtml);
+    } catch (_) {
+      /* ignore */
+    }
+  }
+});
+
 ipcMain.handle('get-app-version', () => {
   return app.getVersion();
 });

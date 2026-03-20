@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useAppContext, supabaseClient } from '../context/AppContext';
 import { useToast } from '../context/ToastContext';
@@ -123,7 +123,15 @@ function ProjectDetailsView() {
 
     const project = projects.find(p => p.id === state.selectedProjectId);
     const allTasksFromState = (tasksState || []).filter(t => t.project_id === state.selectedProjectId);
-    const allTasks = projectTasksList.length > 0 ? projectTasksList : allTasksFromState;
+    // Prefer global state so Supabase realtime (and other views) update the list without navigating away.
+    // Local fetch still hydrates state via SET_TASKS_LOADED; empty project uses [] from either source.
+    const allTasks =
+      allTasksFromState.length > 0 ? allTasksFromState : projectTasksList;
+
+    const projectTasksSlice = useMemo(
+      () => (state.tasks || []).filter((t) => t.project_id === state.selectedProjectId),
+      [state.tasks, state.selectedProjectId],
+    );
 
     // Gantt tab: fetch tasks and dependencies from Supabase for current project
     const [ganttTasks, setGanttTasks] = useState([]);
@@ -178,7 +186,7 @@ function ProjectDetailsView() {
             }
         })();
         return () => ac.abort();
-    }, [activeTab, state.selectedProjectId]);
+    }, [activeTab, state.selectedProjectId, projectTasksSlice]);
     
     // Get all project crew members (any contact linked to this project)
     const crewMembers = contacts.filter(contact => 

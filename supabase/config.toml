@@ -315,6 +315,18 @@ authorization_url_path = "/oauth/consent"
 # Allow dynamic client registration
 allow_dynamic_registration = false
 
+# Allow the app (Electron) to call these with a user access token without the platform JWT
+# gate rejecting valid sessions before the handler runs. Authorization is enforced in each function.
+[functions.send-progress-report]
+verify_jwt = false
+
+# Service role uses sb_secret_* keys; the platform JWT verifier rejects them before the handler runs.
+[functions.generate-progress-report]
+verify_jwt = false
+
+[functions.export-progress-report-pdf]
+verify_jwt = false
+
 [edge_runtime]
 enabled = true
 # Supported request policies: `oneshot`, `per_worker`.

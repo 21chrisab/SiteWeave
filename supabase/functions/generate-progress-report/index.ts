@@ -23,7 +23,7 @@ serve(async (req) => {
   }
 
   const authHeader = req.headers.get('Authorization')
-  if (!authHeader) {
+  if (!authHeader?.startsWith('Bearer ')) {
     return new Response(
       JSON.stringify({ error: 'Missing authorization header' }),
       { status: 401, headers: { 'Content-Type': 'application/json', ...corsHeaders } }
@@ -31,8 +31,17 @@ serve(async (req) => {
   }
 
   const supabaseUrl = Deno.env.get('SUPABASE_URL')!
-  const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+  const serviceKey = (Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '').trim()
   const token = authHeader.replace(/^Bearer\s+/i, '').trim()
+
+  // Server-to-server only. New Supabase service keys (sb_secret_*) are not user JWTs — the edge
+  // gateway's verify_jwt must be false, and we authenticate here by comparing to the service role.
+  if (!serviceKey || token !== serviceKey) {
+    return new Response(JSON.stringify({ error: 'Forbidden' }), {
+      status: 403,
+      headers: { 'Content-Type': 'application/json', ...corsHeaders },
+    })
+  }
 
   // Parse body
   let body: any = {}
@@ -44,22 +53,6 @@ serve(async (req) => {
       { status: 400, headers: { 'Content-Type': 'application/json', ...corsHeaders } }
     )
   }
-
-  // Authenticate: try to resolve the user from the JWT.
-  // When called internally (via functions.invoke with service-role key), getUser will fail
-  // because the token is a service key, not a JWT. That's fine — internal calls are trusted.
-  const supabaseAuth = createClient(supabaseUrl, supabaseServiceKey, { auth: { persistSession: false } })
-  const { data: { user: resolvedUser }, error: authError } = await supabaseAuth.auth.getUser(token)
-
-  // If we couldn't resolve a user and the token isn't the service key, reject.
-  if (!resolvedUser && token !== supabaseServiceKey) {
-    return new Response(
-      JSON.stringify({ error: 'Unauthorized' }),
-      { status: 401, headers: { 'Content-Type': 'application/json', ...corsHeaders } }
-    )
-  }
-
-  const user = resolvedUser || null
 
   try {
     const { schedule_id } = body
@@ -77,7 +70,7 @@ serve(async (req) => {
       )
     }
 
-    const supabase = createClient(supabaseUrl, supabaseServiceKey)
+    const supabase = createClient(supabaseUrl, serviceKey)
 
     // Fetch schedule configuration
     const { data: schedule, error: scheduleError } = await supabase
@@ -99,13 +92,18 @@ serve(async (req) => {
       )
     }
 
-    // Determine time range (since last report or last 7 days)
-    const lastSentAt = schedule.last_sent_at 
-      ? new Date(schedule.last_sent_at)
-      : new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) // Default to last 7 days
-    
-    const startDate = lastSentAt.toISOString()
-    const endDate = new Date().toISOString()
+    // Time range: since last send, but never shorter than MIN_WINDOW (avoids empty reports after a recent send/export).
+    const endMs = Date.now()
+    const sevenDaysMs = 7 * 24 * 60 * 60 * 1000
+    const MIN_WINDOW_MS = sevenDaysMs
+    let startMs = schedule.last_sent_at
+      ? new Date(schedule.last_sent_at).getTime()
+      : endMs - sevenDaysMs
+    if (endMs - startMs < MIN_WINDOW_MS) {
+      startMs = endMs - MIN_WINDOW_MS
+    }
+    const startDate = new Date(startMs).toISOString()
+    const endDate = new Date(endMs).toISOString()
 
     // Fetch organization and project info
     const { data: organization } = await supabase
@@ -197,12 +195,18 @@ serve(async (req) => {
     const phaseProgress = []
 
     activities?.forEach(activity => {
-      if (activity.entity_type === 'project' && activity.action === 'updated' && activity.details?.status) {
+      const det = parseActivityDetails(activity)
+
+      if (
+        activity.entity_type === 'project' &&
+        activity.action === 'updated' &&
+        (det.status != null || det.new_status != null)
+      ) {
         statusChanges.push({
           project_id: activity.project_id,
           project_name: activity.entity_name || project?.name || 'Project',
-          old_status: activity.details.old_status,
-          new_status: activity.details.new_status || activity.details.status,
+          old_status: det.old_status,
+          new_status: det.new_status ?? det.status,
           changed_by: activity.user_name,
           changed_at: activity.created_at
         })
@@ -224,19 +228,24 @@ serve(async (req) => {
 
       if (activity.entity_type === 'project_phase' && activity.action === 'updated') {
         const phase = phases.find(p => p.id === activity.entity_id)
-        if (phase && activity.details?.old_progress !== undefined) {
+        if (phase && det.old_progress !== undefined) {
           phaseProgress.push({
             id: phase.id,
             name: phase.name,
-            old_progress: activity.details.old_progress,
-            progress: activity.details.new_progress || phase.progress,
-            project_name: phase.projects?.name || project?.name
+            old_progress: det.old_progress,
+            progress: det.new_progress ?? phase.progress,
+            project_name: phase.projects?.name || project?.name,
+            is_client_visible: phase.is_client_visible,
           })
         }
       }
     })
 
-    // Build raw report data
+    const visiblePhases = phases.filter((p: { is_client_visible?: boolean }) => p.is_client_visible !== false)
+    const openTasks = tasks.filter((t: { completed?: boolean }) => !t.completed)
+    const doneTasks = tasks.filter((t: { completed?: boolean }) => t.completed)
+
+    // When activity_log has little in the window, still show a useful client-facing snapshot.
     const rawReportData = {
       organization_id: schedule.organization_id,
       organization_name: organization?.name || 'Organization',
@@ -248,7 +257,20 @@ serve(async (req) => {
       completed_tasks: completedTasks,
       phase_progress: phaseProgress,
       all_tasks: tasks,
-      all_phases: phases
+      all_phases: phases,
+      snapshot: {
+        open_tasks: openTasks.slice(0, 25).map((t: { text?: string; due_date?: string; contacts?: { name?: string } | null }) => ({
+          text: t.text,
+          due_date: t.due_date,
+          assignee: t.contacts?.name ?? null,
+        })),
+        phases: visiblePhases.map((p: { name?: string; progress?: number }) => ({
+          name: p.name,
+          progress: typeof p.progress === 'number' ? p.progress : 0,
+        })),
+        open_total: openTasks.length,
+        completed_total: doneTasks.length,
+      },
     }
 
     // Apply audience-based filtering
@@ -381,4 +403,21 @@ function generateProjectSummary(data) {
   
   // For org-wide reports, would aggregate all projects
   return []
+}
+
+function parseActivityDetails(activity: { details?: unknown }): Record<string, unknown> {
+  const d = activity?.details
+  if (d == null) return {}
+  if (typeof d === 'object' && !Array.isArray(d)) return d as Record<string, unknown>
+  if (typeof d === 'string') {
+    try {
+      const parsed = JSON.parse(d) as unknown
+      return typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)
+        ? (parsed as Record<string, unknown>)
+        : {}
+    } catch {
+      return {}
+    }
+  }
+  return {}
 }

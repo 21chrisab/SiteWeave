@@ -1,3 +1,6 @@
+// AUTO-GENERATED from src/utils/progressReportEmailTemplates.js — run: node scripts/sync-progress-report-templates.mjs
+// deno-lint-ignore-file no-explicit-any
+
 /**
  * Progress Report Email Templates
  * Generates HTML email templates for different audience types
@@ -6,8 +9,6 @@
  * after changing this file so `send-progress-report` / `export-progress-report-pdf` stay in sync.
  */
 
-import i18n from '../i18n/config';
-
 /**
  * Generate client report email template
  * @param {Object} reportData - Filtered report data
@@ -15,7 +16,7 @@ import i18n from '../i18n/config';
  * @param {Object} branding - Organization branding
  * @returns {Object} {subject, html, text}
  */
-export function generateClientReportEmail(reportData, schedule, branding) {
+function generateClientReportEmail(reportData, schedule, branding) {
   const subject = schedule.custom_subject || `Progress Update: ${reportData.project_name || 'Your Project'}`;
   const period = formatReportPeriod(reportData.start_date, reportData.end_date);
 
@@ -204,7 +205,7 @@ export function generateClientReportEmail(reportData, schedule, branding) {
  * @param {Object} branding - Organization branding
  * @returns {Object} {subject, html, text}
  */
-export function generateInternalReportEmail(reportData, schedule, branding) {
+function generateInternalReportEmail(reportData, schedule, branding) {
   const subject = schedule.custom_subject || `Internal Progress Report: ${reportData.project_name || 'All Projects'}`;
   const period = formatReportPeriod(reportData.start_date, reportData.end_date);
   
@@ -342,7 +343,7 @@ export function generateInternalReportEmail(reportData, schedule, branding) {
  * @param {Object} branding - Organization branding
  * @returns {Object} {subject, html, text}
  */
-export function generateExecutiveReportEmail(reportData, schedule, branding) {
+function generateExecutiveReportEmail(reportData, schedule, branding) {
   const subject = schedule.custom_subject || `Executive Brief: ${reportData.organization_name || 'Organization'} Status`;
   const period = formatReportPeriod(reportData.start_date, reportData.end_date);
   
@@ -475,7 +476,7 @@ function escapeHtml(text) {
 function formatDate(dateString) {
   if (!dateString) return '';
   const date = new Date(dateString);
-  return date.toLocaleDateString(i18n.language || 'en', { month: 'short', day: 'numeric', year: 'numeric' });
+  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
 function formatReportPeriod(startDate, endDate) {
@@ -543,4 +544,19 @@ function generateTextVersion(reportData, schedule, period) {
   }
 
   return text;
+}
+
+export function buildProgressReportEmail(reportData, filteredData, schedule, branding) {
+  const audience = schedule.report_audience_type || 'internal';
+  if (audience === 'client') return generateClientReportEmail(filteredData, schedule, branding);
+  if (audience === 'executive') return generateExecutiveReportEmail(filteredData, schedule, branding);
+  const enriched = {
+    ...reportData,
+    summary_stats: {
+      tasks_completed: Array.isArray(reportData.completed_tasks) ? reportData.completed_tasks.length : 0,
+      status_changes: Array.isArray(reportData.status_changes) ? reportData.status_changes.length : 0,
+      phases_updated: Array.isArray(reportData.phase_progress) ? reportData.phase_progress.length : 0,
+    },
+  };
+  return generateInternalReportEmail(enriched, schedule, branding);
 }
