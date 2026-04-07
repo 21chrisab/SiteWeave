@@ -1,0 +1,5 @@
+{
+  "Endpoint": "https://cus.codesigning.azure.net",
+  "CodeSigningAccountName": "siteweave-signing",
+  "CertificateProfileName": "SiteWeave-Cert"
+}

@@ -20,6 +20,7 @@ const PERMISSION_GROUPS = [
       { key: 'can_edit_tasks', label: 'Edit Tasks', description: 'Modify existing tasks' },
       { key: 'can_delete_tasks', label: 'Delete Tasks', description: 'Remove tasks' },
       { key: 'can_assign_tasks', label: 'Assign Tasks', description: 'Assign tasks to team members' },
+      { key: 'can_view_activity_history', label: 'View Activity History', description: 'See recent activity, toasts, and full activity logs for projects you can access' },
     ]
   },
   {
@@ -55,6 +56,7 @@ const DEFAULT_PERMISSIONS = {
   can_manage_roles: false,
   can_manage_contacts: false,
   can_manage_users: false,
+  can_view_activity_history: false,
 };
 
 function RoleCreationModal({ show, onClose, onSave, existingRole = null, isLoading = false }) {

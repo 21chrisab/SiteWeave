@@ -161,10 +161,10 @@ serve(async (req) => {
 
       phases = phasesData || []
     } else {
-      // Organization-wide: get all projects
+      // Organization-wide: get all projects (include status for exec metrics)
       const { data: projectsData } = await supabase
         .from('projects')
-        .select('id, name')
+        .select('id, name, status, status_color, due_date')
         .eq('organization_id', schedule.organization_id)
 
       if (projectsData && projectsData.length > 0) {
@@ -245,8 +245,39 @@ serve(async (req) => {
     const openTasks = tasks.filter((t: { completed?: boolean }) => !t.completed)
     const doneTasks = tasks.filter((t: { completed?: boolean }) => t.completed)
 
+    // ── Vitals (deterministic, no AI) ─────────────────────────────────────────
+    // Current active phase = first client-visible phase with progress < 100,
+    // ordered by phase.order (already sorted ascending).
+    const activePhase = visiblePhases.find((p: { progress?: number }) => (p.progress ?? 0) < 100)
+    // tasks_completed_count = all tasks marked done in the DB (same as snapshot.completed_total).
+    // Period-only completions stay in `completed_tasks` for the "Completed this period" section.
+    const vitals = {
+      tasks_completed_count: doneTasks.length,
+      open_tasks_count: openTasks.length,
+      current_phase: (activePhase as any)?.name ?? null,
+      phase_progress_pct: typeof (activePhase as any)?.progress === 'number' ? (activePhase as any).progress : null,
+    }
+
+    // ── 14-day lookahead ──────────────────────────────────────────────────────
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+    const lookaheadCutoff = new Date(today.getTime() + 14 * 24 * 60 * 60 * 1000)
+    const lookahead = openTasks
+      .filter((t: { start_date?: string }) => {
+        if (!t.start_date) return false
+        const d = new Date(t.start_date)
+        return d >= today && d <= lookaheadCutoff
+      })
+      .sort((a: any, b: any) => new Date(a.start_date).getTime() - new Date(b.start_date).getTime())
+      .slice(0, 10)
+      .map((t: { text?: string; start_date?: string; contacts?: { name?: string } | null }) => ({
+        text: t.text,
+        start_date: t.start_date,
+        assignee: (t.contacts as any)?.name ?? null,
+      }))
+
     // When activity_log has little in the window, still show a useful client-facing snapshot.
-    const rawReportData = {
+    const rawReportData: any = {
       organization_id: schedule.organization_id,
       organization_name: organization?.name || 'Organization',
       project_id: schedule.project_id,
@@ -258,11 +289,13 @@ serve(async (req) => {
       phase_progress: phaseProgress,
       all_tasks: tasks,
       all_phases: phases,
+      vitals,
+      lookahead,
       snapshot: {
         open_tasks: openTasks.slice(0, 25).map((t: { text?: string; due_date?: string; contacts?: { name?: string } | null }) => ({
           text: t.text,
           due_date: t.due_date,
-          assignee: t.contacts?.name ?? null,
+          assignee: (t.contacts as any)?.name ?? null,
         })),
         phases: visiblePhases.map((p: { name?: string; progress?: number }) => ({
           name: p.name,
@@ -273,15 +306,31 @@ serve(async (req) => {
       },
     }
 
+    // Collect all projects list for executive metrics
+    // For single-project reports use [project]; for org-wide it was stored above.
+    let allProjects: any[] = []
+    if (schedule.project_id && project) {
+      allProjects = [project]
+    } else {
+      // re-query with status if we didn't have it above
+      const { data: projList } = await supabase
+        .from('projects')
+        .select('id, name, status, status_color, due_date')
+        .eq('organization_id', schedule.organization_id)
+      allProjects = projList || []
+    }
+
     // Apply audience-based filtering
     const filteredData = filterDataByAudience(rawReportData, schedule.report_audience_type)
 
-    // Generate executive summary if needed
+    // Generate executive content if needed (all audiences benefit from vitals + lookahead)
     if (schedule.report_audience_type === 'executive') {
+      filteredData.vitals   = vitals
+      filteredData.lookahead = lookahead
       filteredData.executive_summary = generateExecutiveSummary(rawReportData)
-      filteredData.at_a_glance = calculateAtAGlance(rawReportData)
-      filteredData.key_highlights = generateKeyHighlights(rawReportData)
-      filteredData.project_summary = generateProjectSummary(rawReportData)
+      filteredData.at_a_glance       = calculateAtAGlance(rawReportData, allProjects)
+      filteredData.key_highlights    = generateKeyHighlights(rawReportData)
+      filteredData.project_summary   = generateProjectSummary(rawReportData, allProjects, phases)
     }
 
     return new Response(
@@ -314,95 +363,136 @@ serve(async (req) => {
   }
 })
 
-// Filter data based on audience type
+// Filter data based on audience type.
+// Standard / client audiences: pass all data through — report_sections flags in the template
+// control what is rendered. Phase visibility (is_client_visible) is still filtered here
+// because it is a data-privacy concern, not a presentation concern.
 function filterDataByAudience(data, audienceType) {
-  if (audienceType === 'client') {
-    return {
-      ...data,
-      completed_tasks: (data.completed_tasks || [])
-        .filter((t: { completed_at?: string }) => t.completed_at != null)
-        .map((t: { text?: string; title?: string; completed_at?: string }) => ({
-          text: t.text || t.title,
-          title: t.text || t.title,
-          completed_at: t.completed_at
-        })),
-      status_changes: (data.status_changes || []).map(s => ({
-        ...s,
-        status: translateToClientFriendly(s.new_status)
-      })),
-      phase_progress: (data.phase_progress || []).filter(p => p.is_client_visible !== false)
-    }
-  }
-
   if (audienceType === 'executive') {
     return {
       organization_id: data.organization_id,
       organization_name: data.organization_name,
       start_date: data.start_date,
       end_date: data.end_date,
-      // Don't include granular details
       status_changes: undefined,
       completed_tasks: undefined,
-      phase_progress: undefined
+      phase_progress: undefined,
     }
   }
 
-  // Internal - return all data
-  return data
-}
-
-function translateToClientFriendly(status) {
-  const translations = {
-    'In Progress': 'Active',
-    'On Hold': 'Paused',
-    'Completed': 'Finished'
-  }
-  return translations[status] || status
-}
-
-function generateExecutiveSummary(data) {
-  const totalProjects = data.project_id ? 1 : (data.all_phases?.length || 0)
-  const completedTasks = data.completed_tasks?.length || 0
-  const statusChanges = data.status_changes?.length || 0
-  
-  return `This period saw ${completedTasks} tasks completed across ${totalProjects} project(s), with ${statusChanges} status update(s). Overall progress remains on track.`
-}
-
-function calculateAtAGlance(data) {
-  // Simplified calculation - would need more data in real implementation
+  // standard / client / internal — template flags decide presentation
   return {
-    on_track: 1,
-    at_risk: 0,
-    behind: 0
+    ...data,
+    phase_progress: (data.phase_progress || []).filter(p => p.is_client_visible !== false),
   }
 }
 
-function generateKeyHighlights(data) {
-  const highlights = []
-  
-  if (data.completed_tasks && data.completed_tasks.length > 0) {
-    highlights.push(`${data.completed_tasks.length} tasks completed this period`)
-  }
-  
-  if (data.status_changes && data.status_changes.length > 0) {
-    highlights.push(`${data.status_changes.length} project status update(s)`)
-  }
-  
-  return highlights.slice(0, 5) // Top 5 highlights
+// ── executive helper: status key + text ───────────────────────────────────────
+
+function deriveStatusKey(status: string | null | undefined): string {
+  const s = (status || '').toLowerCase()
+  if (s.includes('hold') || s.includes('pause') || s.includes('behind') || s.includes('delay')) return 'behind'
+  if (s.includes('risk') || s.includes('concern')) return 'at_risk'
+  return 'on_track'
 }
 
-function generateProjectSummary(data) {
+function deriveStatusText(status: string | null | undefined): string {
+  const key = deriveStatusKey(status)
+  if (key === 'behind')   return 'On Hold / Behind'
+  if (key === 'at_risk')  return 'At Risk'
+  return 'On Track'
+}
+
+function generateExecutiveSummary(data: any): string {
+  const completed    = data.completed_tasks?.length || 0
+  const statusChgs   = data.status_changes?.length  || 0
+  const phaseMoved   = data.phase_progress?.length  || 0
+  const openCount    = data.snapshot?.open_total    || 0
+  const currentPhase = data.vitals?.current_phase   || null
+  const phasePct     = data.vitals?.phase_progress_pct
+
+  const parts: string[] = []
+  if (completed > 0)
+    parts.push(`${completed} task${completed !== 1 ? 's' : ''} completed`)
+  if (phaseMoved > 0)
+    parts.push(`${phaseMoved} phase${phaseMoved !== 1 ? 's' : ''} advanced`)
+  if (currentPhase)
+    parts.push(`currently in ${currentPhase}${phasePct != null ? ` (${phasePct}%)` : ''}`)
+  if (statusChgs > 0)
+    parts.push(`${statusChgs} status update${statusChgs !== 1 ? 's' : ''}`)
+  if (openCount > 0)
+    parts.push(`${openCount} task${openCount !== 1 ? 's' : ''} in progress`)
+
+  return parts.length > 0
+    ? parts.join(', ').replace(/,([^,]*)$/, ' and$1') + '.'
+    : 'No significant changes recorded in this reporting period.'
+}
+
+function calculateAtAGlance(data: any, allProjects: any[]): { on_track: number; at_risk: number; behind: number } {
+  if (!allProjects || allProjects.length === 0) {
+    // Fallback: infer from a single project if data.project_id exists
+    if (data.project_id) {
+      const key = deriveStatusKey(data.project_status || null)
+      return { on_track: key === 'on_track' ? 1 : 0, at_risk: key === 'at_risk' ? 1 : 0, behind: key === 'behind' ? 1 : 0 }
+    }
+    return { on_track: 0, at_risk: 0, behind: 0 }
+  }
+  return allProjects.reduce(
+    (acc, p) => {
+      const key = deriveStatusKey(p.status)
+      acc[key as keyof typeof acc] = (acc[key as keyof typeof acc] || 0) + 1
+      return acc
+    },
+    { on_track: 0, at_risk: 0, behind: 0 }
+  )
+}
+
+function generateKeyHighlights(data: any): string[] {
+  const highlights: string[] = []
+
+  const v = data.vitals
+  const periodCompleted = data.completed_tasks?.length ?? 0
+  if (periodCompleted > 0)
+    highlights.push(`${periodCompleted} task${periodCompleted !== 1 ? 's' : ''} completed this period`)
+  if (v?.current_phase)
+    highlights.push(`Active phase: ${v.current_phase}${v.phase_progress_pct != null ? ` — ${v.phase_progress_pct}% complete` : ''}`)
+  if (data.status_changes?.length > 0)
+    highlights.push(`${data.status_changes.length} project status update${data.status_changes.length !== 1 ? 's' : ''}`)
+  if (data.phase_progress?.length > 0)
+    highlights.push(`${data.phase_progress.length} phase${data.phase_progress.length !== 1 ? 's' : ''} advanced`)
+  if (v?.open_tasks_count > 0)
+    highlights.push(`${v.open_tasks_count} open task${v.open_tasks_count !== 1 ? 's' : ''} remaining`)
+
+  return highlights.slice(0, 5)
+}
+
+function generateProjectSummary(data: any, allProjects: any[], phases: any[]): any[] {
   if (data.project_id) {
+    const proj = allProjects?.[0] || {}
+    const projPhases = phases.filter((p: any) => p.is_client_visible !== false)
+    const progress = projPhases.length > 0
+      ? Math.round(projPhases.reduce((sum: number, p: any) => sum + (p.progress || 0), 0) / projPhases.length)
+      : (data.vitals?.phase_progress_pct ?? 0)
     return [{
-      name: data.project_name || 'Project',
-      status: 'on_track',
-      status_text: 'On Track',
-      progress: 50 // Would calculate from phases
+      name: proj.name || data.project_name || 'Project',
+      status: deriveStatusKey(proj.status),
+      status_text: deriveStatusText(proj.status),
+      progress,
     }]
   }
-  
-  // For org-wide reports, would aggregate all projects
-  return []
+
+  return (allProjects || []).map((proj: any) => {
+    const projPhases = phases.filter((p: any) => p.project_id === proj.id && p.is_client_visible !== false)
+    const progress = projPhases.length > 0
+      ? Math.round(projPhases.reduce((sum: number, p: any) => sum + (p.progress || 0), 0) / projPhases.length)
+      : 0
+    return {
+      name: proj.name || 'Project',
+      status: deriveStatusKey(proj.status),
+      status_text: deriveStatusText(proj.status),
+      progress,
+    }
+  })
 }
 
 function parseActivityDetails(activity: { details?: unknown }): Record<string, unknown> {

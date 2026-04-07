@@ -246,6 +246,19 @@ function appReducer(state, action) {
       isProjectCollaborator: action.payload.isCollaborator,
       collaborationProjects: action.payload.projects || []
     };
+    case 'RESET_LAZY_DATA': {
+      newState = {
+        ...state,
+        tasks: [],
+        files: [],
+        calendarEvents: [],
+        tasksLoaded: false,
+        filesLoaded: false,
+        calendarEventsLoaded: false,
+      };
+      saveStateToStorage(newState);
+      return newState;
+    }
     case 'SET_TASKS_LOADED': return { ...state, tasks: action.payload, tasksLoaded: true };
     case 'SET_FILES_LOADED': return { ...state, files: action.payload, filesLoaded: true };
     case 'SET_CALENDAR_EVENTS_LOADED': return { ...state, calendarEvents: action.payload, calendarEventsLoaded: true };
@@ -256,11 +269,19 @@ function appReducer(state, action) {
 export const AppProvider = ({ children }) => {
   const [state, dispatch] = useReducer(appReducer, initialState);
   const currentActiveViewRef = useRef(state.activeView);
+  /** Last org id after a successful fetch — used to reset lazy-loaded data on org / user context change */
+  const lastOrgIdForLazyRef = useRef(undefined);
   
   // Keep ref in sync with state
   useEffect(() => {
     currentActiveViewRef.current = state.activeView;
   }, [state.activeView]);
+
+  useEffect(() => {
+    if (!state.user) {
+      lastOrgIdForLazyRef.current = undefined;
+    }
+  }, [state.user]);
 
   // Expose debug helpers to window for console access (development only)
   useEffect(() => {
@@ -726,6 +747,12 @@ export const AppProvider = ({ children }) => {
             dispatch({ type: 'SET_MUST_CHANGE_PASSWORD', payload: true });
           }
 
+          const orgIdForLazy = organization?.id ?? null;
+          const prevOrgId = lastOrgIdForLazyRef.current;
+          if (prevOrgId !== undefined && prevOrgId !== orgIdForLazy) {
+            dispatch({ type: 'RESET_LAZY_DATA' });
+          }
+
           // === PHASE 1: Critical Data (Projects) - Load first for fast UI render ===
           const { data: projects } = await supabaseClient.from('projects').select('*');
           const finalProjects = projects || [];
@@ -737,10 +764,24 @@ export const AppProvider = ({ children }) => {
           }});
           
           // === PHASE 2: Essential Secondary Data (NOT tasks/files/events - loaded on demand) ===
-          const [{ data: messageChannels }, { data: userPreferences, error: userPrefsError }, { data: activityLog }] = await Promise.all([
+          const fetchActivityLog = async () => {
+            let q = supabaseClient
+              .from('activity_log')
+              .select('*')
+              .order('created_at', { ascending: false })
+              .limit(50);
+            if (organization?.id) {
+              q = q.eq('organization_id', organization.id);
+            }
+            const { data, error: alErr } = await q;
+            if (alErr) console.warn('activity_log fetch:', alErr.message);
+            return data || [];
+          };
+
+          const [{ data: messageChannels }, { data: userPreferences, error: userPrefsError }, activityLog] = await Promise.all([
             supabaseClient.from('message_channels').select('*'),
             supabaseClient.from('user_preferences').select('*').eq('user_id', state.user.id).maybeSingle(),
-            supabaseClient.from('activity_log').select('*').order('created_at', { ascending: false }).limit(50)
+            fetchActivityLog()
           ]);
           
           // Tasks, Files, and Calendar Events will be loaded on-demand when user navigates to those views
@@ -797,20 +838,21 @@ export const AppProvider = ({ children }) => {
             finalContacts = [];
           }
           
-          // Final dispatch with critical data (tasks/files/events loaded on-demand)
+          // Final dispatch with critical data. Do not set tasks/files/calendarEvents here — they are
+          // lazy-loaded (see lazyDataLoader). Including empty arrays would race with loadTasksIfNeeded
+          // and wipe the full task list after the dashboard briefly showed correct stats.
           const endTime = performance.now();
           
           dispatch({ type: 'SET_DATA', payload: { 
             projects: finalProjects, 
             contacts: finalContacts, 
-            tasks: [], // Loaded on-demand
-            files: [], // Loaded on-demand
-            calendarEvents: [], // Loaded on-demand
             messageChannels: messageChannels || [], 
             messages: [],
             activityLog: activityLog || [],
             activeView: currentActiveViewRef.current || state.activeView
           } });
+
+          lastOrgIdForLazyRef.current = orgIdForLazy;
           
           // Handle user preferences with error checking
           if (userPrefsError) {

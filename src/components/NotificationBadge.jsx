@@ -1,7 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useAppContext } from '../context/AppContext';
+import { formatActivityLine } from '../utils/formatActivityLine';
 
 function NotificationBadge() {
+    const { t } = useTranslation();
     const { state } = useAppContext();
     const [notifications, setNotifications] = useState([]);
     const [isVisible, setIsVisible] = useState(false);
@@ -11,12 +14,23 @@ function NotificationBadge() {
     const activityLog = state.activityLog || [];
 
     useEffect(() => {
+        if (state.userRole?.permissions?.can_view_activity_history !== true) {
+            return;
+        }
+
+        const projectNamesById = {};
+        (state.projects || []).forEach((p) => {
+            projectNamesById[p.id] = p.name;
+        });
+
         // Only show notifications for NEW activities since last session, or once per app session
         const recentActivity = activityLog.slice(0, 4);
         
         if (recentActivity.length === 0) {
             return;
         }
+
+        const line = (activity) => formatActivityLine(activity, t, { projectNamesById });
 
         // On first load, check if we've shown notifications this session
         if (!hasShownSessionRef.current) {
@@ -28,7 +42,7 @@ function NotificationBadge() {
             if (!lastShownId || lastActivityId !== lastShownId) {
                 const formattedActivity = recentActivity.map(activity => ({
                     id: activity.id,
-                    message: `${activity.user_name} ${activity.action}`,
+                    message: `${activity.user_name} ${line(activity)}`,
                     time: formatTimeAgo(activity.created_at),
                     type: activity.entity_type || 'general'
                 }));
@@ -63,7 +77,7 @@ function NotificationBadge() {
                 
                 const formattedActivity = newActivities.slice(0, 4).map(activity => ({
                     id: activity.id,
-                    message: `${activity.user_name} ${activity.action}`,
+                    message: `${activity.user_name} ${line(activity)}`,
                     time: formatTimeAgo(activity.created_at),
                     type: activity.entity_type || 'general'
                 }));
@@ -89,7 +103,7 @@ function NotificationBadge() {
         recentActivity.forEach(activity => {
             lastActivityIdsRef.current.add(activity.id);
         });
-    }, [activityLog]);
+    }, [activityLog, state.projects, t, state.userRole]);
 
     // Helper function to format time ago
     function formatTimeAgo(dateString) {
@@ -104,6 +118,10 @@ function NotificationBadge() {
         } else {
             return `${Math.floor(diffInMinutes / 1440)}d ago`;
         }
+    }
+
+    if (state.userRole?.permissions?.can_view_activity_history !== true) {
+        return null;
     }
 
     if (!isVisible || notifications.length === 0) return null;

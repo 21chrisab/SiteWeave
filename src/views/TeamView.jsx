@@ -9,6 +9,7 @@ import RoleCreationModal from '../components/RoleCreationModal';
 import PermissionGuard from '../components/PermissionGuard';
 import { getRoles } from '../utils/roleManagementService';
 import LoadingSpinner from '../components/LoadingSpinner';
+import ActivityHistoryPanel from '../components/ActivityHistoryPanel';
 
 function TeamView() {
   const { state } = useAppContext();
@@ -168,6 +169,17 @@ function TeamView() {
             </div>
           )}
         </div>
+      </PermissionGuard>
+
+      <PermissionGuard permission="can_view_activity_history">
+        {state.currentOrganization?.id && (
+          <div className="mt-12 pt-8 border-t border-gray-200">
+            <ActivityHistoryPanel
+              mode="organization"
+              organizationId={state.currentOrganization.id}
+            />
+          </div>
+        )}
       </PermissionGuard>
 
       <DirectoryManagementModal 

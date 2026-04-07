@@ -1,16 +1,25 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useAppContext } from '../context/AppContext';
 import Avatar from './Avatar';
+import { formatActivityLine } from '../utils/formatActivityLine';
+import PermissionGuard from './PermissionGuard';
 
 function MyDaySidebar() {
-    const { i18n } = useTranslation();
+    const { i18n, t } = useTranslation();
     const { state } = useAppContext();
     const [lastUpdate, setLastUpdate] = useState(new Date());
 
     const tasks = state.tasks || [];
     const calendarEvents = state.calendarEvents || [];
     const activityLog = state.activityLog || [];
+    const projectNamesById = useMemo(() => {
+        const m = {};
+        (state.projects || []).forEach((p) => {
+            m[p.id] = p.name;
+        });
+        return m;
+    }, [state.projects]);
 
     useEffect(() => {
         // Update timestamp when tasks or events change
@@ -36,8 +45,8 @@ function MyDaySidebar() {
         user: { 
             name: activity.user_name, 
             avatar: activity.user_avatar || null // null means use default Avatar component
-        }, 
-        action: activity.action,
+        },
+        description: formatActivityLine(activity, t, { projectNamesById }),
         time: formatTimeAgo(activity.created_at)
     }));
 
@@ -76,6 +85,7 @@ function MyDaySidebar() {
                     )) : <p className="text-sm text-center py-3 text-gray-400">No tasks assigned to you.</p>}
                 </div>
             </div>
+            <PermissionGuard permission="can_view_activity_history">
             <div>
                 <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">RECENT ACTIVITY</h3>
                  <div className="space-y-2.5">
@@ -89,7 +99,7 @@ function MyDaySidebar() {
                                 </div>
                             )}
                             <div className="flex-1 min-w-0">
-                                <p className="text-gray-700"><span className="font-semibold">{activity.user.name}</span> {activity.action}</p>
+                                <p className="text-gray-700"><span className="font-semibold">{activity.user.name}</span> {activity.description}</p>
                                 <p className="text-xs text-gray-400 mt-0.5">{activity.time}</p>
                             </div>
                         </div>
@@ -98,6 +108,7 @@ function MyDaySidebar() {
                     )}
                 </div>
             </div>
+            </PermissionGuard>
             <div>
                 <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">TODAY'S CALENDAR ({todayEvents.length})</h3>
                  <div className="space-y-2.5">

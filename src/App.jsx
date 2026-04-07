@@ -12,7 +12,7 @@ import DirectoryManagementModal from './components/DirectoryManagementModal'
 import PermissionGuard from './components/PermissionGuard'
 import ForcePasswordReset from './components/ForcePasswordReset'
 import UpdateNotification from './components/UpdateNotification'
-import { LazyViewWrapper, DashboardView, ProjectDetailsView, CalendarView, MessagesView, ContactsView, TeamView, SettingsView } from './components/LazyViews'
+import { LazyViewWrapper, DashboardView, ProjectDetailsView, CalendarView, TeamHubView, TeamView, SettingsView } from './components/LazyViews'
 import NoOrganizationView from './views/NoOrganizationView'
 
 function App() {
@@ -232,19 +232,14 @@ function App() {
           </LazyViewWrapper>
         )
       case 'Messages':
-        return (
-          <LazyViewWrapper>
-            <MessagesView />
-          </LazyViewWrapper>
-        )
       case 'Contacts':
+      case 'Team':
         return (
           <LazyViewWrapper>
-            <ContactsView />
+            <TeamHubView />
           </LazyViewWrapper>
         )
       case 'Organization':
-      case 'Team': // Support both for backwards compatibility
         return (
           <LazyViewWrapper>
             <TeamView />

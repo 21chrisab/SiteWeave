@@ -10,8 +10,20 @@ const corsHeaders = {
 }
 
 function injectPrintStyles(html: string): string {
-  const extra =
-    '<style>@media print { @page { margin: 12mm; } body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }</style>'
+  // Match Electron printToPDF + @page so Chromium does not paginate to extra blank sheets.
+  // html/body height:auto avoids min-height/100% table quirks that add leading/trailing empty pages.
+  const extra = `<style>
+@media print {
+  @page { size: A4; margin: 12mm; }
+  html, body {
+    height: auto !important;
+    min-height: 0 !important;
+    margin: 0;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+}
+</style>`
   if (html.includes('<head>')) {
     return html.replace('<head>', `<head>${extra}`)
   }

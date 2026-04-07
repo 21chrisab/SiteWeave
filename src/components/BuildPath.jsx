@@ -177,6 +177,23 @@ function BuildPath({ project }) {
         }));
     };
 
+    /** Progress while editing may be '' (blank), a number 0–100, or a numeric string — normalize for save / bar display. */
+    const normalizePhaseProgress = (raw, fallbackWhenEmpty) => {
+        if (raw === undefined) return fallbackWhenEmpty;
+        if (raw === '') return 0;
+        const n = typeof raw === 'number' ? raw : parseInt(String(raw), 10);
+        if (!Number.isFinite(n)) return 0;
+        return Math.min(100, Math.max(0, n));
+    };
+
+    const progressDisplayPercent = (phaseId, phaseProgress) => {
+        const key = `${phaseId}_progress`;
+        const raw = editingValues[key];
+        if (raw === undefined) return phaseProgress ?? 0;
+        if (raw === '') return phaseProgress ?? 0;
+        return normalizePhaseProgress(raw, phaseProgress ?? 0);
+    };
+
     // Debounced update to database
     const debouncedUpdate = React.useCallback(
         debounce(async (phaseId, field, value) => {
@@ -526,19 +543,40 @@ function BuildPath({ project }) {
                                 {editingProgressPhaseId === phase.id && isAuthorized() ? (
                                     <div className="flex items-center gap-1">
                                         <input
-                                            type="number"
-                                            min="0"
-                                            max="100"
-                                            value={editingValues[`${phase.id}_progress`] !== undefined ? editingValues[`${phase.id}_progress`] : phase.progress}
+                                            type="text"
+                                            inputMode="numeric"
+                                            pattern="[0-9]*"
+                                            autoComplete="off"
+                                            value={
+                                                editingValues[`${phase.id}_progress`] !== undefined
+                                                    ? editingValues[`${phase.id}_progress`] === ''
+                                                        ? ''
+                                                        : String(editingValues[`${phase.id}_progress`])
+                                                    : String(phase.progress ?? 0)
+                                            }
                                             onChange={(e) => {
-                                                const value = Math.min(100, Math.max(0, parseInt(e.target.value) || 0));
-                                                handleInputChange(phase.id, 'progress', value);
+                                                const v = e.target.value;
+                                                if (v === '') {
+                                                    handleInputChange(phase.id, 'progress', '');
+                                                    return;
+                                                }
+                                                if (!/^\d+$/.test(v)) return;
+                                                let n = parseInt(v, 10);
+                                                if (n > 100) n = 100;
+                                                handleInputChange(phase.id, 'progress', n);
                                             }}
                                             onBlur={() => {
-                                                const value = editingValues[`${phase.id}_progress`] !== undefined 
-                                                    ? editingValues[`${phase.id}_progress`] 
-                                                    : phase.progress;
-                                                debouncedUpdate(phase.id, 'progress', value);
+                                                const raw = editingValues[`${phase.id}_progress`];
+                                                const num =
+                                                    raw === undefined
+                                                        ? phase.progress ?? 0
+                                                        : normalizePhaseProgress(raw, phase.progress ?? 0);
+                                                debouncedUpdate(phase.id, 'progress', num);
+                                                setEditingValues(prev => {
+                                                    const next = { ...prev };
+                                                    delete next[`${phase.id}_progress`];
+                                                    return next;
+                                                });
                                                 setEditingProgressPhaseId(null);
                                             }}
                                             onKeyDown={(e) => {
@@ -577,7 +615,7 @@ function BuildPath({ project }) {
                             <div className="w-full bg-gray-200 rounded-full h-2">
                                 <div 
                                     className="bg-green-500 h-2 rounded-full transition-all duration-300"
-                                    style={{ width: `${editingValues[`${phase.id}_progress`] !== undefined ? editingValues[`${phase.id}_progress`] : phase.progress}%` }}
+                                    style={{ width: `${progressDisplayPercent(phase.id, phase.progress)}%` }}
                                 ></div>
                             </div>
                         </div>
@@ -640,7 +678,12 @@ function PhaseModal({ phase, onClose, onSave, isLoading }) {
 
     const handleSubmit = (e) => {
         e.preventDefault();
-        onSave(formData);
+        const progressRaw = formData.progress;
+        const progress =
+            progressRaw === '' || progressRaw === null || progressRaw === undefined
+                ? 0
+                : Math.min(100, Math.max(0, parseInt(String(progressRaw), 10) || 0));
+        onSave({ ...formData, progress });
         onClose();
     };
 
@@ -683,11 +726,26 @@ function PhaseModal({ phase, onClose, onSave, isLoading }) {
                             Initial Progress (%)
                         </label>
                         <input
-                            type="number"
-                            min="0"
-                            max="100"
-                            value={formData.progress}
-                            onChange={(e) => setFormData({ ...formData, progress: parseInt(e.target.value) || 0 })}
+                            type="text"
+                            inputMode="numeric"
+                            pattern="[0-9]*"
+                            autoComplete="off"
+                            value={
+                                formData.progress === '' || formData.progress === null || formData.progress === undefined
+                                    ? ''
+                                    : String(formData.progress)
+                            }
+                            onChange={(e) => {
+                                const v = e.target.value;
+                                if (v === '') {
+                                    setFormData({ ...formData, progress: '' });
+                                    return;
+                                }
+                                if (!/^\d+$/.test(v)) return;
+                                let n = parseInt(v, 10);
+                                if (n > 100) n = 100;
+                                setFormData({ ...formData, progress: n });
+                            }}
                             className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-hidden focus:ring-2 focus:ring-blue-500"
                         />
                     </div>

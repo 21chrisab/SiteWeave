@@ -22,6 +22,7 @@ export const ROLE_PRESETS = [
       can_create_tasks: false,
       can_edit_tasks: false,
       can_delete_tasks: false,
+      can_view_activity_history: false,
     }
   },
   {
@@ -41,6 +42,7 @@ export const ROLE_PRESETS = [
       can_create_tasks: true,
       can_edit_tasks: true,
       can_delete_tasks: false,
+      can_view_activity_history: false,
     }
   },
   {
@@ -60,6 +62,7 @@ export const ROLE_PRESETS = [
       can_create_tasks: true,
       can_edit_tasks: true,
       can_delete_tasks: false,
+      can_view_activity_history: false,
     }
   },
   {
@@ -79,6 +82,7 @@ export const ROLE_PRESETS = [
       can_create_tasks: true,
       can_edit_tasks: true,
       can_delete_tasks: true,
+      can_view_activity_history: true,
     }
   },
   {
@@ -98,6 +102,7 @@ export const ROLE_PRESETS = [
       can_create_tasks: false,
       can_edit_tasks: false,
       can_delete_tasks: false,
+      can_view_activity_history: false,
     }
   },
   {
@@ -117,6 +122,7 @@ export const ROLE_PRESETS = [
       can_create_tasks: false,
       can_edit_tasks: true,
       can_delete_tasks: false,
+      can_view_activity_history: false,
     }
   }
 ];

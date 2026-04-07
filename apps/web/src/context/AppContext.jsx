@@ -757,7 +757,21 @@ export const AppProvider = ({ children }) => {
           // The RLS policy allows:
           // - Organization members: projects in their organization
           // - Project collaborators: specific projects they're invited to
-          const [{ data: projects }, { data: tasks }, { data: files }, {data: calendarEvents}, {data: messageChannels}, {data: messages}, { data: userPreferences, error: userPrefsError }, { data: activityLog }] = await Promise.all([
+          const fetchActivityLogWeb = async () => {
+            let q = supabaseClient
+              .from('activity_log')
+              .select('*')
+              .order('created_at', { ascending: false })
+              .limit(50);
+            if (organization?.id) {
+              q = q.eq('organization_id', organization.id);
+            }
+            const { data, error: alErr } = await q;
+            if (alErr) console.warn('activity_log fetch:', alErr.message);
+            return data || [];
+          };
+
+          const [{ data: projects }, { data: tasks }, { data: files }, {data: calendarEvents}, {data: messageChannels}, {data: messages}, { data: userPreferences, error: userPrefsError }, activityLog] = await Promise.all([
             supabaseClient.from('projects').select('*'),
             supabaseClient.from('tasks').select('*'),
             supabaseClient.from('files').select('*'),
@@ -766,7 +780,7 @@ export const AppProvider = ({ children }) => {
             // Don't load all messages initially - load per channel when needed (MVP pattern)
             Promise.resolve({ data: [] }),
             supabaseClient.from('user_preferences').select('*').eq('user_id', state.user.id).maybeSingle(),
-            supabaseClient.from('activity_log').select('*').order('created_at', { ascending: false }).limit(50)
+            fetchActivityLogWeb()
           ]);
           
           // RLS policy automatically filters projects based on user role

@@ -505,7 +505,8 @@ ipcMain.handle('save-html-as-pdf', async (event, { html, defaultFilename }) => {
 
     const pdfBuffer = await hidden.webContents.printToPDF({
       printBackground: true,
-      margins: { marginType: 'default' },
+      margins: { marginType: 'none' },
+      preferCSSPageSize: true,
     });
 
     fs.writeFileSync(filePath, pdfBuffer);

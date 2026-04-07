@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useAppContext } from '../context/AppContext';
+import { formatActivityLine } from '../utils/formatActivityLine';
+import { activityLineT } from '../utils/activityLineT';
 
 function NotificationBadge() {
     const { state } = useAppContext();
@@ -9,8 +11,19 @@ function NotificationBadge() {
     const lastActivityIdsRef = useRef(new Set());
 
     useEffect(() => {
+        if (state.userRole?.permissions?.can_view_activity_history !== true) {
+            return;
+        }
+
+        const activityLog = state.activityLog || [];
+        const projectNamesById = {};
+        (state.projects || []).forEach((p) => {
+            projectNamesById[p.id] = p.name;
+        });
+        const line = (activity) => formatActivityLine(activity, activityLineT, { projectNamesById });
+
         // Only show notifications for NEW activities since last session, or once per app session
-        const recentActivity = state.activityLog.slice(0, 4);
+        const recentActivity = activityLog.slice(0, 4);
         
         if (recentActivity.length === 0) {
             return;
@@ -26,7 +39,7 @@ function NotificationBadge() {
             if (!lastShownId || lastActivityId !== lastShownId) {
                 const formattedActivity = recentActivity.map(activity => ({
                     id: activity.id,
-                    message: `${activity.user_name} ${activity.action}`,
+                    message: `${activity.user_name} ${line(activity)}`,
                     time: formatTimeAgo(activity.created_at),
                     type: activity.entity_type || 'general'
                 }));
@@ -61,7 +74,7 @@ function NotificationBadge() {
                 
                 const formattedActivity = newActivities.slice(0, 4).map(activity => ({
                     id: activity.id,
-                    message: `${activity.user_name} ${activity.action}`,
+                    message: `${activity.user_name} ${line(activity)}`,
                     time: formatTimeAgo(activity.created_at),
                     type: activity.entity_type || 'general'
                 }));
@@ -87,7 +100,7 @@ function NotificationBadge() {
         recentActivity.forEach(activity => {
             lastActivityIdsRef.current.add(activity.id);
         });
-    }, [state.activityLog]);
+    }, [state.activityLog, state.projects, state.userRole]);
 
     // Helper function to format time ago
     function formatTimeAgo(dateString) {
@@ -102,6 +115,10 @@ function NotificationBadge() {
         } else {
             return `${Math.floor(diffInMinutes / 1440)}d ago`;
         }
+    }
+
+    if (state.userRole?.permissions?.can_view_activity_history !== true) {
+        return null;
     }
 
     if (!isVisible || notifications.length === 0) return null;

@@ -488,40 +488,43 @@ function MessagesView() {
             <main className="flex-1 bg-white rounded-r-xl shadow-xs border-t border-r border-b border-gray-200 flex flex-col overflow-hidden">
                 {activeChannel ? (
                     <>
-                        <header className="p-4 border-b border-gray-200 flex justify-between items-center gap-4">
-                            <div className="min-w-0 flex-1">
-                                <h3 className="font-bold text-lg truncate"># {getProjectForChannel(activeChannel.id)?.name}</h3>
-                                <p className="text-sm text-gray-500">{getTeamCount(activeChannel.project_id)} members</p>
-                            </div>
-                            {teamMembers.length > 0 && (
-                                <div className="flex items-center gap-2">
-                                    <div className="flex -space-x-2">
-                                        {teamMembers.slice(0, 5).map(member => (
-                                            member.avatar_url ? (
-                                                <img 
-                                                    key={member.id} 
-                                                    src={member.avatar_url} 
-                                                    title={member.name} 
-                                                    alt={member.name}
-                                                    className="w-8 h-8 rounded-full border-2 border-white" 
-                                                />
-                                            ) : (
-                                                <Avatar key={member.id} name={member.name} size="md" className="border-2 border-white" />
-                                            )
-                                        ))}
-                                    </div>
-                                    {teamMembers.length > 5 && (
-                                        <div className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center text-xs font-semibold text-gray-600 -ml-2 border-2 border-white">
-                                            +{teamMembers.length - 5}
-                                        </div>
-                                    )}
+                        <header className="shrink-0 border-b border-gray-200">
+                            <div className="max-w-4xl mx-auto w-full px-4 sm:px-6 py-4 flex justify-between items-center gap-4">
+                                <div className="min-w-0 flex-1">
+                                    <h3 className="font-bold text-lg truncate"># {getProjectForChannel(activeChannel.id)?.name}</h3>
+                                    <p className="text-sm text-gray-500">{getTeamCount(activeChannel.project_id)} members</p>
                                 </div>
-                            )}
+                                {teamMembers.length > 0 && (
+                                    <div className="flex items-center gap-2">
+                                        <div className="flex -space-x-2">
+                                            {teamMembers.slice(0, 5).map(member => (
+                                                member.avatar_url ? (
+                                                    <img 
+                                                        key={member.id} 
+                                                        src={member.avatar_url} 
+                                                        title={member.name} 
+                                                        alt={member.name}
+                                                        className="w-8 h-8 rounded-full border-2 border-white" 
+                                                    />
+                                                ) : (
+                                                    <Avatar key={member.id} name={member.name} size="md" className="border-2 border-white" />
+                                                )
+                                            ))}
+                                        </div>
+                                        {teamMembers.length > 5 && (
+                                            <div className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center text-xs font-semibold text-gray-600 -ml-2 border-2 border-white">
+                                                +{teamMembers.length - 5}
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
+                            </div>
                         </header>
+                        <div className="flex flex-col flex-1 min-h-0 w-full max-w-4xl mx-auto px-4 sm:px-6">
                         <div 
                             ref={messagesContainerRef}
                             data-onboarding="chat-area"
-                            className="flex-1 p-6 overflow-y-auto overflow-x-hidden"
+                            className="flex-1 py-6 overflow-y-auto overflow-x-hidden min-h-0 w-full"
                             onDragOver={handleDragOver}
                             onDragLeave={handleDragLeave}
                             onDrop={handleDrop}
@@ -567,7 +570,7 @@ function MessagesView() {
                             <div ref={messagesEndRef} />
                         </div>
                         {replyingTo && (
-                            <div className="px-4 py-2 bg-blue-50 border-t border-blue-200 flex items-center justify-between">
+                            <div className="py-2 bg-blue-50 border-t border-blue-200 flex items-center justify-between gap-2">
                                 <div className="flex items-center gap-2">
                                     <Icon path="M12 20.25c4.97 0 9-3.694 9-8.25s-4.03-8.25-9-8.25S3 7.444 3 12c0 2.104.859 4.023 2.273 5.488.432.447.74 1.04.586 1.641a4.483 4.483 0 01-.923 1.785A5.969 5.969 0 006 21c1.282 0 2.47-.492 3.337-1.313.379-.38.708-.796.924-1.22a4.801 4.801 0 001.923-1.22 4.705 4.705 0 00.334-1.785c0-.6-.154-1.194-.432-1.641A8.98 8.98 0 0012 20.25z" className="w-4 h-4 text-blue-600" />
                                     <span className="text-sm text-gray-700">
@@ -583,7 +586,7 @@ function MessagesView() {
                                 </button>
                             </div>
                         )}
-                        <div className="p-4 border-t bg-gray-50 relative">
+                        <div className="py-4 border-t bg-gray-50 relative">
                             {uploadProgress > 0 && uploadProgress < 100 && (
                                 <div className="absolute top-0 left-0 right-0 h-1 bg-gray-200">
                                     <div 
@@ -666,6 +669,7 @@ function MessagesView() {
                             <div className="mt-2 text-xs text-gray-500">
                                 Press Enter to send, Shift+Enter for new line
                             </div>
+                        </div>
                         </div>
                     </>
                 ) : <div className="flex-1 flex items-center justify-center text-gray-500">Select a channel to start messaging.</div>}

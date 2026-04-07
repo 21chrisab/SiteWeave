@@ -15,15 +15,20 @@ export async function getOrganizationBranding(supabase, organizationId) {
     .select('*')
     .eq('organization_id', organizationId)
     .maybeSingle();
-  
+
   if (error) throw error;
-  
-  // Return default branding if none exists
+
   if (!data) {
     return getDefaultBranding();
   }
-  
-  return data;
+
+  return {
+    ...data,
+    primary_color: data.primary_color ?? '#3B82F6',
+    secondary_color: data.secondary_color ?? '#10B981',
+    company_footer: data.company_footer ?? '',
+    email_signature: data.email_signature ?? '',
+  };
 }
 
 /**
@@ -45,10 +50,13 @@ export async function updateOrganizationBranding(supabase, organizationId, brand
     })
     .select()
     .single();
-  
+
   if (error) throw error;
   return data;
 }
+
+/** Storage bucket for org logos (Supabase: Storage → New bucket → name: branding, public read + upload policies). */
+const BRANDING_LOGO_BUCKET = 'branding';
 
 /**
  * Upload logo to Supabase Storage
@@ -59,29 +67,32 @@ export async function updateOrganizationBranding(supabase, organizationId, brand
  */
 export async function uploadLogo(supabase, organizationId, logoFile) {
   const fileExt = logoFile.name.split('.').pop();
-  const fileName = `${organizationId}/logo.${fileExt}`;
-  const filePath = `branding/${fileName}`;
-  
-  // Upload file
-  const { data: uploadData, error: uploadError } = await supabase.storage
-    .from('public')
+  const filePath = `${organizationId}/logo.${fileExt}`;
+
+  const { error: uploadError } = await supabase.storage
+    .from(BRANDING_LOGO_BUCKET)
     .upload(filePath, logoFile, {
       cacheControl: '3600',
       upsert: true
     });
-  
-  if (uploadError) throw uploadError;
-  
-  // Get public URL
+
+  if (uploadError) {
+    if (uploadError.message && uploadError.message.includes('Bucket not found')) {
+      throw new Error(
+        `Storage bucket "${BRANDING_LOGO_BUCKET}" not found. In Supabase: Storage → New bucket → name "${BRANDING_LOGO_BUCKET}" → enable Public if using public URLs → add policies for authenticated upload.`
+      );
+    }
+    throw uploadError;
+  }
+
   const { data: urlData } = supabase.storage
-    .from('public')
+    .from(BRANDING_LOGO_BUCKET)
     .getPublicUrl(filePath);
-  
-  // Update branding with logo URL
+
   await updateOrganizationBranding(supabase, organizationId, {
     logo_url: urlData.publicUrl
   });
-  
+
   return urlData.publicUrl;
 }
 
@@ -94,7 +105,7 @@ export function getDefaultBranding() {
     logo_url: null,
     primary_color: '#3B82F6',
     secondary_color: '#10B981',
-    company_footer: null,
-    email_signature: null
+    company_footer: '',
+    email_signature: ''
   };
 }

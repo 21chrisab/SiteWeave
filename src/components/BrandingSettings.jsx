@@ -7,12 +7,22 @@ import {
   updateOrganizationBranding,
   uploadLogo
 } from '@siteweave/core-logic';
+import { logActivity } from '../utils/activityLogger';
+
+/** Defined at module scope so React does not remount children every parent render (fixes textarea focus loss). */
+function BrandingSection({ compact, children }) {
+  if (compact) {
+    return <div className="border-t border-gray-100 pt-4">{children}</div>;
+  }
+  return <div className="bg-white rounded-lg border border-gray-200 p-6">{children}</div>;
+}
 
 /**
  * Branding Settings Component
- * Configure organization branding for email reports
+ * Configure organization branding for email reports.
+ * Pass compact=true to embed inside another card (removes nested borders and own title).
  */
-function BrandingSettings() {
+function BrandingSettings({ compact = false }) {
   const { state } = useAppContext();
   const { addToast } = useToast();
   const [isLoading, setIsLoading] = useState(true);
@@ -75,6 +85,18 @@ function BrandingSettings() {
     try {
       const orgId = state.currentOrganization?.id;
       await updateOrganizationBranding(supabaseClient, orgId, branding);
+      if (state.user?.id && orgId) {
+        logActivity({
+          action: 'updated',
+          entityType: 'branding',
+          entityId: orgId,
+          entityName: state.currentOrganization?.name || 'Organization',
+          projectId: null,
+          organizationId: orgId,
+          user: state.user,
+          details: { keys: ['logo_url', 'primary_color', 'secondary_color', 'company_footer', 'email_signature'].filter((k) => branding[k] != null) }
+        });
+      }
       addToast('Branding settings saved', 'success');
     } catch (error) {
       addToast('Error saving branding: ' + error.message, 'error');
@@ -88,16 +110,18 @@ function BrandingSettings() {
   }
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h2 className="text-xl font-semibold text-gray-900">Email Branding</h2>
-        <p className="text-sm text-gray-600 mt-1">
-          Customize how your progress reports appear to recipients
-        </p>
-      </div>
+    <div className="space-y-4">
+      {!compact && (
+        <div>
+          <h2 className="text-xl font-semibold text-gray-900">Email Branding</h2>
+          <p className="text-sm text-gray-600 mt-1">
+            Customize how your progress reports appear to recipients
+          </p>
+        </div>
+      )}
 
       {/* Logo */}
-      <div className="bg-white rounded-lg border border-gray-200 p-6">
+      <BrandingSection compact={compact}>
         <label className="block text-sm font-medium text-gray-700 mb-2">
           Organization Logo
         </label>
@@ -106,7 +130,7 @@ function BrandingSettings() {
             <img
               src={branding.logo_url}
               alt="Organization logo"
-              className="h-16 w-auto"
+              className="h-14 w-auto rounded"
             />
           )}
           <div>
@@ -118,8 +142,8 @@ function BrandingSettings() {
                 disabled={isUploadingLogo}
                 className="hidden"
               />
-              <span className="inline-block px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50">
-                {isUploadingLogo ? 'Uploading...' : branding.logo_url ? 'Change Logo' : 'Upload Logo'}
+              <span className="inline-block px-3 py-1.5 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50">
+                {isUploadingLogo ? 'Uploading…' : branding.logo_url ? 'Change' : 'Upload Logo'}
               </span>
             </label>
             {branding.logo_url && (
@@ -132,123 +156,113 @@ function BrandingSettings() {
             )}
           </div>
         </div>
-        <p className="text-xs text-gray-500 mt-2">
-          Logo will appear at the top of email reports. Recommended size: 200x60px
+        <p className="text-xs text-gray-400 mt-2">
+          Appears at the top of email reports. Recommended: 200 × 60 px.
         </p>
-      </div>
+      </BrandingSection>
 
       {/* Colors */}
-      <div className="bg-white rounded-lg border border-gray-200 p-6">
-        <h3 className="text-sm font-medium text-gray-700 mb-4">Colors</h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <BrandingSection compact={compact}>
+        <p className="text-sm font-medium text-gray-700 mb-3">Brand Colors</p>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Primary Color
-            </label>
+            <label className="block text-xs text-gray-500 mb-1">Primary — headers &amp; accents</label>
             <div className="flex items-center gap-2">
               <input
                 type="color"
                 value={branding.primary_color}
                 onChange={(e) => setBranding({ ...branding, primary_color: e.target.value })}
-                className="h-10 w-20 border border-gray-300 rounded cursor-pointer"
+                className="h-8 w-14 border border-gray-300 rounded cursor-pointer p-0.5"
               />
               <input
                 type="text"
                 value={branding.primary_color}
                 onChange={(e) => setBranding({ ...branding, primary_color: e.target.value })}
-                className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-blue-500"
+                className="flex-1 px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                 placeholder="#3B82F6"
               />
             </div>
-            <p className="text-xs text-gray-500 mt-1">Used for headers and accents</p>
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Secondary Color
-            </label>
+            <label className="block text-xs text-gray-500 mb-1">Secondary — highlights &amp; checkmarks</label>
             <div className="flex items-center gap-2">
               <input
                 type="color"
                 value={branding.secondary_color}
                 onChange={(e) => setBranding({ ...branding, secondary_color: e.target.value })}
-                className="h-10 w-20 border border-gray-300 rounded cursor-pointer"
+                className="h-8 w-14 border border-gray-300 rounded cursor-pointer p-0.5"
               />
               <input
                 type="text"
                 value={branding.secondary_color}
                 onChange={(e) => setBranding({ ...branding, secondary_color: e.target.value })}
-                className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-blue-500"
+                className="flex-1 px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                 placeholder="#10B981"
               />
             </div>
-            <p className="text-xs text-gray-500 mt-1">Used for highlights and completed items</p>
           </div>
         </div>
-      </div>
+      </BrandingSection>
 
-      {/* Footer */}
-      <div className="bg-white rounded-lg border border-gray-200 p-6">
-        <label className="block text-sm font-medium text-gray-700 mb-2">
-          Company Footer
-        </label>
-        <textarea
-          value={branding.company_footer}
-          onChange={(e) => setBranding({ ...branding, company_footer: e.target.value })}
-          rows={4}
-          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-blue-500"
-          placeholder="Company address, contact info, etc. (HTML supported)"
-        />
-        <p className="text-xs text-gray-500 mt-1">
-          This will appear at the bottom of all email reports
-        </p>
-      </div>
-
-      {/* Email Signature */}
-      <div className="bg-white rounded-lg border border-gray-200 p-6">
-        <label className="block text-sm font-medium text-gray-700 mb-2">
-          Email Signature
-        </label>
-        <textarea
-          value={branding.email_signature}
-          onChange={(e) => setBranding({ ...branding, email_signature: e.target.value })}
-          rows={3}
-          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-blue-500"
-          placeholder="Your name, title, contact info..."
-        />
-        <p className="text-xs text-gray-500 mt-1">
-          Optional signature block for reports
-        </p>
-      </div>
-
-      {/* Preview */}
-      <div className="bg-white rounded-lg border border-gray-200 p-6">
-        <h3 className="text-sm font-medium text-gray-700 mb-4">Preview</h3>
-        <div className="border border-gray-300 rounded-lg p-4 bg-gray-50">
-          <div style={{ backgroundColor: branding.primary_color, padding: '20px', textAlign: 'center' }}>
-            {branding.logo_url && (
-              <img src={branding.logo_url} alt="Logo" style={{ maxHeight: '60px' }} />
-            )}
+      {/* Footer + Signature */}
+      <BrandingSection compact={compact}>
+        <div className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Company Footer</label>
+            <textarea
+              value={branding.company_footer ?? ''}
+              onChange={(e) => setBranding({ ...branding, company_footer: e.target.value })}
+              rows={3}
+              className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              placeholder="Company address, license number, contact info… (HTML supported)"
+            />
+            <p className="text-xs text-gray-400 mt-1">Appears at the bottom of every email report</p>
           </div>
-          <div style={{ padding: '20px', backgroundColor: 'white' }}>
-            <h2 style={{ color: branding.primary_color }}>Sample Report</h2>
-            <p style={{ color: branding.secondary_color }}>This is how your reports will look</p>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Email Signature</label>
+            <textarea
+              value={branding.email_signature ?? ''}
+              onChange={(e) => setBranding({ ...branding, email_signature: e.target.value })}
+              rows={2}
+              className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              placeholder="Your name, title, phone…"
+            />
+          </div>
+        </div>
+      </BrandingSection>
+
+      {/* Color preview swatch */}
+      <BrandingSection compact={compact}>
+        <p className="text-sm font-medium text-gray-700 mb-2">Preview</p>
+        <div className="rounded-lg overflow-hidden border border-gray-200">
+          <div style={{ backgroundColor: branding.primary_color, padding: '12px 16px' }}>
+            {branding.logo_url
+              ? <img src={branding.logo_url} alt="Logo preview" style={{ maxHeight: '40px' }} />
+              : <span style={{ color: '#fff', fontSize: '13px', opacity: 0.8 }}>Your logo here</span>}
+          </div>
+          <div style={{ padding: '16px', backgroundColor: '#fff' }}>
+            <p style={{ margin: 0, color: branding.primary_color, fontWeight: 600, fontSize: '14px' }}>
+              Progress Update · Sample Project
+            </p>
+            <p style={{ margin: '6px 0 0', color: branding.secondary_color, fontSize: '13px' }}>
+              ✓ 5 tasks completed this period
+            </p>
             {branding.company_footer && (
-              <div style={{ marginTop: '20px', paddingTop: '20px', borderTop: '1px solid #e5e7eb', fontSize: '12px', color: '#6b7280' }}>
+              <p style={{ margin: '12px 0 0', paddingTop: '10px', borderTop: '1px solid #e5e7eb', fontSize: '11px', color: '#9ca3af' }}>
                 {branding.company_footer}
-              </div>
+              </p>
             )}
           </div>
         </div>
-      </div>
+      </BrandingSection>
 
-      {/* Save Button */}
-      <div className="flex justify-end">
+      <div className="flex justify-end pt-1">
         <button
           onClick={handleSave}
           disabled={isSaving}
-          className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+          className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
         >
-          {isSaving ? 'Saving...' : 'Save Branding Settings'}
+          {isSaving ? 'Saving…' : 'Save branding'}
         </button>
       </div>
     </div>

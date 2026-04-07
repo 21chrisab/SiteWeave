@@ -7,7 +7,6 @@ function UpdateNotification() {
   const [isElectron, setIsElectron] = useState(false);
   const [checking, setChecking] = useState(false);
   const [checkMessage, setCheckMessage] = useState(null);
-  const [appVersion, setAppVersion] = useState('');
   const [downloadPercent, setDownloadPercent] = useState(null);
   const [updateError, setUpdateError] = useState(null);
   const [newVersion, setNewVersion] = useState('');
@@ -49,11 +48,6 @@ function UpdateNotification() {
       window.electronAPI.notifyUpdateListenersReady?.();
     }
   }, []);
-
-  useEffect(() => {
-    if (!isElectron || !window.electronAPI?.getAppVersion) return;
-    window.electronAPI.getAppVersion().then((v) => setAppVersion(v || ''));
-  }, [isElectron]);
 
   const handleInstallUpdate = async () => {
     if (window.electronAPI?.installUpdate) {
@@ -207,9 +201,6 @@ function UpdateNotification() {
           </>
         )}
       </button>
-      {appVersion && (
-        <span className="text-xs text-gray-400">v{appVersion}</span>
-      )}
     </div>
   );
 }

@@ -154,6 +154,7 @@ export function logFileUploaded(file, user, projectId) {
         entityId: file.id,
         entityName: file.name,
         projectId: projectId,
+        organizationId: file.organization_id ?? null,
         user,
         details: { file_type: file.type, size_kb: file.size_kb }
     });
@@ -169,5 +170,18 @@ export function logContactCreated(contact, user, projectId = null) {
         organizationId: contact.organization_id,
         user,
         details: { role: contact.role, type: contact.type }
+    });
+}
+
+export function logContactUpdated(contact, user, changes) {
+    return logActivity({
+        action: 'updated',
+        entityType: 'contact',
+        entityId: contact.id,
+        entityName: contact.name,
+        projectId: null,
+        organizationId: contact.organization_id,
+        user,
+        details: changes && typeof changes === 'object' ? changes : {}
     });
 }

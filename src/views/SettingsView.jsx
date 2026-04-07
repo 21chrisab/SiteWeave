@@ -7,7 +7,6 @@ import Avatar from '../components/Avatar';
 import PermissionGuard from '../components/PermissionGuard';
 import DirectoryManagementModal from '../components/DirectoryManagementModal';
 import RoleManagement from '../components/RoleManagement';
-import BrandingSettings from '../components/BrandingSettings';
 import packageJson from '../../package.json';
 import { getStoredCalendarToken } from '../utils/calendarIntegration';
 
@@ -341,14 +340,6 @@ function SettingsView() {
             </button>
           </div>
         </div>
-
-        {/* Report Branding */}
-        <PermissionGuard permission="can_manage_progress_reports">
-          <div className="bg-white rounded-xl shadow-xs border border-gray-200 p-6">
-            <h2 className="text-xl font-semibold text-gray-900 mb-6">{t('settings.report_branding')}</h2>
-            <BrandingSettings />
-          </div>
-        </PermissionGuard>
 
         {/* Integrations */}
         <div className="bg-white rounded-xl shadow-xs border border-gray-200 p-6">

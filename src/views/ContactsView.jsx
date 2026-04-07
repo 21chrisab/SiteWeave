@@ -4,8 +4,9 @@ import { useToast } from '../context/ToastContext';
 import AddContactModal from '../components/AddContactModal';
 import ContactCard from '../components/ContactCard';
 import ConfirmDialog from '../components/ConfirmDialog';
+import { logContactCreated, logContactUpdated } from '../utils/activityLogger';
 
-function ContactsView() {
+function ContactsView({ embedded = false, defaultProjectFilter = null }) {
     const { state, dispatch } = useAppContext();
     const { addToast } = useToast();
     const [activeTab, setActiveTab] = useState('Team');
@@ -46,6 +47,14 @@ function ContactsView() {
             window.removeEventListener('switchToSubcontractorsTab', handleSwitchToSubcontractors);
         };
     }, []);
+
+    useEffect(() => {
+        if (defaultProjectFilter) {
+            setProjectFilter(String(defaultProjectFilter));
+        } else if (embedded) {
+            setProjectFilter('All Projects');
+        }
+    }, [defaultProjectFilter, embedded]);
 
     const contacts = state.contacts || [];
     const projects = state.projects || [];
@@ -101,6 +110,20 @@ function ContactsView() {
             if (error) {
                 addToast('Error updating contact: ' + error.message, 'error');
             } else {
+                const trackKeys = ['name', 'role', 'type', 'company', 'trade', 'email', 'phone', 'status'];
+                const changes = {};
+                trackKeys.forEach((k) => {
+                    if (contactData[k] !== undefined && editingContact[k] !== contactData[k]) {
+                        changes[k] = { from: editingContact[k], to: contactData[k] };
+                    }
+                });
+                if (Object.keys(changes).length > 0 && state.user) {
+                    logContactUpdated(
+                        { ...editingContact, ...contactData, organization_id: editingContact.organization_id ?? state.currentOrganization?.id },
+                        state.user,
+                        changes
+                    );
+                }
                 addToast('Contact updated successfully!', 'success');
                 dispatch({ type: 'UPDATE_CONTACT', payload: contactData });
                 setShowAddModal(false);
@@ -111,7 +134,8 @@ function ContactsView() {
             setIsCreatingContact(true);
             const contactDataWithAudit = {
                 ...contactData,
-                created_by_user_id: state.user?.id
+                created_by_user_id: state.user?.id,
+                organization_id: state.currentOrganization?.id
             };
             const { data, error } = await supabaseClient
                 .from('contacts')
@@ -124,6 +148,7 @@ function ContactsView() {
             } else {
                 addToast('Contact created successfully!', 'success');
                 dispatch({ type: 'ADD_CONTACT', payload: data });
+                if (state.user) logContactCreated(data, state.user, null);
                 setShowAddModal(false);
             }
             setIsCreatingContact(false);
@@ -320,10 +345,16 @@ function ContactsView() {
 
     return (
         <>
-            <header className="flex items-center justify-between mb-6">
+            <header className={`flex items-center justify-between ${embedded ? 'mb-4' : 'mb-6'}`}>
                 <div>
-                    <h1 className="text-3xl font-bold text-gray-900">Contacts</h1>
-                    <p className="text-gray-500">Manage your team members and subcontractors</p>
+                    <h1 className={`${embedded ? 'text-2xl' : 'text-3xl'} font-bold text-gray-900`}>
+                        {embedded ? 'Directory' : 'Contacts'}
+                    </h1>
+                    <p className="text-gray-500">
+                        {embedded
+                            ? 'Manage your team members, subcontractors, and project assignments'
+                            : 'Manage your team members and subcontractors'}
+                    </p>
                 </div>
                 <div className="flex gap-3">
                     <button 

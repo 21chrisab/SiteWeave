@@ -170,7 +170,7 @@ function MessageItem({ message, onEdit, onDelete, isGrouped = false, showAvatar 
                 )
             )}
             {!showAvatar && !isCurrentUser && <div className="w-10 flex-shrink-0" />}
-            <div className="flex flex-col gap-1 max-w-[70%] min-w-0 flex-1">
+            <div className={`flex flex-col gap-1 w-fit max-w-[70%] min-w-0 ${isCurrentUser ? 'items-end' : ''}`}>
                 {showTimestamp && (
                     <div className={`flex items-baseline gap-2 ${isCurrentUser ? 'self-end' : ''}`}>
                         {!isCurrentUser && <span className="font-bold text-sm truncate">{user?.name}</span>}

@@ -32,7 +32,8 @@ const STANDARD_ROLES = [
       can_manage_contacts: true,
       can_create_tasks: true,
       can_edit_tasks: true,
-      can_delete_tasks: true
+      can_delete_tasks: true,
+      can_view_activity_history: true
     }
   },
   {
@@ -49,7 +50,8 @@ const STANDARD_ROLES = [
       can_manage_contacts: true,
       can_create_tasks: true,
       can_edit_tasks: true,
-      can_delete_tasks: true
+      can_delete_tasks: true,
+      can_view_activity_history: true
     }
   },
   {
@@ -66,7 +68,8 @@ const STANDARD_ROLES = [
       can_manage_contacts: false,
       can_create_tasks: false,
       can_edit_tasks: true,
-      can_delete_tasks: false
+      can_delete_tasks: false,
+      can_view_activity_history: false
     }
   }
 ];
@@ -90,7 +93,8 @@ const ALL_PERMISSIONS = [
   { key: 'can_manage_contacts', label: 'Manage Contacts', description: 'Add and edit contacts' },
   { key: 'can_create_tasks', label: 'Create Tasks', description: 'Create new tasks' },
   { key: 'can_edit_tasks', label: 'Edit Tasks', description: 'Modify existing tasks' },
-  { key: 'can_delete_tasks', label: 'Delete Tasks', description: 'Remove tasks' }
+  { key: 'can_delete_tasks', label: 'Delete Tasks', description: 'Remove tasks' },
+  { key: 'can_view_activity_history', label: 'View Activity History', description: 'See recent activity, notifications, and full activity logs for accessible projects' }
 ];
 
 function SetupWizardModal({ show, onComplete }) {

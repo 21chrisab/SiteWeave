@@ -34,6 +34,7 @@ const PERMISSION_LABELS = {
   can_manage_roles: 'Manage Roles',
   can_manage_contacts: 'Manage Contacts',
   can_manage_users: 'Manage Users',
+  can_view_activity_history: 'View Activity History',
 };
 
 // Helper function to get permission label

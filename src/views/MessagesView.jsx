@@ -4,6 +4,7 @@ import { useToast } from '../context/ToastContext';
 import MessageItem from '../components/MessageItem';
 import Icon from '../components/Icon';
 import Avatar from '../components/Avatar';
+import ProjectTeamPanel from '../components/ProjectTeamPanel';
 import { 
     fetchChannelMessages, 
     sendMessage, 
@@ -19,7 +20,7 @@ import {
     createDebouncedTypingStatus 
 } from '@siteweave/core-logic';
 
-function MessagesView() {
+function MessagesView({ showTeamPanel = false, onOpenDirectory = null }) {
     const { state, dispatch } = useAppContext();
     const { addToast } = useToast();
 
@@ -113,6 +114,10 @@ function MessagesView() {
     const project = getProjectForChannel(activeChannel?.id);
     const teamMembers = contacts.filter(contact => 
         contact.project_contacts && contact.project_contacts.some(pc => pc.project_id === project?.id) && contact.type === 'Team'
+    );
+    const projectContacts = contacts.filter(contact =>
+        Array.isArray(contact.project_contacts) &&
+        contact.project_contacts.some(pc => pc.project_id === project?.id)
     );
 
     // Filter contacts for mentions
@@ -466,7 +471,7 @@ function MessagesView() {
     };
 
     return (
-        <div className="flex h-[calc(100vh-4rem)]">
+        <div className="flex h-full min-h-0">
             <aside 
                 data-onboarding="message-channels"
                 className="w-80 bg-white rounded-l-xl shadow-xs border border-gray-200 flex flex-col p-4"
@@ -489,43 +494,49 @@ function MessagesView() {
                     })}
                 </ul>
             </aside>
-            <main className="flex-1 bg-white rounded-r-xl shadow-xs border-t border-r border-b border-gray-200 flex flex-col overflow-hidden">
+            <main className="flex-1 bg-white rounded-r-xl shadow-xs border-t border-r border-b border-gray-200 flex overflow-hidden">
                 {activeChannel ? (
-                    <>
-                        <header className="p-4 border-b border-gray-200 flex justify-between items-center gap-4">
-                            <div className="min-w-0 flex-1">
-                                <h3 className="font-bold text-lg truncate"># {getProjectForChannel(activeChannel.id)?.name}</h3>
-                                <p className="text-sm text-gray-500">{getTeamCount(activeChannel.project_id)} members</p>
-                            </div>
-                            {teamMembers.length > 0 && (
+                    <div className="flex min-h-0 flex-1">
+                    <section className="flex min-h-0 flex-1 flex-col overflow-hidden">
+                        <header className="shrink-0 border-b border-gray-200">
+                            <div className="max-w-4xl mx-auto w-full px-4 sm:px-6 py-4 flex justify-between items-center gap-4">
+                                <div className="min-w-0 flex-1">
+                                    <h3 className="font-bold text-lg truncate"># {getProjectForChannel(activeChannel.id)?.name}</h3>
+                                    <p className="text-sm text-gray-500">{getTeamCount(activeChannel.project_id)} members</p>
+                                </div>
                                 <div className="flex items-center gap-2">
-                                    <div className="flex -space-x-2">
-                                        {teamMembers.slice(0, 5).map(member => (
-                                            member.avatar_url ? (
-                                                <img 
-                                                    key={member.id} 
-                                                    src={member.avatar_url} 
-                                                    title={member.name} 
-                                                    alt={member.name}
-                                                    className="w-8 h-8 rounded-full border-2 border-white" 
-                                                />
-                                            ) : (
-                                                <Avatar key={member.id} name={member.name} size="md" className="border-2 border-white" />
-                                            )
-                                        ))}
-                                    </div>
-                                    {teamMembers.length > 5 && (
-                                        <div className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center text-xs font-semibold text-gray-600 -ml-2 border-2 border-white">
-                                            +{teamMembers.length - 5}
+                                    {teamMembers.length > 0 && (
+                                    <div className="flex items-center gap-2">
+                                        <div className="flex -space-x-2">
+                                            {teamMembers.slice(0, 5).map(member => (
+                                                member.avatar_url ? (
+                                                    <img 
+                                                        key={member.id} 
+                                                        src={member.avatar_url} 
+                                                        title={member.name} 
+                                                        alt={member.name}
+                                                        className="w-8 h-8 rounded-full border-2 border-white" 
+                                                    />
+                                                ) : (
+                                                    <Avatar key={member.id} name={member.name} size="md" className="border-2 border-white" />
+                                                )
+                                            ))}
                                         </div>
+                                        {teamMembers.length > 5 && (
+                                            <div className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center text-xs font-semibold text-gray-600 -ml-2 border-2 border-white">
+                                                +{teamMembers.length - 5}
+                                            </div>
+                                        )}
+                                    </div>
                                     )}
                                 </div>
-                            )}
+                            </div>
                         </header>
+                        <div className="flex flex-col flex-1 min-h-0 w-full max-w-4xl mx-auto px-4 sm:px-6">
                         <div 
                             ref={messagesContainerRef}
                             data-onboarding="chat-area"
-                            className="flex-1 p-6 overflow-y-auto overflow-x-hidden"
+                            className="flex-1 py-6 overflow-y-auto overflow-x-hidden min-h-0 w-full"
                             onDragOver={handleDragOver}
                             onDragLeave={handleDragLeave}
                             onDrop={handleDrop}
@@ -571,7 +582,7 @@ function MessagesView() {
                             <div ref={messagesEndRef} />
                         </div>
                         {replyingTo && (
-                            <div className="px-4 py-2 bg-blue-50 border-t border-blue-200 flex items-center justify-between">
+                            <div className="py-2 bg-blue-50 border-t border-blue-200 flex items-center justify-between gap-2">
                                 <div className="flex items-center gap-2">
                                     <Icon path="M12 20.25c4.97 0 9-3.694 9-8.25s-4.03-8.25-9-8.25S3 7.444 3 12c0 2.104.859 4.023 2.273 5.488.432.447.74 1.04.586 1.641a4.483 4.483 0 01-.923 1.785A5.969 5.969 0 006 21c1.282 0 2.47-.492 3.337-1.313.379-.38.708-.796.924-1.22a4.801 4.801 0 001.923-1.22 4.705 4.705 0 00.334-1.785c0-.6-.154-1.194-.432-1.641A8.98 8.98 0 0012 20.25z" className="w-4 h-4 text-blue-600" />
                                     <span className="text-sm text-gray-700">
@@ -587,7 +598,7 @@ function MessagesView() {
                                 </button>
                             </div>
                         )}
-                        <div className="p-4 border-t bg-gray-50 relative">
+                        <div className="py-4 border-t bg-gray-50 relative">
                             {uploadProgress > 0 && uploadProgress < 100 && (
                                 <div className="absolute top-0 left-0 right-0 h-1 bg-gray-200">
                                     <div 
@@ -671,7 +682,18 @@ function MessagesView() {
                                 Press Enter to send, Shift+Enter for new line
                             </div>
                         </div>
-                    </>
+                        </div>
+                    </section>
+                    {showTeamPanel && (
+                        <aside className="hidden min-w-0 shrink-0 border-l border-gray-200 xl:flex xl:w-96 xl:flex-col 2xl:w-[28rem]">
+                            <ProjectTeamPanel
+                                project={project}
+                                contacts={projectContacts}
+                                onOpenDirectory={onOpenDirectory || (() => dispatch({ type: 'SET_VIEW', payload: 'Contacts' }))}
+                            />
+                        </aside>
+                    )}
+                    </div>
                 ) : <div className="flex-1 flex items-center justify-center text-gray-500">Select a channel to start messaging.</div>}
             </main>
         </div>

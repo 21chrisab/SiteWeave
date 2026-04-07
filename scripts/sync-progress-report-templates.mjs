@@ -9,6 +9,8 @@ const src = fs.readFileSync(path.join(root, 'src/utils/progressReportEmailTempla
 let s = src.replace(/import i18n from '\.\.\/i18n\/config';\s*/s, '');
 s = s.replace(/i18n\.language \|\| 'en'/g, "'en-US'");
 s = s.replace(/^export function generate/gm, 'function generate');
+// Remove the backward-compat alias line (not needed in edge functions)
+s = s.replace(/^export const generateClientReportEmail.*$/m, '');
 
 const head = `// AUTO-GENERATED from src/utils/progressReportEmailTemplates.js â€” run: node scripts/sync-progress-report-templates.mjs
 // deno-lint-ignore-file no-explicit-any
@@ -17,18 +19,10 @@ const head = `// AUTO-GENERATED from src/utils/progressReportEmailTemplates.js â
 
 const tail = `
 export function buildProgressReportEmail(reportData, filteredData, schedule, branding) {
-  const audience = schedule.report_audience_type || 'internal';
-  if (audience === 'client') return generateClientReportEmail(filteredData, schedule, branding);
+  const audience = schedule.report_audience_type || 'standard';
   if (audience === 'executive') return generateExecutiveReportEmail(filteredData, schedule, branding);
-  const enriched = {
-    ...reportData,
-    summary_stats: {
-      tasks_completed: Array.isArray(reportData.completed_tasks) ? reportData.completed_tasks.length : 0,
-      status_changes: Array.isArray(reportData.status_changes) ? reportData.status_changes.length : 0,
-      phases_updated: Array.isArray(reportData.phase_progress) ? reportData.phase_progress.length : 0,
-    },
-  };
-  return generateInternalReportEmail(enriched, schedule, branding);
+  // standard / client / internal all use the unified standard template
+  return generateStandardReportEmail(filteredData, schedule, branding);
 }
 `;
 

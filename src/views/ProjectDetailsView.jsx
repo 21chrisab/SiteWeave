@@ -21,6 +21,7 @@ import { logTaskCreated, logTaskCompleted, logTaskUncompleted, logTaskUpdated, l
 import { getCriticalPathTaskIds } from '../utils/criticalPath';
 import { orderTasksForGantt } from '../utils/ganttOrdering';
 import GanttChart from '../components/GanttChart';
+import ActivityHistoryPanel from '../components/ActivityHistoryPanel';
 
 function ProjectDetailsView() {
     const { t } = useTranslation();
@@ -38,11 +39,19 @@ function ProjectDetailsView() {
     const [selectedTasks, setSelectedTasks] = useState([]);
     const [taskFilter, setTaskFilter] = useState('all'); // all, completed, pending
     const [taskSort, setTaskSort] = useState('due_date'); // due_date, priority
-    const [activeTab, setActiveTab] = useState('tasks'); // tasks, gantt, fieldIssues
+    const [activeTab, setActiveTab] = useState('tasks'); // tasks, gantt, fieldIssues, activity
     const [showShare, setShowShare] = useState(false);
     const [showProgressReportModal, setShowProgressReportModal] = useState(false);
     const [showSaveAsTemplateModal, setShowSaveAsTemplateModal] = useState(false);
     const [fieldIssuesCount, setFieldIssuesCount] = useState(0);
+
+    const canViewActivityHistory = state.userRole?.permissions?.can_view_activity_history === true;
+
+    useEffect(() => {
+        if (!canViewActivityHistory && activeTab === 'activity') {
+            setActiveTab('tasks');
+        }
+    }, [canViewActivityHistory, activeTab]);
 
     // Keyboard shortcuts
     useTaskShortcuts({
@@ -422,6 +431,7 @@ function ProjectDetailsView() {
     };
 
     const handleEditTask = async (taskId, updatedData) => {
+        const prev = allTasks.find((x) => x.id === taskId);
         const { error } = await supabaseClient.from('tasks').update(updatedData).eq('id', taskId);
         if (error) {
             addToast(t('toast.error_updating_task', { message: error.message }), 'error');
@@ -430,6 +440,20 @@ function ProjectDetailsView() {
             dispatch({ type: 'UPDATE_TASK', payload: updatedTask });
             setProjectTasksList(prev => prev.map(t => t.id === taskId ? { ...t, ...updatedData } : t));
             addToast(t('toast.task_updated_successfully'), 'success');
+            if (prev && project && state.user) {
+                const changes = {};
+                Object.keys(updatedData).forEach((key) => {
+                    if (prev[key] !== updatedData[key]) changes[key] = updatedData[key];
+                });
+                if (Object.keys(changes).length > 0) {
+                    logTaskUpdated(
+                        { ...prev, ...updatedData, organization_id: prev.organization_id ?? project.organization_id },
+                        state.user,
+                        project.id,
+                        changes
+                    );
+                }
+            }
         }
     };
 
@@ -487,6 +511,16 @@ function ProjectDetailsView() {
             if (error) {
                 addToast(t('toast.error_deleting_task', { message: error.message }), 'error');
             } else {
+                const deletedRow =
+                    allTasks.find((x) => x.id === taskToDelete.id) ||
+                    tasksState.find((x) => x.id === taskToDelete.id);
+                if (deletedRow && project && state.user) {
+                    logTaskDeleted(
+                        { ...deletedRow, organization_id: deletedRow.organization_id ?? project.organization_id },
+                        state.user,
+                        project.id
+                    );
+                }
                 dispatch({ type: 'DELETE_TASK', payload: taskToDelete.id });
                 setProjectTasksList(prev => prev.filter(t => t.id !== taskToDelete.id));
                 const childCount = childTasks?.length || 0;
@@ -523,6 +557,18 @@ function ProjectDetailsView() {
                 const updatedTask = { ...tasksState.find(t => t.id === taskId), completed: true };
                 dispatch({ type: 'UPDATE_TASK', payload: updatedTask });
             });
+            if (project && state.user) {
+                taskIds.forEach((taskId) => {
+                    const row = allTasks.find((x) => x.id === taskId) || tasksState.find((x) => x.id === taskId);
+                    if (row) {
+                        logTaskCompleted(
+                            { ...row, completed: true, organization_id: row.organization_id ?? project.organization_id },
+                            state.user,
+                            project.id
+                        );
+                    }
+                });
+            }
             addToast(t('toast.tasks_completed_successfully', { count: taskIds.length }), 'success');
             setSelectedTasks([]);
         }
@@ -566,6 +612,18 @@ function ProjectDetailsView() {
             if (error) {
                 addToast(t('toast.error_deleting_tasks', { message: error.message }), 'error');
             } else {
+                if (project && state.user) {
+                    taskIds.forEach((taskId) => {
+                        const row = allTasks.find((x) => x.id === taskId) || tasksState.find((x) => x.id === taskId);
+                        if (row) {
+                            logTaskDeleted(
+                                { ...row, organization_id: row.organization_id ?? project.organization_id },
+                                state.user,
+                                project.id
+                            );
+                        }
+                    });
+                }
                 // Remove each task from the state
                 taskIds.forEach(taskId => {
                     dispatch({ type: 'DELETE_TASK', payload: taskId });
@@ -755,6 +813,18 @@ function ProjectDetailsView() {
                             >
                                 Field Issues ({fieldIssuesCount})
                             </button>
+                            {canViewActivityHistory && (
+                            <button
+                                onClick={() => setActiveTab('activity')}
+                                className={`py-2 px-1 text-sm font-medium border-b-2 transition-colors ${
+                                    activeTab === 'activity'
+                                        ? 'border-blue-500 text-blue-600'
+                                        : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                                }`}
+                            >
+                                {t('activityHistory.tabLabel')}
+                            </button>
+                            )}
                         </nav>
                     </div>
 
@@ -866,6 +936,14 @@ function ProjectDetailsView() {
                             <FieldIssues projectId={project.id} />
                         )}
 
+                        {canViewActivityHistory && activeTab === 'activity' && (
+                            <ActivityHistoryPanel
+                                mode="project"
+                                organizationId={project.organization_id || state.currentOrganization?.id}
+                                projectId={project.id}
+                            />
+                        )}
+
                         {/* Workflow Section - Always visible under Tasks */}
                         {activeTab === 'tasks' && (
                             <div className="mt-6">
@@ -877,7 +955,10 @@ function ProjectDetailsView() {
 
                 {/* Project Sidebar */}
                 <div className="lg:col-span-2">
-                    <ProjectSidebar project={project} />
+                    <ProjectSidebar
+                        project={project}
+                        onViewAllActivity={canViewActivityHistory ? () => setActiveTab('activity') : undefined}
+                    />
                 </div>
             </div>
             {showTaskModal && <TaskModal project={project} onClose={() => setShowTaskModal(false)} onSave={handleAddTask} isLoading={isCreatingTask} />}

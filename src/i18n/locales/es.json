@@ -37,6 +37,7 @@
     "dashboard": "Panel de Control",
     "projects": "Proyectos",
     "calendar": "Calendario",
+    "team": "Equipo",
     "messages": "Mensajes",
     "contacts": "Contactos",
     "organization": "Organización",
@@ -205,5 +206,97 @@
   "errors": {
     "generic": "{{message}}",
     "could_not_add_task": "No se pudo agregar la tarea"
+  },
+  "activity": {
+    "project_suffix": " · {{project}}",
+    "phase_progress": "Ajustó la fase \"{{phase}}\" del {{old}}% al {{new}}%{{projectSuffix}}",
+    "project_status_change": "Cambió el estado de \"{{name}}\" de {{old}} a {{new}}",
+    "project_fields_updated": "Actualizó el proyecto \"{{name}}\" ({{fields}})",
+    "branding_updated": "Actualizó la marca de correo de la organización",
+    "organization_updated": "Actualizó la organización \"{{name}}\"",
+    "task": {
+      "created": "Creó la tarea \"{{name}}\"{{projectSuffix}}",
+      "updated": "Actualizó la tarea \"{{name}}\"{{detailSuffix}}{{projectSuffix}}",
+      "deleted": "Eliminó la tarea \"{{name}}\"{{projectSuffix}}",
+      "completed": "Completó la tarea \"{{name}}\"{{projectSuffix}}",
+      "uncompleted": "Reabrió la tarea \"{{name}}\"{{projectSuffix}}"
+    },
+    "project": {
+      "created": "Creó el proyecto \"{{name}}\"",
+      "updated": "Actualizó el proyecto \"{{name}}\"",
+      "deleted": "Eliminó el proyecto \"{{name}}\""
+    },
+    "file": {
+      "uploaded": "Subió el archivo \"{{name}}\"{{projectSuffix}}",
+      "deleted": "Eliminó el archivo \"{{name}}\"{{projectSuffix}}"
+    },
+    "contact": {
+      "created": "Añadió el contacto \"{{name}}\"",
+      "updated": "Actualizó el contacto \"{{name}}\"{{detailSuffix}}",
+      "deleted": "Eliminó el contacto \"{{name}}\""
+    },
+    "detail": {
+      "changed_fields": " — {{fields}}",
+      "multiple_fields": "varios detalles"
+    },
+    "field": {
+      "text": "título",
+      "due_date": "fecha de entrega",
+      "assignee_id": "responsable",
+      "priority": "prioridad",
+      "completed": "estado hecho",
+      "start_date": "fecha de inicio",
+      "recurrence": "recurrencia",
+      "workflow_steps": "flujo de trabajo"
+    },
+    "generic": "{{action}} {{entityType}} \"{{name}}\"{{projectSuffix}}",
+    "fallback": {
+      "phase": "Fase",
+      "project": "Proyecto",
+      "task": "una tarea",
+      "file": "un archivo",
+      "contact": "un contacto",
+      "item": "un elemento",
+      "organization": "Organización",
+      "project_phase": "fase",
+      "issue": "una incidencia",
+      "message": "un mensaje"
+    },
+    "entity": {
+      "task": "tarea",
+      "project": "proyecto",
+      "file": "archivo",
+      "contact": "contacto",
+      "project_phase": "fase",
+      "organization": "organización",
+      "branding": "marca",
+      "item": "elemento",
+      "issue": "incidencia",
+      "message": "mensaje"
+    }
+  },
+  "activityHistory": {
+    "projectTitle": "Actividad",
+    "organizationTitle": "Actividad de la organización",
+    "subtitle": "Historial completo para su trazabilidad. Filtre por tipo o exporte a CSV.",
+    "filterType": "Mostrar",
+    "exportCsv": "Exportar CSV",
+    "loading": "Cargando…",
+    "loadMore": "Cargar más",
+    "empty": "Aún no hay actividad registrada.",
+    "error": "No se pudo cargar la actividad.",
+    "noOrganization": "No hay una organización vinculada a este contexto.",
+    "tabLabel": "Actividad",
+    "viewAll": "Ver toda la actividad",
+    "entity": {
+      "all": "Todos los tipos",
+      "task": "Tareas",
+      "project": "Proyectos",
+      "contact": "Contactos",
+      "file": "Archivos",
+      "project_phase": "Fases",
+      "branding": "Marca",
+      "organization": "Organización"
+    }
   }
 }

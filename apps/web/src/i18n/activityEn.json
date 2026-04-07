@@ -1,0 +1,68 @@
+{
+  "project_suffix": " · {{project}}",
+  "phase_progress": "Set phase \"{{phase}}\" from {{old}}% to {{new}}%{{projectSuffix}}",
+  "project_status_change": "Changed status for \"{{name}}\" from {{old}} to {{new}}",
+  "project_fields_updated": "Updated project \"{{name}}\" ({{fields}})",
+  "branding_updated": "Updated organization email branding",
+  "organization_updated": "Updated organization \"{{name}}\"",
+  "task": {
+    "created": "Created task \"{{name}}\"{{projectSuffix}}",
+    "updated": "Updated task \"{{name}}\"{{detailSuffix}}{{projectSuffix}}",
+    "deleted": "Deleted task \"{{name}}\"{{projectSuffix}}",
+    "completed": "Completed task \"{{name}}\"{{projectSuffix}}",
+    "uncompleted": "Reopened task \"{{name}}\"{{projectSuffix}}"
+  },
+  "project": {
+    "created": "Created project \"{{name}}\"",
+    "updated": "Updated project \"{{name}}\"",
+    "deleted": "Deleted project \"{{name}}\""
+  },
+  "file": {
+    "uploaded": "Uploaded file \"{{name}}\"{{projectSuffix}}",
+    "deleted": "Deleted file \"{{name}}\"{{projectSuffix}}"
+  },
+  "contact": {
+    "created": "Added contact \"{{name}}\"",
+    "updated": "Updated contact \"{{name}}\"{{detailSuffix}}",
+    "deleted": "Removed contact \"{{name}}\""
+  },
+  "detail": {
+    "changed_fields": " — {{fields}}",
+    "multiple_fields": "several details"
+  },
+  "field": {
+    "text": "title",
+    "due_date": "due date",
+    "assignee_id": "assignee",
+    "priority": "priority",
+    "completed": "done status",
+    "start_date": "start date",
+    "recurrence": "recurrence",
+    "workflow_steps": "workflow"
+  },
+  "generic": "{{action}} {{entityType}} \"{{name}}\"{{projectSuffix}}",
+  "fallback": {
+    "phase": "Phase",
+    "project": "Project",
+    "task": "a task",
+    "file": "a file",
+    "contact": "a contact",
+    "item": "an item",
+    "organization": "Organization",
+    "project_phase": "phase",
+    "issue": "an issue",
+    "message": "a message"
+  },
+  "entity": {
+    "task": "task",
+    "project": "project",
+    "file": "file",
+    "contact": "contact",
+    "project_phase": "phase",
+    "organization": "organization",
+    "branding": "branding",
+    "item": "item",
+    "issue": "issue",
+    "message": "message"
+  }
+}

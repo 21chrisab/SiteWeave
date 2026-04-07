@@ -14,6 +14,7 @@ import ProjectListView from '../components/ProjectListView';
 import PermissionGuard from '../components/PermissionGuard';
 import ProgressReportModal from '../components/ProgressReportModal';
 import { useProjectShortcuts } from '../hooks/useKeyboardShortcuts';
+import { logProjectCreated, logActivity } from '../utils/activityLogger';
 
 function DashboardView() {
     const { t } = useTranslation();
@@ -144,6 +145,32 @@ function DashboardView() {
                 }
                 dispatch({ type: 'UPDATE_PROJECT', payload: updatedProject });
                 addToast(t('toast.project_updated_successfully'), 'success');
+                const changedFields = [];
+                if (editingProject.name !== updatedProject.name) changedFields.push('name');
+                if (editingProject.address !== updatedProject.address) changedFields.push('address');
+                if (editingProject.status !== updatedProject.status) changedFields.push('status');
+                if (String(editingProject.due_date || '') !== String(updatedProject.due_date || '')) {
+                    changedFields.push('due_date');
+                }
+                const statusChanged = editingProject.status !== updatedProject.status;
+                if (user && (statusChanged || changedFields.length > 0)) {
+                    const details = {};
+                    if (statusChanged) {
+                        details.old_status = editingProject.status;
+                        details.new_status = updatedProject.status;
+                    }
+                    if (changedFields.length > 0) details.changed_fields = changedFields;
+                    logActivity({
+                        action: 'updated',
+                        entityType: 'project',
+                        entityId: updatedProject.id,
+                        entityName: updatedProject.name,
+                        projectId: updatedProject.id,
+                        organizationId: updatedProject.organization_id,
+                        user,
+                        details
+                    });
+                }
                 setShowModal(false);
                 setEditingProject(null);
             }
@@ -351,6 +378,7 @@ function DashboardView() {
                     console.warn('No contacts to add to project - project may not be visible after reload');
                 }
                 dispatch({ type: 'ADD_PROJECT', payload: createdProject });
+                logProjectCreated(createdProject, user);
                 addToast(t('toast.project_created_successfully'), 'success');
                 setShowModal(false);
             }

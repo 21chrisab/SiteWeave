@@ -173,4 +173,11 @@ export async function canDeleteTasks(supabase, userId, organizationId) {
   return hasPermission(supabase, userId, 'can_delete_tasks', organizationId);
 }
 
+/**
+ * View activity feed, notifications, and full activity history (project + org where applicable)
+ */
+export async function canViewActivityHistory(supabase, userId, organizationId) {
+  return hasPermission(supabase, userId, 'can_view_activity_history', organizationId);
+}
+
 

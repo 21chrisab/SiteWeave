@@ -1,6 +1,9 @@
 /**
  * Progress Report Email Templates
- * Generates HTML email templates for different audience types
+ * Generates HTML email templates for different audience types.
+ *
+ * Design principles: excellent typography, generous whitespace, deterministic
+ * copy (no AI for narrative). Zero heavy animations.
  *
  * Edge functions use a generated copy: run `npm run sync:progress-report-templates`
  * after changing this file so `send-progress-report` / `export-progress-report-pdf` stay in sync.
@@ -8,459 +11,7 @@
 
 import i18n from '../i18n/config';
 
-/**
- * Generate client report email template
- * @param {Object} reportData - Filtered report data
- * @param {Object} schedule - Schedule configuration
- * @param {Object} branding - Organization branding
- * @returns {Object} {subject, html, text}
- */
-export function generateClientReportEmail(reportData, schedule, branding) {
-  const subject = schedule.custom_subject || `Progress Update: ${reportData.project_name || 'Your Project'}`;
-  const period = formatReportPeriod(reportData.start_date, reportData.end_date);
-
-  const hasActivity =
-    (reportData.status_changes && reportData.status_changes.length > 0) ||
-    (reportData.completed_tasks && reportData.completed_tasks.length > 0) ||
-    (reportData.phase_progress && reportData.phase_progress.length > 0);
-  const snap = reportData.snapshot;
-  const snapshotSection =
-    !hasActivity && snap &&
-    ((snap.open_tasks && snap.open_tasks.length > 0) ||
-      (snap.phases && snap.phases.length > 0) ||
-      snap.open_total != null ||
-      snap.completed_total != null)
-      ? `
-        <div style="margin-bottom: 30px; padding: 18px; background-color: #f9fafb; border-radius: 8px; border: 1px solid #e5e7eb;">
-          <p style="margin: 0 0 16px 0; color: #4b5563; font-size: 14px; line-height: 1.6;">
-            No task completions or status changes were recorded in this reporting window. Below is a snapshot of the project as of today.
-          </p>
-          ${
-            snap.open_total != null || snap.completed_total != null
-              ? `
-          <p style="margin: 0 0 16px 0; color: #374151; font-size: 14px;">
-            <strong>${snap.open_total ?? 0}</strong> open task(s), <strong>${snap.completed_total ?? 0}</strong> completed on record.
-          </p>`
-              : ''
-          }
-          ${
-            snap.open_tasks && snap.open_tasks.length > 0
-              ? `
-          <h2 style="color: #1f2937; font-size: 18px; margin: 0 0 12px 0;">Open work</h2>
-          <ul style="margin: 0 0 20px 0; padding-left: 20px; color: #374151;">
-            ${snap.open_tasks
-              .map(
-                (ot) => `
-              <li style="margin-bottom: 6px; line-height: 1.5;">
-                ${escapeHtml(ot.text || 'Task')}
-                ${ot.due_date ? `<span style="color: #6b7280; font-size: 12px;"> — due ${escapeHtml(String(ot.due_date))}</span>` : ''}
-                ${ot.assignee ? `<span style="color: #6b7280; font-size: 12px;"> (${escapeHtml(ot.assignee)})</span>` : ''}
-              </li>
-            `
-              )
-              .join('')}
-          </ul>`
-              : ''
-          }
-          ${
-            snap.phases && snap.phases.length > 0
-              ? `
-          <h2 style="color: #1f2937; font-size: 18px; margin: 0 0 12px 0;">Phase progress (current)</h2>
-          ${snap.phases
-            .map(
-              (ph) => `
-            <div style="margin-bottom: 12px;">
-              <p style="margin: 0 0 4px 0; color: #374151; font-weight: 500;">${escapeHtml(ph.name || 'Phase')}</p>
-              <div style="background-color: #e5e7eb; border-radius: 4px; height: 20px; overflow: hidden;">
-                <div style="background-color: ${branding.secondary_color || '#10B981'}; height: 100%; width: ${Math.min(100, Math.max(0, ph.progress || 0))}%;"></div>
-              </div>
-              <p style="margin: 4px 0 0 0; color: #6b7280; font-size: 12px;">${ph.progress || 0}%</p>
-            </div>
-          `
-            )
-            .join('')}`
-              : ''
-          }
-        </div>
-      `
-      : '';
-  
-  const html = `
-<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>${subject}</title>
-</head>
-<body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background-color: #f5f5f5;">
-  <table role="presentation" style="width: 100%; border-collapse: collapse;">
-    <tr>
-      <td style="padding: 20px 0; text-align: center; background-color: ${branding.primary_color || '#3B82F6'};">
-        ${branding.logo_url ? `<img src="${branding.logo_url}" alt="Logo" style="max-height: 60px; max-width: 200px;">` : ''}
-      </td>
-    </tr>
-    <tr>
-      <td style="padding: 40px 20px; background-color: #ffffff; max-width: 600px; margin: 0 auto;">
-        <h1 style="color: #1f2937; font-size: 24px; margin: 0 0 10px 0;">Progress Update</h1>
-        <p style="color: #6b7280; font-size: 14px; margin: 0 0 30px 0;">${period}</p>
-        
-        ${schedule.custom_message ? `
-        <div style="background-color: #f9fafb; border-left: 4px solid ${branding.secondary_color || '#10B981'}; padding: 15px; margin-bottom: 30px;">
-          <p style="margin: 0; color: #374151; line-height: 1.6;">${escapeHtml(schedule.custom_message)}</p>
-        </div>
-        ` : ''}
-        
-        ${reportData.status_changes && reportData.status_changes.length > 0 ? `
-        <div style="margin-bottom: 30px;">
-          <h2 style="color: #1f2937; font-size: 18px; margin: 0 0 15px 0; border-bottom: 2px solid ${branding.primary_color || '#3B82F6'}; padding-bottom: 5px;">Status Update</h2>
-          ${reportData.status_changes.map(change => `
-            <div style="background-color: #f0fdf4; border: 1px solid #86efac; border-radius: 6px; padding: 12px; margin-bottom: 10px;">
-              <p style="margin: 0; color: #166534; font-weight: 500;">${escapeHtml(change.project_name || 'Project')}</p>
-              <p style="margin: 5px 0 0 0; color: #15803d; font-size: 14px;">
-                Status: <span style="text-decoration: line-through; color: #6b7280;">${escapeHtml(change.old_status)}</span> 
-                → <strong style="color: ${branding.secondary_color || '#10B981'}">${escapeHtml(change.new_status)}</strong>
-              </p>
-            </div>
-          `).join('')}
-        </div>
-        ` : ''}
-        
-        ${reportData.completed_tasks && reportData.completed_tasks.length > 0 ? `
-        <div style="margin-bottom: 30px;">
-          <h2 style="color: #1f2937; font-size: 18px; margin: 0 0 15px 0; border-bottom: 2px solid ${branding.primary_color || '#3B82F6'}; padding-bottom: 5px;">Completed Work</h2>
-          <ul style="margin: 0; padding-left: 20px; color: #374151;">
-            ${reportData.completed_tasks.map(task => `
-              <li style="margin-bottom: 8px; line-height: 1.6;">
-                <span style="color: ${branding.secondary_color || '#10B981'}; font-weight: bold;">✓</span> 
-                ${escapeHtml(task.text || task.title)}
-                ${task.completed_at ? `<span style="color: #6b7280; font-size: 12px;"> (${formatDate(task.completed_at)})</span>` : ''}
-              </li>
-            `).join('')}
-          </ul>
-        </div>
-        ` : ''}
-        
-        ${reportData.phase_progress && reportData.phase_progress.length > 0 ? `
-        <div style="margin-bottom: 30px;">
-          <h2 style="color: #1f2937; font-size: 18px; margin: 0 0 15px 0; border-bottom: 2px solid ${branding.primary_color || '#3B82F6'}; padding-bottom: 5px;">Current Phase</h2>
-          ${reportData.phase_progress.map(phase => `
-            <div style="margin-bottom: 15px;">
-              <p style="margin: 0 0 5px 0; color: #374151; font-weight: 500;">${escapeHtml(phase.name)}</p>
-              <div style="background-color: #e5e7eb; border-radius: 4px; height: 24px; overflow: hidden;">
-                <div style="background-color: ${branding.secondary_color || '#10B981'}; height: 100%; width: ${phase.progress || 0}%; transition: width 0.3s;"></div>
-              </div>
-              <p style="margin: 5px 0 0 0; color: #6b7280; font-size: 12px;">${phase.progress || 0}% Complete</p>
-            </div>
-          `).join('')}
-        </div>
-        ` : ''}
-        
-        ${snapshotSection}
-        
-        ${reportData.next_steps && reportData.next_steps.length > 0 ? `
-        <div style="margin-bottom: 30px;">
-          <h2 style="color: #1f2937; font-size: 18px; margin: 0 0 15px 0; border-bottom: 2px solid ${branding.primary_color || '#3B82F6'}; padding-bottom: 5px;">What's Next</h2>
-          <ul style="margin: 0; padding-left: 20px; color: #374151;">
-            ${reportData.next_steps.map(step => `
-              <li style="margin-bottom: 8px; line-height: 1.6;">${escapeHtml(step)}</li>
-            `).join('')}
-          </ul>
-        </div>
-        ` : ''}
-        
-        ${branding.company_footer ? `
-        <div style="margin-top: 40px; padding-top: 20px; border-top: 1px solid #e5e7eb; color: #6b7280; font-size: 12px;">
-          ${branding.company_footer}
-        </div>
-        ` : ''}
-        
-        ${branding.email_signature ? `
-        <div style="margin-top: 20px; color: #374151; font-size: 14px; line-height: 1.6;">
-          ${branding.email_signature}
-        </div>
-        ` : ''}
-      </td>
-    </tr>
-    <tr>
-      <td style="padding: 20px; text-align: center; background-color: #f9fafb; color: #6b7280; font-size: 12px;">
-        <p style="margin: 0;">This is an automated progress report from ${escapeHtml(reportData.organization_name || 'SiteWeave')}</p>
-      </td>
-    </tr>
-  </table>
-</body>
-</html>
-  `.trim();
-  
-  const text = generateTextVersion(reportData, schedule, period);
-  
-  return { subject, html, text };
-}
-
-/**
- * Generate internal report email template
- * @param {Object} reportData - Full report data
- * @param {Object} schedule - Schedule configuration
- * @param {Object} branding - Organization branding
- * @returns {Object} {subject, html, text}
- */
-export function generateInternalReportEmail(reportData, schedule, branding) {
-  const subject = schedule.custom_subject || `Internal Progress Report: ${reportData.project_name || 'All Projects'}`;
-  const period = formatReportPeriod(reportData.start_date, reportData.end_date);
-  
-  const html = `
-<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>${subject}</title>
-</head>
-<body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background-color: #f5f5f5;">
-  <table role="presentation" style="width: 100%; border-collapse: collapse;">
-    <tr>
-      <td style="padding: 20px 0; text-align: center; background-color: ${branding.primary_color || '#3B82F6'};">
-        ${branding.logo_url ? `<img src="${branding.logo_url}" alt="Logo" style="max-height: 60px; max-width: 200px;">` : ''}
-      </td>
-    </tr>
-    <tr>
-      <td style="padding: 40px 20px; background-color: #ffffff; max-width: 600px; margin: 0 auto;">
-        <h1 style="color: #1f2937; font-size: 24px; margin: 0 0 10px 0;">Internal Progress Report</h1>
-        <p style="color: #6b7280; font-size: 14px; margin: 0 0 30px 0;">${period}</p>
-        
-        ${schedule.custom_message ? `
-        <div style="background-color: #eff6ff; border-left: 4px solid ${branding.primary_color || '#3B82F6'}; padding: 15px; margin-bottom: 30px;">
-          <p style="margin: 0; color: #1e40af; line-height: 1.6;">${escapeHtml(schedule.custom_message)}</p>
-        </div>
-        ` : ''}
-        
-        ${reportData.summary_stats ? `
-        <div style="display: table; width: 100%; margin-bottom: 30px;">
-          <div style="display: table-cell; width: 33%; text-align: center; padding: 15px; background-color: #f9fafb; border-radius: 6px; margin-right: 10px;">
-            <div style="font-size: 28px; font-weight: bold; color: ${branding.primary_color || '#3B82F6'};">${reportData.summary_stats.tasks_completed || 0}</div>
-            <div style="font-size: 12px; color: #6b7280; margin-top: 5px;">Tasks Completed</div>
-          </div>
-          <div style="display: table-cell; width: 33%; text-align: center; padding: 15px; background-color: #f9fafb; border-radius: 6px; margin: 0 10px;">
-            <div style="font-size: 28px; font-weight: bold; color: ${branding.secondary_color || '#10B981'};">${reportData.summary_stats.status_changes || 0}</div>
-            <div style="font-size: 12px; color: #6b7280; margin-top: 5px;">Status Changes</div>
-          </div>
-          <div style="display: table-cell; width: 33%; text-align: center; padding: 15px; background-color: #f9fafb; border-radius: 6px; margin-left: 10px;">
-            <div style="font-size: 28px; font-weight: bold; color: #f59e0b;">${reportData.summary_stats.phases_updated || 0}</div>
-            <div style="font-size: 12px; color: #6b7280; margin-top: 5px;">Phases Updated</div>
-          </div>
-        </div>
-        ` : ''}
-        
-        ${reportData.status_changes && reportData.status_changes.length > 0 ? `
-        <div style="margin-bottom: 30px;">
-          <h2 style="color: #1f2937; font-size: 18px; margin: 0 0 15px 0; border-bottom: 2px solid ${branding.primary_color || '#3B82F6'}; padding-bottom: 5px;">Status Changes</h2>
-          ${reportData.status_changes.map(change => `
-            <div style="background-color: #fef3c7; border: 1px solid #fcd34d; border-radius: 6px; padding: 12px; margin-bottom: 10px;">
-              <p style="margin: 0; color: #92400e; font-weight: 500;">${escapeHtml(change.project_name || 'Project')}</p>
-              <p style="margin: 5px 0 0 0; color: #78350f; font-size: 14px;">
-                <span style="text-decoration: line-through; color: #6b7280;">${escapeHtml(change.old_status)}</span> 
-                → <strong style="color: ${branding.primary_color || '#3B82F6'}">${escapeHtml(change.new_status)}</strong>
-                ${change.changed_by ? `<span style="color: #6b7280; font-size: 12px;"> by ${escapeHtml(change.changed_by)}</span>` : ''}
-                ${change.changed_at ? `<span style="color: #6b7280; font-size: 12px;"> on ${formatDate(change.changed_at)}</span>` : ''}
-              </p>
-            </div>
-          `).join('')}
-        </div>
-        ` : ''}
-        
-        ${reportData.completed_tasks && reportData.completed_tasks.length > 0 ? `
-        <div style="margin-bottom: 30px;">
-          <h2 style="color: #1f2937; font-size: 18px; margin: 0 0 15px 0; border-bottom: 2px solid ${branding.primary_color || '#3B82F6'}; padding-bottom: 5px;">Completed Tasks</h2>
-          <table style="width: 100%; border-collapse: collapse;">
-            ${reportData.completed_tasks.map(task => `
-              <tr>
-                <td style="padding: 8px 0; border-bottom: 1px solid #e5e7eb;">
-                  <span style="color: ${branding.secondary_color || '#10B981'}; font-weight: bold;">✓</span>
-                  <span style="color: #374151; margin-left: 8px;">${escapeHtml(task.text || task.title)}</span>
-                  ${task.assignee ? `<span style="color: #6b7280; font-size: 12px; margin-left: 8px;">(@${escapeHtml(task.assignee)})</span>` : ''}
-                  ${task.completed_at ? `<span style="color: #6b7280; font-size: 12px; margin-left: 8px;">${formatDate(task.completed_at)}</span>` : ''}
-                </td>
-              </tr>
-            `).join('')}
-          </table>
-        </div>
-        ` : ''}
-        
-        ${reportData.phase_progress && reportData.phase_progress.length > 0 ? `
-        <div style="margin-bottom: 30px;">
-          <h2 style="color: #1f2937; font-size: 18px; margin: 0 0 15px 0; border-bottom: 2px solid ${branding.primary_color || '#3B82F6'}; padding-bottom: 5px;">Phase Progress</h2>
-          ${reportData.phase_progress.map(phase => `
-            <div style="margin-bottom: 15px;">
-              <div style="display: flex; justify-content: space-between; margin-bottom: 5px;">
-                <p style="margin: 0; color: #374151; font-weight: 500;">${escapeHtml(phase.name)}</p>
-                <p style="margin: 0; color: #6b7280; font-size: 14px;">${phase.old_progress || 0}% → ${phase.progress || 0}%</p>
-              </div>
-              <div style="background-color: #e5e7eb; border-radius: 4px; height: 24px; overflow: hidden;">
-                <div style="background-color: ${phase.progress >= 100 ? branding.secondary_color || '#10B981' : branding.primary_color || '#3B82F6'}; height: 100%; width: ${phase.progress || 0}%; transition: width 0.3s;"></div>
-              </div>
-            </div>
-          `).join('')}
-        </div>
-        ` : ''}
-        
-        ${reportData.blockers && reportData.blockers.length > 0 ? `
-        <div style="margin-bottom: 30px; background-color: #fef2f2; border: 1px solid #fecaca; border-radius: 6px; padding: 15px;">
-          <h2 style="color: #991b1b; font-size: 18px; margin: 0 0 15px 0;">⚠️ Blockers & Issues</h2>
-          <ul style="margin: 0; padding-left: 20px; color: #7f1d1d;">
-            ${reportData.blockers.map(blocker => `
-              <li style="margin-bottom: 8px; line-height: 1.6;">${escapeHtml(blocker)}</li>
-            `).join('')}
-          </ul>
-        </div>
-        ` : ''}
-        
-        ${branding.company_footer ? `
-        <div style="margin-top: 40px; padding-top: 20px; border-top: 1px solid #e5e7eb; color: #6b7280; font-size: 12px;">
-          ${branding.company_footer}
-        </div>
-        ` : ''}
-        
-        <div style="margin-top: 20px; text-align: center;">
-          <a href="${reportData.app_url || '#'}" style="display: inline-block; padding: 10px 20px; background-color: ${branding.primary_color || '#3B82F6'}; color: #ffffff; text-decoration: none; border-radius: 6px; font-weight: 500;">View Full Project in App</a>
-        </div>
-      </td>
-    </tr>
-  </table>
-</body>
-</html>
-  `.trim();
-  
-  const text = generateTextVersion(reportData, schedule, period);
-  
-  return { subject, html, text };
-}
-
-/**
- * Generate executive report email template
- * @param {Object} reportData - Aggregated report data
- * @param {Object} schedule - Schedule configuration
- * @param {Object} branding - Organization branding
- * @returns {Object} {subject, html, text}
- */
-export function generateExecutiveReportEmail(reportData, schedule, branding) {
-  const subject = schedule.custom_subject || `Executive Brief: ${reportData.organization_name || 'Organization'} Status`;
-  const period = formatReportPeriod(reportData.start_date, reportData.end_date);
-  
-  const html = `
-<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>${subject}</title>
-</head>
-<body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background-color: #f5f5f5;">
-  <table role="presentation" style="width: 100%; border-collapse: collapse;">
-    <tr>
-      <td style="padding: 20px 0; text-align: center; background-color: ${branding.primary_color || '#3B82F6'};">
-        ${branding.logo_url ? `<img src="${branding.logo_url}" alt="Logo" style="max-height: 60px; max-width: 200px;">` : ''}
-      </td>
-    </tr>
-    <tr>
-      <td style="padding: 40px 20px; background-color: #ffffff; max-width: 600px; margin: 0 auto;">
-        <h1 style="color: #1f2937; font-size: 24px; margin: 0 0 10px 0;">Executive Brief</h1>
-        <p style="color: #6b7280; font-size: 14px; margin: 0 0 30px 0;">${period}</p>
-        
-        ${reportData.executive_summary ? `
-        <div style="background-color: #f0f9ff; border-left: 4px solid ${branding.primary_color || '#3B82F6'}; padding: 20px; margin-bottom: 30px;">
-          <p style="margin: 0; color: #1e3a8a; line-height: 1.8; font-size: 15px;">${escapeHtml(reportData.executive_summary)}</p>
-        </div>
-        ` : ''}
-        
-        ${reportData.at_a_glance ? `
-        <div style="margin-bottom: 30px;">
-          <h2 style="color: #1f2937; font-size: 18px; margin: 0 0 20px 0;">At a Glance</h2>
-          <div style="display: table; width: 100%;">
-            <div style="display: table-cell; width: 33%; text-align: center; padding: 20px; background-color: #f0fdf4; border-radius: 6px; margin-right: 10px;">
-              <div style="font-size: 36px; font-weight: bold; color: ${branding.secondary_color || '#10B981'};">${reportData.at_a_glance.on_track || 0}</div>
-              <div style="font-size: 12px; color: #166534; margin-top: 5px; font-weight: 500;">On Track</div>
-            </div>
-            <div style="display: table-cell; width: 33%; text-align: center; padding: 20px; background-color: #fef3c7; border-radius: 6px; margin: 0 10px;">
-              <div style="font-size: 36px; font-weight: bold; color: #f59e0b;">${reportData.at_a_glance.at_risk || 0}</div>
-              <div style="font-size: 12px; color: #92400e; margin-top: 5px; font-weight: 500;">At Risk</div>
-            </div>
-            <div style="display: table-cell; width: 33%; text-align: center; padding: 20px; background-color: #fef2f2; border-radius: 6px; margin-left: 10px;">
-              <div style="font-size: 36px; font-weight: bold; color: #ef4444;">${reportData.at_a_glance.behind || 0}</div>
-              <div style="font-size: 12px; color: #991b1b; margin-top: 5px; font-weight: 500;">Behind</div>
-            </div>
-          </div>
-        </div>
-        ` : ''}
-        
-        ${reportData.key_highlights && reportData.key_highlights.length > 0 ? `
-        <div style="margin-bottom: 30px;">
-          <h2 style="color: #1f2937; font-size: 18px; margin: 0 0 15px 0; border-bottom: 2px solid ${branding.primary_color || '#3B82F6'}; padding-bottom: 5px;">Key Highlights</h2>
-          <ul style="margin: 0; padding-left: 20px; color: #374151;">
-            ${reportData.key_highlights.map(highlight => `
-              <li style="margin-bottom: 10px; line-height: 1.6; font-size: 15px;">${escapeHtml(highlight)}</li>
-            `).join('')}
-          </ul>
-        </div>
-        ` : ''}
-        
-        ${reportData.project_summary && reportData.project_summary.length > 0 ? `
-        <div style="margin-bottom: 30px;">
-          <h2 style="color: #1f2937; font-size: 18px; margin: 0 0 15px 0; border-bottom: 2px solid ${branding.primary_color || '#3B82F6'}; padding-bottom: 5px;">Project Status</h2>
-          <table style="width: 100%; border-collapse: collapse;">
-            ${reportData.project_summary.map(project => {
-              const statusColor = project.status === 'on_track' ? branding.secondary_color || '#10B981' : 
-                                 project.status === 'at_risk' ? '#f59e0b' : '#ef4444';
-              const statusIndicator = project.status === 'on_track' ? '🟢' : 
-                                      project.status === 'at_risk' ? '🟡' : '🔴';
-              return `
-                <tr style="border-bottom: 1px solid #e5e7eb;">
-                  <td style="padding: 12px 0;">
-                    <div style="display: flex; align-items: center; justify-content: space-between;">
-                      <div>
-                        <p style="margin: 0; color: #1f2937; font-weight: 500;">${statusIndicator} ${escapeHtml(project.name)}</p>
-                        <p style="margin: 5px 0 0 0; color: #6b7280; font-size: 12px;">${escapeHtml(project.status_text || project.status)}</p>
-                      </div>
-                      <div style="text-align: right;">
-                        <p style="margin: 0; color: ${statusColor}; font-weight: bold; font-size: 18px;">${project.progress || 0}%</p>
-                      </div>
-                    </div>
-                  </td>
-                </tr>
-              `;
-            }).join('')}
-          </table>
-        </div>
-        ` : ''}
-        
-        ${reportData.attention_required && reportData.attention_required.length > 0 ? `
-        <div style="margin-bottom: 30px; background-color: #fef2f2; border: 1px solid #fecaca; border-radius: 6px; padding: 20px;">
-          <h2 style="color: #991b1b; font-size: 18px; margin: 0 0 15px 0;">⚠️ Attention Required</h2>
-          <ul style="margin: 0; padding-left: 20px; color: #7f1d1d;">
-            ${reportData.attention_required.map(item => `
-              <li style="margin-bottom: 8px; line-height: 1.6;">${escapeHtml(item)}</li>
-            `).join('')}
-          </ul>
-        </div>
-        ` : ''}
-        
-        ${branding.company_footer ? `
-        <div style="margin-top: 40px; padding-top: 20px; border-top: 1px solid #e5e7eb; color: #6b7280; font-size: 12px;">
-          ${branding.company_footer}
-        </div>
-        ` : ''}
-      </td>
-    </tr>
-  </table>
-</body>
-</html>
-  `.trim();
-  
-  const text = generateTextVersion(reportData, schedule, period);
-  
-  return { subject, html, text };
-}
-
-// Helper functions
+// ─── helpers ──────────────────────────────────────────────────────────────────
 
 function escapeHtml(text) {
   if (!text) return '';
@@ -481,65 +32,438 @@ function formatDate(dateString) {
 function formatReportPeriod(startDate, endDate) {
   if (!startDate && !endDate) return '';
   if (startDate && endDate) {
-    return `${formatDate(startDate)} - ${formatDate(endDate)}`;
+    return `${formatDate(startDate)} – ${formatDate(endDate)}`;
   }
   return startDate ? `Since ${formatDate(startDate)}` : `Up to ${formatDate(endDate)}`;
 }
 
+function translateToClientFriendly(status) {
+  const map = { 'In Progress': 'Active', 'On Hold': 'Paused', 'Completed': 'Finished' };
+  return map[status] || status;
+}
+
+/** Derive which sections are enabled; default all content sections true, detail flags false. */
+function resolveSections(schedule) {
+  const s = schedule?.report_sections || {};
+  return {
+    status_changes:   s.status_changes   !== false,
+    task_completion:  s.task_completion  !== false,
+    phase_changes:    s.phase_changes    !== false,
+    vitals:           s.vitals           !== false,
+    lookahead:        s.lookahead        !== false,
+    // detail-level toggles (default off = clean client-facing output)
+    show_assignees:         s.show_assignees        === true,
+    show_dates:             s.show_dates            === true,
+    show_who_changed:       s.show_who_changed      === true,
+    show_phase_delta:       s.show_phase_delta      === true,
+    show_blockers:          s.show_blockers         === true,
+    client_friendly_labels: s.client_friendly_labels !== false, // default true
+  };
+}
+
+// ─── shared email shell ────────────────────────────────────────────────────────
+
+function emailShell({ subject, branding, bodyHtml }) {
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${escapeHtml(subject)}</title>
+</head>
+<body style="margin:0;padding:0;background-color:#f3f4f6;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif;">
+  <table role="presentation" style="width:100%;border-collapse:collapse;">
+    <tr>
+      <td style="padding:24px 20px 32px;">
+        <div style="max-width:600px;margin:0 auto;background:#ffffff;border-radius:8px;overflow:hidden;border:1px solid #e5e7eb;">
+          <div style="padding:32px 36px;">
+            ${branding.logo_url ? `<div style="text-align:center;margin-bottom:24px;">
+              <img src="${branding.logo_url}" alt="Logo" style="max-height:56px;max-width:180px;">
+            </div>` : ''}
+            ${bodyHtml}
+          </div>
+          ${branding.company_footer ? `
+          <div style="padding:20px 36px;background-color:#f9fafb;border-top:1px solid #e5e7eb;">
+            <p style="margin:0;color:#9ca3af;font-size:12px;line-height:1.6;">${branding.company_footer}</p>
+          </div>` : ''}
+          ${branding.email_signature ? `
+          <div style="padding:16px 36px 24px;border-top:1px solid #f3f4f6;">
+            <p style="margin:0;color:#374151;font-size:13px;line-height:1.6;">${escapeHtml(branding.email_signature)}</p>
+          </div>` : ''}
+          <div style="padding:16px 36px;text-align:center;background-color:#f9fafb;border-top:1px solid #e5e7eb;">
+            <p style="margin:0;color:#9ca3af;font-size:11px;">Automated progress report from ${escapeHtml(branding.organization_name || 'SiteWeave')}</p>
+          </div>
+        </div>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`;
+}
+
+// ─── vitals row ────────────────────────────────────────────────────────────────
+
+function vitalsHtml(vitals, primary, secondary) {
+  if (!vitals) return '';
+  const cells = [];
+  if (vitals.tasks_completed_count != null) {
+    cells.push({ val: vitals.tasks_completed_count, label: 'Total completed', color: secondary });
+  }
+  if (vitals.open_tasks_count != null) {
+    cells.push({ val: vitals.open_tasks_count, label: 'Open Tasks', color: primary });
+  }
+  if (vitals.current_phase) {
+    cells.push({
+      val: vitals.current_phase,
+      subVal: vitals.phase_progress_pct != null ? `${vitals.phase_progress_pct}% complete` : null,
+      label: 'Current Phase',
+      color: '#374151',
+      isText: true,
+    });
+  }
+  if (cells.length === 0) return '';
+  const width = `${Math.floor(100 / cells.length)}%`;
+  const cellHtml = cells.map((c, idx) => `
+    <td style="width:${width};text-align:center;padding:16px 12px;${idx > 0 ? 'border-left:1px solid #e5e7eb;' : ''}">
+      ${c.isText
+        ? `<p style="margin:0;font-size:15px;font-weight:600;color:${c.color};line-height:1.3;">${escapeHtml(String(c.val))}</p>
+           ${c.subVal ? `<p style="margin:4px 0 0;font-size:11px;color:#6b7280;">${escapeHtml(c.subVal)}</p>` : ''}`
+        : `<p style="margin:0;font-size:30px;font-weight:700;color:${c.color};line-height:1;">${escapeHtml(String(c.val))}</p>`}
+      <p style="margin:6px 0 0;font-size:11px;color:#9ca3af;text-transform:uppercase;letter-spacing:0.05em;font-weight:500;">${escapeHtml(c.label)}</p>
+    </td>`).join('');
+  return `
+  <table role="presentation" style="width:100%;border-collapse:collapse;background-color:#f9fafb;border-radius:6px;border:1px solid #e5e7eb;margin-bottom:28px;">
+    <tr>${cellHtml}</tr>
+  </table>`;
+}
+
+// ─── lookahead section ─────────────────────────────────────────────────────────
+
+function lookaheadHtml(lookahead, primary) {
+  if (!lookahead || lookahead.length === 0) return '';
+  return `
+  <div style="margin-bottom:28px;">
+    <h2 style="color:#1f2937;font-size:14px;font-weight:600;text-transform:uppercase;letter-spacing:0.06em;margin:0 0 12px 0;padding-bottom:8px;border-bottom:2px solid ${primary};">Coming Up — Next 14 Days</h2>
+    <table role="presentation" style="width:100%;border-collapse:collapse;">
+      ${lookahead.map(task => `
+      <tr>
+        <td style="padding:8px 0;border-bottom:1px solid #f3f4f6;color:#374151;font-size:14px;line-height:1.5;">
+          ${escapeHtml(task.text || 'Task')}
+          ${task.start_date ? `<span style="color:#9ca3af;font-size:12px;margin-left:8px;">Starts ${escapeHtml(String(task.start_date))}</span>` : ''}
+        </td>
+        ${task.assignee ? `<td style="padding:8px 0 8px 12px;border-bottom:1px solid #f3f4f6;text-align:right;color:#9ca3af;font-size:12px;white-space:nowrap;">@${escapeHtml(task.assignee)}</td>` : '<td></td>'}
+      </tr>`).join('')}
+    </table>
+  </div>`;
+}
+
+// ─── section heading helper ────────────────────────────────────────────────────
+
+function sectionHeading(title, primary) {
+  return `<h2 style="color:#1f2937;font-size:14px;font-weight:600;text-transform:uppercase;letter-spacing:0.06em;margin:0 0 12px 0;padding-bottom:8px;border-bottom:2px solid ${primary};">${escapeHtml(title)}</h2>`;
+}
+
+// ─── STANDARD template (replaces both Client and Internal) ────────────────────
+// Detail-level flags in report_sections control what recipients see.
+
+export function generateStandardReportEmail(reportData, schedule, branding) {
+  const subject = schedule.custom_subject || `Progress Update: ${reportData.project_name || 'Your Project'}`;
+  const period  = formatReportPeriod(reportData.start_date, reportData.end_date);
+  const primary   = branding.primary_color   || '#3B82F6';
+  const secondary = branding.secondary_color || '#10B981';
+  const sections  = resolveSections(schedule);
+
+  const hasActivity =
+    (reportData.status_changes  && reportData.status_changes.length  > 0) ||
+    (reportData.completed_tasks && reportData.completed_tasks.length > 0) ||
+    (reportData.phase_progress  && reportData.phase_progress.length  > 0);
+
+  const snap = reportData.snapshot;
+  const snapshotSection = !hasActivity && snap && (snap.open_tasks?.length || snap.phases?.length || snap.open_total != null)
+    ? `<div style="margin-bottom:28px;padding:20px;background-color:#f9fafb;border-radius:6px;border:1px solid #e5e7eb;">
+        <p style="margin:0 0 14px;color:#6b7280;font-size:14px;line-height:1.6;">No changes recorded in this reporting window. Here is a snapshot as of today.</p>
+        ${snap.open_total != null || snap.completed_total != null
+          ? `<p style="margin:0 0 14px;color:#374151;font-size:14px;"><strong>${snap.open_total ?? 0}</strong> open, <strong>${snap.completed_total ?? 0}</strong> completed overall.</p>`
+          : ''}
+        ${snap.open_tasks?.length ? `
+          <p style="margin:0 0 8px;color:#374151;font-size:13px;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;">Open work</p>
+          <ul style="margin:0 0 16px;padding-left:18px;color:#374151;">
+            ${snap.open_tasks.map(ot => `<li style="margin-bottom:5px;font-size:13px;line-height:1.5;">
+              ${escapeHtml(ot.text || 'Task')}
+              ${ot.due_date ? `<span style="color:#9ca3af;font-size:11px;"> — due ${escapeHtml(String(ot.due_date))}</span>` : ''}
+            </li>`).join('')}
+          </ul>` : ''}
+        ${snap.phases?.length ? `
+          <p style="margin:0 0 8px;color:#374151;font-size:13px;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;">Phase progress</p>
+          ${snap.phases.map(ph => `
+            <div style="margin-bottom:10px;">
+              <div style="display:flex;justify-content:space-between;margin-bottom:4px;">
+                <span style="font-size:13px;color:#374151;">${escapeHtml(ph.name || 'Phase')}</span>
+                <span style="font-size:12px;color:#6b7280;">${ph.progress || 0}%</span>
+              </div>
+              <div style="background-color:#e5e7eb;border-radius:3px;height:6px;overflow:hidden;">
+                <div style="background-color:${secondary};height:100%;width:${Math.min(100, Math.max(0, ph.progress || 0))}%;"></div>
+              </div>
+            </div>`).join('')}` : ''}
+      </div>` : '';
+
+  // Completed tasks — table (with assignee/date columns) or simple list
+  const tasksHtml = sections.task_completion && reportData.completed_tasks?.length
+    ? `<div style="margin-bottom:28px;">
+        ${sectionHeading('Completed This Period', primary)}
+        ${(sections.show_assignees || sections.show_dates)
+          ? `<table role="presentation" style="width:100%;border-collapse:collapse;">
+              ${reportData.completed_tasks.map(task => `
+                <tr style="border-bottom:1px solid #f3f4f6;">
+                  <td style="padding:8px 8px 8px 0;width:20px;color:${secondary};font-weight:700;">✓</td>
+                  <td style="padding:8px 0;font-size:14px;color:#374151;">${escapeHtml(task.text || task.title)}</td>
+                  ${sections.show_assignees && task.assignee
+                    ? `<td style="padding:8px 0 8px 8px;font-size:12px;color:#9ca3af;text-align:right;white-space:nowrap;">@${escapeHtml(task.assignee)}</td>`
+                    : '<td></td>'}
+                  ${sections.show_dates && task.completed_at
+                    ? `<td style="padding:8px 0 8px 8px;font-size:11px;color:#9ca3af;text-align:right;white-space:nowrap;">${formatDate(task.completed_at)}</td>`
+                    : '<td></td>'}
+                </tr>`).join('')}
+            </table>`
+          : `<ul style="margin:0;padding:0;list-style:none;">
+              ${reportData.completed_tasks.map(task => `
+                <li style="padding:7px 0;border-bottom:1px solid #f3f4f6;display:flex;align-items:flex-start;gap:8px;font-size:14px;color:#374151;line-height:1.5;">
+                  <span style="color:${secondary};font-weight:700;flex-shrink:0;">✓</span>
+                  <span>${escapeHtml(task.text || task.title)}</span>
+                </li>`).join('')}
+            </ul>`}
+      </div>`
+    : '';
+
+  let body = `
+    <h1 style="color:#111827;font-size:22px;font-weight:700;margin:0 0 6px;">Progress Update</h1>
+    <p style="color:#6b7280;font-size:13px;margin:0 0 28px;">${escapeHtml(period)}</p>
+
+    ${schedule.custom_message ? `
+    <div style="background-color:#f0f9ff;border-left:4px solid ${secondary};padding:14px 16px;margin-bottom:28px;border-radius:0 4px 4px 0;">
+      <p style="margin:0;color:#1e40af;font-size:14px;line-height:1.7;">${escapeHtml(schedule.custom_message)}</p>
+    </div>` : ''}
+
+    ${sections.vitals ? vitalsHtml(reportData.vitals, primary, secondary) : ''}
+
+    ${sections.status_changes && reportData.status_changes?.length ? `
+    <div style="margin-bottom:28px;">
+      ${sectionHeading('Status Update', primary)}
+      ${reportData.status_changes.map(change => {
+        const label = sections.client_friendly_labels
+          ? translateToClientFriendly(change.new_status)
+          : (change.new_status || '');
+        return `
+        <div style="background-color:#f0fdf4;border:1px solid #bbf7d0;border-radius:6px;padding:12px 14px;margin-bottom:8px;">
+          <p style="margin:0;color:#166534;font-weight:600;font-size:14px;">${escapeHtml(change.project_name || 'Project')}</p>
+          <p style="margin:5px 0 0;color:#15803d;font-size:13px;">
+            <span style="text-decoration:line-through;color:#9ca3af;">${escapeHtml(change.old_status)}</span>
+            <span style="margin:0 6px;color:#6b7280;">→</span>
+            <strong style="color:${secondary};">${escapeHtml(label)}</strong>
+            ${sections.show_who_changed && change.changed_by ? `<span style="color:#9ca3af;font-size:11px;margin-left:6px;">· ${escapeHtml(change.changed_by)}</span>` : ''}
+            ${sections.show_who_changed && change.changed_at ? `<span style="color:#9ca3af;font-size:11px;margin-left:4px;">${formatDate(change.changed_at)}</span>` : ''}
+          </p>
+        </div>`;
+      }).join('')}
+    </div>` : ''}
+
+    ${tasksHtml}
+
+    ${sections.phase_changes && reportData.phase_progress?.length ? `
+    <div style="margin-bottom:28px;">
+      ${sectionHeading('Phase Progress', primary)}
+      ${reportData.phase_progress.map(phase => `
+        <div style="margin-bottom:14px;">
+          <div style="display:flex;justify-content:space-between;margin-bottom:5px;">
+            <span style="font-size:13px;font-weight:500;color:#374151;">${escapeHtml(phase.name)}</span>
+            <span style="font-size:13px;font-weight:600;color:${primary};">
+              ${sections.show_phase_delta && phase.old_progress != null
+                ? `${phase.old_progress || 0}% → ${phase.progress || 0}%`
+                : `${phase.progress || 0}%`}
+            </span>
+          </div>
+          <div style="background-color:#e5e7eb;border-radius:3px;height:8px;overflow:hidden;">
+            <div style="background-color:${secondary};height:100%;width:${phase.progress || 0}%;"></div>
+          </div>
+        </div>`).join('')}
+    </div>` : ''}
+
+    ${snapshotSection}
+
+    ${sections.lookahead ? lookaheadHtml(reportData.lookahead, primary) : ''}
+
+    ${sections.show_blockers && reportData.blockers?.length ? `
+    <div style="margin-bottom:28px;background-color:#fef2f2;border:1px solid #fecaca;border-radius:6px;padding:16px 18px;">
+      <h2 style="color:#991b1b;font-size:14px;font-weight:600;margin:0 0 10px;">Blockers &amp; Issues</h2>
+      <ul style="margin:0;padding-left:18px;color:#7f1d1d;">
+        ${reportData.blockers.map(b => `<li style="margin-bottom:7px;font-size:14px;line-height:1.6;">${escapeHtml(b)}</li>`).join('')}
+      </ul>
+    </div>` : ''}
+
+    ${reportData.next_steps?.length ? `
+    <div style="margin-bottom:28px;">
+      ${sectionHeading("What's Next", primary)}
+      <ul style="margin:0;padding-left:18px;color:#374151;">
+        ${reportData.next_steps.map(step => `<li style="margin-bottom:7px;font-size:14px;line-height:1.6;">${escapeHtml(step)}</li>`).join('')}
+      </ul>
+    </div>` : ''}
+  `;
+
+  const html = emailShell({ subject, branding: { ...branding, organization_name: reportData.organization_name }, bodyHtml: body });
+  const text = generateTextVersion(reportData, schedule, period);
+  return { subject, html, text };
+}
+
+// Backward-compat alias so any external callers still work
+export const generateClientReportEmail = generateStandardReportEmail;
+
+// ─── EXECUTIVE template ───────────────────────────────────────────────────────
+
+export function generateExecutiveReportEmail(reportData, schedule, branding) {
+  const subject = schedule.custom_subject || `Executive Brief: ${reportData.organization_name || 'Organization'} Status`;
+  const period  = formatReportPeriod(reportData.start_date, reportData.end_date);
+  const primary   = branding.primary_color   || '#3B82F6';
+  const secondary = branding.secondary_color || '#10B981';
+
+  let body = `
+    <h1 style="color:#111827;font-size:22px;font-weight:700;margin:0 0 6px;">Executive Brief</h1>
+    <p style="color:#6b7280;font-size:13px;margin:0 0 28px;">${escapeHtml(period)}</p>
+
+    ${reportData.executive_summary ? `
+    <div style="background-color:#f0f9ff;border-left:4px solid ${primary};padding:18px 20px;margin-bottom:28px;border-radius:0 4px 4px 0;">
+      <p style="margin:0;color:#1e3a8a;font-size:15px;line-height:1.8;">${escapeHtml(reportData.executive_summary)}</p>
+    </div>` : ''}
+
+    ${reportData.at_a_glance ? `
+    <div style="margin-bottom:28px;">
+      <h2 style="color:#111827;font-size:14px;font-weight:600;text-transform:uppercase;letter-spacing:0.06em;margin:0 0 14px;">At a Glance</h2>
+      <table role="presentation" style="width:100%;border-collapse:separate;border-spacing:8px;">
+        <tr>
+          <td style="width:33%;text-align:center;padding:18px 12px;background-color:#f0fdf4;border:1px solid #bbf7d0;border-radius:6px;">
+            <p style="margin:0;font-size:36px;font-weight:700;color:${secondary};line-height:1;">${reportData.at_a_glance.on_track || 0}</p>
+            <p style="margin:6px 0 0;font-size:11px;color:#166534;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;">On Track</p>
+          </td>
+          <td style="width:33%;text-align:center;padding:18px 12px;background-color:#fffbeb;border:1px solid #fde68a;border-radius:6px;">
+            <p style="margin:0;font-size:36px;font-weight:700;color:#d97706;line-height:1;">${reportData.at_a_glance.at_risk || 0}</p>
+            <p style="margin:6px 0 0;font-size:11px;color:#92400e;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;">At Risk</p>
+          </td>
+          <td style="width:33%;text-align:center;padding:18px 12px;background-color:#fef2f2;border:1px solid #fecaca;border-radius:6px;">
+            <p style="margin:0;font-size:36px;font-weight:700;color:#ef4444;line-height:1;">${reportData.at_a_glance.behind || 0}</p>
+            <p style="margin:6px 0 0;font-size:11px;color:#991b1b;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;">Behind</p>
+          </td>
+        </tr>
+      </table>
+    </div>` : ''}
+
+    ${reportData.key_highlights?.length ? `
+    <div style="margin-bottom:28px;">
+      ${sectionHeading('Key Highlights', primary)}
+      <ul style="margin:0;padding-left:18px;color:#374151;">
+        ${reportData.key_highlights.map(h => `<li style="margin-bottom:9px;font-size:14px;line-height:1.6;">${escapeHtml(h)}</li>`).join('')}
+      </ul>
+    </div>` : ''}
+
+    ${reportData.project_summary?.length ? `
+    <div style="margin-bottom:28px;">
+      ${sectionHeading('Project Status', primary)}
+      <table role="presentation" style="width:100%;border-collapse:collapse;">
+        ${reportData.project_summary.map(project => {
+          const statusColor = project.status === 'on_track' ? secondary : project.status === 'at_risk' ? '#d97706' : '#ef4444';
+          const dot = project.status === 'on_track' ? `background-color:${secondary};` : project.status === 'at_risk' ? 'background-color:#d97706;' : 'background-color:#ef4444;';
+          return `<tr style="border-bottom:1px solid #e5e7eb;">
+            <td style="padding:12px 0;">
+              <div style="display:flex;align-items:center;gap:8px;">
+                <span style="display:inline-block;width:8px;height:8px;border-radius:50%;${dot}flex-shrink:0;"></span>
+                <div>
+                  <p style="margin:0;color:#1f2937;font-weight:600;font-size:14px;">${escapeHtml(project.name)}</p>
+                  <p style="margin:3px 0 0;color:#6b7280;font-size:12px;">${escapeHtml(project.status_text || project.status)}</p>
+                </div>
+              </div>
+            </td>
+            <td style="padding:12px 0;text-align:right;white-space:nowrap;">
+              <span style="font-size:16px;font-weight:700;color:${statusColor};">${project.progress || 0}%</span>
+            </td>
+          </tr>`;
+        }).join('')}
+      </table>
+    </div>` : ''}
+
+    ${reportData.attention_required?.length ? `
+    <div style="margin-bottom:28px;background-color:#fef2f2;border:1px solid #fecaca;border-radius:6px;padding:16px 18px;">
+      <h2 style="color:#991b1b;font-size:14px;font-weight:600;margin:0 0 10px;">Attention Required</h2>
+      <ul style="margin:0;padding-left:18px;color:#7f1d1d;">
+        ${reportData.attention_required.map(item => `<li style="margin-bottom:7px;font-size:14px;line-height:1.6;">${escapeHtml(item)}</li>`).join('')}
+      </ul>
+    </div>` : ''}
+  `;
+
+  const html = emailShell({ subject, branding: { ...branding, organization_name: reportData.organization_name }, bodyHtml: body });
+  const text = generateTextVersion(reportData, schedule, period);
+  return { subject, html, text };
+}
+
+// ─── plain-text fallback ──────────────────────────────────────────────────────
+
 function generateTextVersion(reportData, schedule, period) {
   let text = `${schedule.custom_subject || 'Progress Report'}\n\n`;
   text += `${period}\n\n`;
-  
-  if (schedule.custom_message) {
-    text += `${schedule.custom_message}\n\n`;
+
+  if (schedule.custom_message) text += `${schedule.custom_message}\n\n`;
+
+  if (reportData.vitals) {
+    const v = reportData.vitals;
+    if (v.tasks_completed_count != null) text += `Total completed: ${v.tasks_completed_count}\n`;
+    if (v.open_tasks_count != null)      text += `Open tasks: ${v.open_tasks_count}\n`;
+    if (v.current_phase)                 text += `Current phase: ${v.current_phase}${v.phase_progress_pct != null ? ` (${v.phase_progress_pct}%)` : ''}\n`;
+    text += '\n';
   }
-  
-  if (reportData.status_changes && reportData.status_changes.length > 0) {
+
+  if (reportData.executive_summary) {
+    text += `Summary:\n${reportData.executive_summary}\n\n`;
+  }
+
+  if (reportData.status_changes?.length) {
     text += `Status Changes:\n`;
-    reportData.status_changes.forEach(change => {
-      text += `- ${change.project_name || 'Project'}: ${change.old_status} → ${change.new_status}\n`;
+    reportData.status_changes.forEach(c => {
+      text += `- ${c.project_name || 'Project'}: ${c.old_status} → ${c.new_status}\n`;
     });
     text += '\n';
   }
-  
-  if (reportData.completed_tasks && reportData.completed_tasks.length > 0) {
-    text += `Completed Tasks:\n`;
-    reportData.completed_tasks.forEach(task => {
-      text += `- ✓ ${task.text || task.title}\n`;
+
+  if (reportData.completed_tasks?.length) {
+    text += `Completed this period:\n`;
+    reportData.completed_tasks.forEach(t => {
+      text += `- ✓ ${t.text || t.title}${t.assignee ? ` (@${t.assignee})` : ''}\n`;
     });
     text += '\n';
   }
-  
-  if (reportData.phase_progress && reportData.phase_progress.length > 0) {
+
+  if (reportData.phase_progress?.length) {
     text += `Phase Progress:\n`;
-    reportData.phase_progress.forEach(phase => {
-      text += `- ${phase.name}: ${phase.progress || 0}%\n`;
+    reportData.phase_progress.forEach(p => {
+      text += `- ${p.name}: ${p.progress || 0}%\n`;
+    });
+    text += '\n';
+  }
+
+  if (reportData.lookahead?.length) {
+    text += `Coming Up — Next 14 Days:\n`;
+    reportData.lookahead.forEach(t => {
+      text += `- ${t.text || 'Task'}${t.start_date ? ` (starts ${t.start_date})` : ''}\n`;
     });
     text += '\n';
   }
 
   const hasAct =
-    (reportData.status_changes && reportData.status_changes.length > 0) ||
-    (reportData.completed_tasks && reportData.completed_tasks.length > 0) ||
-    (reportData.phase_progress && reportData.phase_progress.length > 0);
+    reportData.status_changes?.length  ||
+    reportData.completed_tasks?.length ||
+    reportData.phase_progress?.length;
   const snap = reportData.snapshot;
   if (!hasAct && snap) {
-    text += `No task completions or status changes were recorded in this reporting window.\n`;
-    text += `Snapshot: ${snap.open_total ?? 0} open task(s), ${snap.completed_total ?? 0} completed on record.\n\n`;
-    if (snap.open_tasks && snap.open_tasks.length > 0) {
-      text += `Open work:\n`;
-      snap.open_tasks.forEach((ot) => {
-        text += `- ${ot.text || 'Task'}\n`;
-      });
-      text += '\n';
-    }
-    if (snap.phases && snap.phases.length > 0) {
-      text += `Phase progress (current):\n`;
-      snap.phases.forEach((ph) => {
-        text += `- ${ph.name}: ${ph.progress || 0}%\n`;
-      });
-      text += '\n';
-    }
+    text += `No activity recorded this window.\n`;
+    text += `Snapshot: ${snap.open_total ?? 0} open, ${snap.completed_total ?? 0} completed overall.\n\n`;
+    snap.open_tasks?.forEach(ot => { text += `- ${ot.text || 'Task'}\n`; });
+    snap.phases?.forEach(ph => { text += `- ${ph.name}: ${ph.progress || 0}%\n`; });
   }
 
   return text;

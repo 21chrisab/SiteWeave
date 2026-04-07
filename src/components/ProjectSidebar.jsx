@@ -1,16 +1,25 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useAppContext } from '../context/AppContext';
 import BuildPath from './BuildPath';
 import Avatar from './Avatar';
+import { formatActivityLine } from '../utils/formatActivityLine';
+import PermissionGuard from './PermissionGuard';
 
-function ProjectSidebar({ project }) {
-    const { i18n } = useTranslation();
+function ProjectSidebar({ project, onViewAllActivity }) {
+    const { i18n, t } = useTranslation();
     const { state } = useAppContext();
 
     if (!project) return null;
 
     const activityLog = state.activityLog || [];
+    const projectNamesById = useMemo(() => {
+        const m = {};
+        (state.projects || []).forEach((p) => {
+            m[p.id] = p.name;
+        });
+        return m;
+    }, [state.projects]);
     // Get recent activity for this specific project (filtered by RLS)
     const projectActivity = activityLog
         .filter(activity => activity.project_id === project.id)
@@ -20,8 +29,8 @@ function ProjectSidebar({ project }) {
             user: { 
                 name: activity.user_name, 
                 avatar: activity.user_avatar || null // null means use default Avatar component
-            }, 
-            action: activity.action,
+            },
+            description: formatActivityLine(activity, t, { projectNamesById }),
             time: formatTimeAgo(activity.created_at)
         }));
 
@@ -68,8 +77,20 @@ function ProjectSidebar({ project }) {
                 <BuildPath project={project} />
             </div>
             
+            <PermissionGuard permission="can_view_activity_history">
             <div className="p-6 bg-white rounded-xl shadow-xs border border-gray-200">
-                <h3 className="font-bold mb-3">Recent Activity</h3>
+                <div className="mb-3 flex items-start justify-between gap-2">
+                    <h3 className="font-bold">Recent Activity</h3>
+                    {onViewAllActivity && (
+                        <button
+                            type="button"
+                            onClick={onViewAllActivity}
+                            className="shrink-0 text-sm font-medium text-blue-600 hover:text-blue-800"
+                        >
+                            {t('activityHistory.viewAll')}
+                        </button>
+                    )}
+                </div>
                  <div className="space-y-3">
                     {projectActivity.length > 0 ? projectActivity.map(activity => (
                         <div key={activity.id} className="flex items-start gap-3 text-sm">
@@ -81,7 +102,7 @@ function ProjectSidebar({ project }) {
                                 </div>
                             )}
                             <div>
-                                <p><span className="font-semibold">{activity.user.name}</span> {activity.action}</p>
+                                <p><span className="font-semibold">{activity.user.name}</span> {activity.description}</p>
                                 <p className="text-xs text-gray-400">{activity.time}</p>
                             </div>
                         </div>
@@ -90,6 +111,7 @@ function ProjectSidebar({ project }) {
                     )}
                 </div>
             </div>
+            </PermissionGuard>
         </div>
     );
 }

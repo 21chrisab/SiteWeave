@@ -399,6 +399,7 @@ function ProjectDetailsView() {
     };
 
     const handleEditTask = async (taskId, updatedData) => {
+        const prev = allTasks.find((x) => x.id === taskId);
         const { error } = await supabaseClient.from('tasks').update(updatedData).eq('id', taskId);
         if (error) {
             addToast('Error updating task: ' + error.message, 'error');
@@ -407,6 +408,20 @@ function ProjectDetailsView() {
             dispatch({ type: 'UPDATE_TASK', payload: updatedTask });
             setProjectTasksList(prev => prev.map(t => t.id === taskId ? { ...t, ...updatedData } : t));
             addToast('Task updated successfully!', 'success');
+            if (prev && project && state.user) {
+                const changes = {};
+                Object.keys(updatedData).forEach((key) => {
+                    if (prev[key] !== updatedData[key]) changes[key] = updatedData[key];
+                });
+                if (Object.keys(changes).length > 0) {
+                    logTaskUpdated(
+                        { ...prev, ...updatedData, organization_id: prev.organization_id ?? project.organization_id },
+                        state.user,
+                        project.id,
+                        changes
+                    );
+                }
+            }
         }
     };
 
@@ -464,6 +479,16 @@ function ProjectDetailsView() {
             if (error) {
                 addToast('Error deleting task: ' + error.message, 'error');
             } else {
+                const deletedRow =
+                    allTasks.find((x) => x.id === taskToDelete.id) ||
+                    state.tasks.find((x) => x.id === taskToDelete.id);
+                if (deletedRow && project && state.user) {
+                    logTaskDeleted(
+                        { ...deletedRow, organization_id: deletedRow.organization_id ?? project.organization_id },
+                        state.user,
+                        project.id
+                    );
+                }
                 dispatch({ type: 'DELETE_TASK', payload: taskToDelete.id });
                 setProjectTasksList(prev => prev.filter(t => t.id !== taskToDelete.id));
                 const childCount = childTasks?.length || 0;
@@ -500,6 +525,18 @@ function ProjectDetailsView() {
                 const updatedTask = { ...state.tasks.find(t => t.id === taskId), completed: true };
                 dispatch({ type: 'UPDATE_TASK', payload: updatedTask });
             });
+            if (project && state.user) {
+                taskIds.forEach((taskId) => {
+                    const row = allTasks.find((x) => x.id === taskId) || state.tasks.find((x) => x.id === taskId);
+                    if (row) {
+                        logTaskCompleted(
+                            { ...row, completed: true, organization_id: row.organization_id ?? project.organization_id },
+                            state.user,
+                            project.id
+                        );
+                    }
+                });
+            }
             addToast(`${taskIds.length} tasks completed successfully!`, 'success');
             setSelectedTasks([]);
         }
@@ -543,6 +580,18 @@ function ProjectDetailsView() {
             if (error) {
                 addToast('Error deleting tasks: ' + error.message, 'error');
             } else {
+                if (project && state.user) {
+                    taskIds.forEach((taskId) => {
+                        const row = allTasks.find((x) => x.id === taskId) || state.tasks.find((x) => x.id === taskId);
+                        if (row) {
+                            logTaskDeleted(
+                                { ...row, organization_id: row.organization_id ?? project.organization_id },
+                                state.user,
+                                project.id
+                            );
+                        }
+                    });
+                }
                 // Remove each task from the state
                 taskIds.forEach(taskId => {
                     dispatch({ type: 'DELETE_TASK', payload: taskId });
