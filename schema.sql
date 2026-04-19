@@ -7,12 +7,17 @@
 -- ============================================================================
 
 -- Organizations Table (Multi-tenant B2B architecture)
+-- setup_wizard_completed_at: set when the founding admin finishes or skips the first-run setup wizard (NULL = pending).
+-- One-time backfill for existing production orgs is in supabase/migrations (not repeated here) so fresh installs behave correctly.
 CREATE TABLE IF NOT EXISTS organizations (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     name TEXT NOT NULL,
     slug TEXT UNIQUE NOT NULL,
+    task_start_notifications_enabled BOOLEAN NOT NULL DEFAULT true,
+    task_start_notification_lead_days INTEGER[] NOT NULL DEFAULT ARRAY[14, 7],
     created_at TIMESTAMP WITH TIME ZONE DEFAULT now(),
     created_by_user_id UUID REFERENCES auth.users(id),
+    setup_wizard_completed_at TIMESTAMPTZ,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT now()
 );
 
@@ -54,9 +59,66 @@ CREATE TABLE IF NOT EXISTS projects (
     milestones JSONB,
     notification_count INTEGER DEFAULT 0,
     color TEXT,
+    task_notifications_use_org_defaults BOOLEAN NOT NULL DEFAULT true,
+    task_start_notifications_enabled BOOLEAN,
+    task_start_notification_lead_days INTEGER[],
+    dependency_scheduling_mode TEXT NOT NULL DEFAULT 'auto' CHECK (dependency_scheduling_mode IN ('auto', 'manual')),
     organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT now()
 );
+
+-- Smart Task Notification delivery log (idempotency + audit)
+CREATE TABLE IF NOT EXISTS task_notification_history (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    task_id UUID NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+    project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    recipient_email TEXT NOT NULL,
+    lead_days INTEGER NOT NULL,
+    notification_date DATE NOT NULL,
+    status TEXT NOT NULL DEFAULT 'sent' CHECK (status IN ('sent', 'skipped', 'failed')),
+    error_message TEXT,
+    sent_at TIMESTAMP WITH TIME ZONE DEFAULT now(),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT now(),
+    UNIQUE(task_id, lead_days, notification_date)
+);
+
+-- Dependency unlock notification delivery log
+CREATE TABLE IF NOT EXISTS task_dependency_notification_history (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    trigger_task_id UUID NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+    successor_task_id UUID NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+    project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    recipient_email TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'sent' CHECK (status IN ('sent', 'skipped', 'failed')),
+    error_message TEXT,
+    sent_at TIMESTAMP WITH TIME ZONE DEFAULT now(),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT now(),
+    UNIQUE(trigger_task_id, successor_task_id, recipient_email)
+);
+
+ALTER TABLE organizations
+ADD COLUMN IF NOT EXISTS task_start_notifications_enabled BOOLEAN NOT NULL DEFAULT true;
+
+ALTER TABLE organizations
+ADD COLUMN IF NOT EXISTS task_start_notification_lead_days INTEGER[] NOT NULL DEFAULT ARRAY[14, 7];
+
+-- Founding-admin setup wizard completion timestamp (see organizations.setup_wizard_completed_at above)
+ALTER TABLE organizations
+ADD COLUMN IF NOT EXISTS setup_wizard_completed_at TIMESTAMPTZ;
+
+ALTER TABLE projects
+ADD COLUMN IF NOT EXISTS task_notifications_use_org_defaults BOOLEAN NOT NULL DEFAULT true;
+
+ALTER TABLE projects
+ADD COLUMN IF NOT EXISTS task_start_notifications_enabled BOOLEAN;
+
+ALTER TABLE projects
+ADD COLUMN IF NOT EXISTS task_start_notification_lead_days INTEGER[];
+
+ALTER TABLE projects
+ADD COLUMN IF NOT EXISTS dependency_scheduling_mode TEXT NOT NULL DEFAULT 'auto';
 
 -- Contacts Table
 CREATE TABLE IF NOT EXISTS contacts (
@@ -275,10 +337,37 @@ CREATE TABLE IF NOT EXISTS project_phases (
     name TEXT NOT NULL,
     progress INTEGER DEFAULT 0,
     budget NUMERIC DEFAULT 0,
+    start_date DATE,
+    end_date DATE,
     "order" INTEGER NOT NULL,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT now(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT now()
 );
+
+-- Weather / schedule impact log (manual reporting; optional date shift)
+CREATE TABLE IF NOT EXISTS weather_impacts (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    impact_type TEXT NOT NULL DEFAULT 'weather' CHECK (impact_type IN ('weather', 'other')),
+    title TEXT NOT NULL,
+    description TEXT,
+    start_date DATE,
+    end_date DATE,
+    days_lost INTEGER NOT NULL CHECK (days_lost > 0),
+    affected_task_ids JSONB NOT NULL DEFAULT '[]'::jsonb,
+    affected_phase_ids JSONB NOT NULL DEFAULT '[]'::jsonb,
+    apply_cascade BOOLEAN NOT NULL DEFAULT false,
+    schedule_shift_applied BOOLEAN NOT NULL DEFAULT false,
+    applied_at TIMESTAMPTZ,
+    created_by_user_id UUID REFERENCES auth.users(id) ON DELETE SET NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_weather_impacts_project_id ON public.weather_impacts(project_id);
+CREATE INDEX IF NOT EXISTS idx_weather_impacts_organization_id ON public.weather_impacts(organization_id);
+CREATE INDEX IF NOT EXISTS idx_weather_impacts_created_at ON public.weather_impacts(created_at DESC);
 
 -- Tasks Table
 CREATE TABLE IF NOT EXISTS tasks (
@@ -298,6 +387,33 @@ CREATE TABLE IF NOT EXISTS tasks (
     is_milestone BOOLEAN DEFAULT false,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT now()
 );
+
+-- Task Photos Table
+CREATE TABLE IF NOT EXISTS task_photos (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    task_id UUID NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+    project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    storage_bucket TEXT NOT NULL DEFAULT 'task_photos',
+    storage_path TEXT NOT NULL UNIQUE,
+    thumbnail_path TEXT,
+    caption TEXT,
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    is_completion_photo BOOLEAN NOT NULL DEFAULT false,
+    uploaded_by_user_id UUID REFERENCES auth.users(id) ON DELETE SET NULL,
+    mime_type TEXT,
+    original_filename TEXT,
+    file_size_bytes INTEGER,
+    captured_at TIMESTAMP WITH TIME ZONE,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now()
+);
+
+COMMENT ON TABLE task_photos IS 'Stores task photo metadata and private storage paths for originals and thumbnails.';
+COMMENT ON COLUMN task_photos.storage_path IS 'Private path to the uploaded original image in Supabase Storage.';
+COMMENT ON COLUMN task_photos.thumbnail_path IS 'Private path to the derived thumbnail image in Supabase Storage.';
+COMMENT ON COLUMN task_photos.is_completion_photo IS 'Marks photos that should be emphasized as completion evidence.';
+COMMENT ON COLUMN task_photos.captured_at IS 'When the photo was taken (from EXIF DateTimeOriginal/CreateDate when available), not upload time. GPS is not stored; client strips location by re-encoding.';
 
 -- Task Dependencies Table (Gantt: predecessor/successor links)
 CREATE TABLE IF NOT EXISTS task_dependencies (
@@ -505,6 +621,10 @@ ALTER TABLE tasks ADD COLUMN IF NOT EXISTS is_milestone BOOLEAN DEFAULT false;
 -- Add workflow steps to tasks table (stored as JSONB)
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS workflow_steps JSONB;
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS current_workflow_step INTEGER DEFAULT 1;
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS workflow_steps_legacy JSONB;
+COMMENT ON COLUMN tasks.workflow_steps IS 'Deprecated: legacy workflow JSON migrated to task_dependencies.';
+COMMENT ON COLUMN tasks.current_workflow_step IS 'Deprecated: legacy workflow pointer no longer used.';
+COMMENT ON COLUMN tasks.workflow_steps_legacy IS 'Read-only archive of deprecated workflow steps captured during migration.';
 
 -- ============================================================================
 -- DATA CLEANUP BEFORE FOREIGN KEY CONSTRAINTS
@@ -826,7 +946,73 @@ BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_project_phases_project_id') THEN
         ALTER TABLE project_phases ADD CONSTRAINT fk_project_phases_project_id FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE;
     END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'ck_project_phases_date_order') THEN
+        ALTER TABLE project_phases ADD CONSTRAINT ck_project_phases_date_order CHECK (
+            start_date IS NULL
+            OR end_date IS NULL
+            OR end_date >= start_date
+        );
+    END IF;
 END $$;
+
+CREATE OR REPLACE FUNCTION public.calculate_project_phase_schedule_progress(
+    phase_start_date DATE,
+    phase_end_date DATE,
+    as_of DATE DEFAULT CURRENT_DATE
+)
+RETURNS INTEGER
+LANGUAGE plpgsql
+IMMUTABLE
+AS $$
+DECLARE
+    total_days INTEGER;
+    elapsed_days INTEGER;
+BEGIN
+    IF phase_start_date IS NULL OR phase_end_date IS NULL THEN
+        RETURN 0;
+    END IF;
+
+    IF as_of < phase_start_date THEN
+        RETURN 0;
+    END IF;
+
+    IF as_of >= phase_end_date THEN
+        RETURN 100;
+    END IF;
+
+    total_days := phase_end_date - phase_start_date;
+    IF total_days <= 0 THEN
+        RETURN 100;
+    END IF;
+
+    elapsed_days := as_of - phase_start_date;
+    RETURN GREATEST(0, LEAST(100, ROUND((elapsed_days::NUMERIC * 100) / total_days)::INTEGER));
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.set_project_phase_schedule_progress()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    IF NEW.start_date IS NULL OR NEW.end_date IS NULL THEN
+        RETURN NEW;
+    END IF;
+
+    NEW.progress := public.calculate_project_phase_schedule_progress(
+        NEW.start_date,
+        NEW.end_date,
+        CURRENT_DATE
+    );
+    RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_set_project_phase_schedule_progress ON public.project_phases;
+CREATE TRIGGER trg_set_project_phase_schedule_progress
+BEFORE INSERT OR UPDATE OF start_date, end_date ON public.project_phases
+FOR EACH ROW
+EXECUTE FUNCTION public.set_project_phase_schedule_progress();
 
 -- Tasks constraints
 DO $$ 
@@ -937,13 +1123,13 @@ RETURNS TEXT AS $$
 $$ LANGUAGE sql SECURITY DEFINER STABLE SET search_path = public;
 
 -- Helper function to check if current user is admin
--- Checks both is_super_admin flag and role name (handles both old and new role systems)
+-- Super admin, legacy "Admin" role name, or canonical "Org Admin" role name (required for org UPDATE RLS, e.g. setup_wizard_completed_at)
 CREATE OR REPLACE FUNCTION is_user_admin()
 RETURNS BOOLEAN AS $$
   SELECT COALESCE(
     (SELECT is_super_admin FROM public.profiles WHERE id = auth.uid()),
     false
-  ) OR COALESCE(get_user_role() = 'Admin', false);
+  ) OR COALESCE((SELECT get_user_role()) IN ('Admin', 'Org Admin'), false);
 $$ LANGUAGE sql SECURITY DEFINER STABLE SET search_path = public;
 
 -- Helper function to check if current user can view a specific role
@@ -1249,6 +1435,11 @@ DROP POLICY IF EXISTS "Users can create phases for accessible projects" ON publi
 DROP POLICY IF EXISTS "Users can update phases for accessible projects" ON public.project_phases;
 DROP POLICY IF EXISTS "Users can delete phases for accessible projects" ON public.project_phases;
 
+DROP POLICY IF EXISTS "Users can see weather impacts for accessible projects" ON public.weather_impacts;
+DROP POLICY IF EXISTS "Users can create weather impacts for accessible projects" ON public.weather_impacts;
+DROP POLICY IF EXISTS "Users can update weather impacts for accessible projects" ON public.weather_impacts;
+DROP POLICY IF EXISTS "Admins PMs creators can delete weather impacts" ON public.weather_impacts;
+
 DROP POLICY IF EXISTS "Users can see tasks for projects they have access to" ON public.tasks;
 DROP POLICY IF EXISTS "Users can create tasks for accessible projects" ON public.tasks;
 DROP POLICY IF EXISTS "Users can update their assigned tasks or admins/PMs can update any" ON public.tasks;
@@ -1284,6 +1475,8 @@ DROP POLICY IF EXISTS "Users can create templates in their organization" ON publ
 DROP POLICY IF EXISTS "Users can update templates in their organization" ON public.project_templates;
 DROP POLICY IF EXISTS "Users can delete templates in their organization" ON public.project_templates;
 
+DROP POLICY IF EXISTS "Users can view task notification history for their organization" ON public.task_notification_history;
+
 -- Enable RLS on all tables
 ALTER TABLE projects ENABLE ROW LEVEL SECURITY;
 ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
@@ -1303,7 +1496,9 @@ ALTER TABLE channel_reads ENABLE ROW LEVEL SECURITY;
 ALTER TABLE project_contacts ENABLE ROW LEVEL SECURITY;
 ALTER TABLE project_issues ENABLE ROW LEVEL SECURITY;
 ALTER TABLE project_phases ENABLE ROW LEVEL SECURITY;
+ALTER TABLE weather_impacts ENABLE ROW LEVEL SECURITY;
 ALTER TABLE tasks ENABLE ROW LEVEL SECURITY;
+ALTER TABLE task_photos ENABLE ROW LEVEL SECURITY;
 ALTER TABLE user_preferences ENABLE ROW LEVEL SECURITY;
 ALTER TABLE activity_log ENABLE ROW LEVEL SECURITY;
 ALTER TABLE invitations ENABLE ROW LEVEL SECURITY;
@@ -1312,6 +1507,8 @@ ALTER TABLE project_templates ENABLE ROW LEVEL SECURITY;
 ALTER TABLE roles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE organizations ENABLE ROW LEVEL SECURITY;
 ALTER TABLE project_collaborators ENABLE ROW LEVEL SECURITY;
+ALTER TABLE task_notification_history ENABLE ROW LEVEL SECURITY;
+ALTER TABLE task_dependency_notification_history ENABLE ROW LEVEL SECURITY;
 
 -- ============================================================================
 -- ROLES TABLE POLICIES
@@ -2457,6 +2654,43 @@ USING (
 );
 
 -- ============================================================================
+-- WEATHER_IMPACTS TABLE POLICIES
+-- ============================================================================
+
+CREATE POLICY "Users can see weather impacts for accessible projects"
+ON public.weather_impacts
+FOR SELECT
+USING (
+  project_id IN (SELECT id FROM public.projects)
+);
+
+CREATE POLICY "Users can create weather impacts for accessible projects"
+ON public.weather_impacts
+FOR INSERT
+WITH CHECK (
+  project_id IN (SELECT id FROM public.projects)
+);
+
+CREATE POLICY "Users can update weather impacts for accessible projects"
+ON public.weather_impacts
+FOR UPDATE
+USING (
+  project_id IN (SELECT id FROM public.projects)
+);
+
+CREATE POLICY "Admins PMs creators can delete weather impacts"
+ON public.weather_impacts
+FOR DELETE
+USING (
+  project_id IN (
+    SELECT id FROM public.projects
+    WHERE project_manager_id = (select auth.uid())
+       OR (select get_user_role()) = 'Admin'
+       OR created_by_user_id = (select auth.uid())
+  )
+);
+
+-- ============================================================================
 -- TASKS TABLE POLICIES
 -- ============================================================================
 
@@ -2509,6 +2743,237 @@ USING (
     WHERE project_manager_id = (select auth.uid()) OR (select get_user_role()) = 'Admin' OR created_by_user_id = (select auth.uid())
   )
 );
+
+-- ============================================================================
+-- TASK_PHOTOS TABLE HELPERS AND POLICIES
+-- ============================================================================
+
+CREATE OR REPLACE FUNCTION public.set_task_photo_scope()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  task_row public.tasks%ROWTYPE;
+BEGIN
+  SELECT *
+  INTO task_row
+  FROM public.tasks
+  WHERE id = NEW.task_id;
+
+  IF task_row.id IS NULL THEN
+    RAISE EXCEPTION 'Task % not found for task photo', NEW.task_id;
+  END IF;
+
+  NEW.project_id := task_row.project_id;
+  NEW.organization_id := task_row.organization_id;
+  NEW.updated_at := now();
+
+  IF NEW.storage_bucket IS NULL OR btrim(NEW.storage_bucket) = '' THEN
+    NEW.storage_bucket := 'task_photos';
+  END IF;
+
+  IF NEW.sort_order IS NULL THEN
+    NEW.sort_order := 0;
+  END IF;
+
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS set_task_photo_scope ON public.task_photos;
+CREATE TRIGGER set_task_photo_scope
+BEFORE INSERT OR UPDATE ON public.task_photos
+FOR EACH ROW
+EXECUTE FUNCTION public.set_task_photo_scope();
+
+CREATE OR REPLACE FUNCTION public.can_view_task(task_uuid UUID)
+RETURNS BOOLEAN
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT EXISTS (
+    SELECT 1
+    FROM public.tasks t
+    WHERE t.id = task_uuid
+      AND (
+        t.project_id IN (SELECT id FROM public.projects)
+        OR (
+          t.assignee_id IS NOT NULL
+          AND t.assignee_id = (select get_user_contact_id())
+          AND (select get_user_contact_id()) IS NOT NULL
+          AND t.organization_id = (select get_user_organization_id())
+        )
+      )
+  );
+$$;
+
+CREATE OR REPLACE FUNCTION public.can_manage_task(task_uuid UUID)
+RETURNS BOOLEAN
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT EXISTS (
+    SELECT 1
+    FROM public.tasks t
+    WHERE t.id = task_uuid
+      AND (
+        t.assignee_id IN (
+          SELECT p.contact_id
+          FROM public.profiles p
+          WHERE p.id = auth.uid()
+            AND p.contact_id IS NOT NULL
+        )
+        OR t.project_id IN (
+          SELECT id
+          FROM public.projects
+          WHERE project_manager_id = auth.uid()
+             OR (select get_user_role()) = 'Admin'
+        )
+      )
+  );
+$$;
+
+CREATE OR REPLACE FUNCTION public.can_access_task_photo_object(file_path TEXT, require_manage BOOLEAN DEFAULT false)
+RETURNS BOOLEAN
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  path_parts TEXT[];
+  parsed_org_id UUID;
+  parsed_project_id UUID;
+  parsed_task_id UUID;
+  task_org_id UUID;
+  task_project_id UUID;
+BEGIN
+  path_parts := string_to_array(COALESCE(file_path, ''), '/');
+
+  IF array_length(path_parts, 1) < 5 THEN
+    RETURN false;
+  END IF;
+
+  BEGIN
+    parsed_org_id := path_parts[1]::UUID;
+    parsed_project_id := path_parts[2]::UUID;
+    parsed_task_id := path_parts[3]::UUID;
+  EXCEPTION WHEN OTHERS THEN
+    RETURN false;
+  END;
+
+  IF path_parts[4] NOT IN ('original', 'thumb') THEN
+    RETURN false;
+  END IF;
+
+  SELECT t.organization_id, t.project_id
+  INTO task_org_id, task_project_id
+  FROM public.tasks t
+  WHERE t.id = parsed_task_id;
+
+  IF task_org_id IS NULL OR task_project_id IS NULL THEN
+    RETURN false;
+  END IF;
+
+  IF task_org_id <> parsed_org_id OR task_project_id <> parsed_project_id THEN
+    RETURN false;
+  END IF;
+
+  IF require_manage THEN
+    RETURN public.can_manage_task(parsed_task_id);
+  END IF;
+
+  RETURN public.can_view_task(parsed_task_id);
+END;
+$$;
+
+INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+VALUES (
+  'task_photos',
+  'task_photos',
+  false,
+  5242880,
+  ARRAY['image/jpeg', 'image/png', 'image/webp']
+)
+ON CONFLICT (id) DO NOTHING;
+
+DROP POLICY IF EXISTS "Users can upload task photos" ON storage.objects;
+CREATE POLICY "Users can upload task photos"
+ON storage.objects
+FOR INSERT
+TO authenticated
+WITH CHECK (
+  bucket_id = 'task_photos'
+  AND public.can_access_task_photo_object(name, true)
+);
+
+DROP POLICY IF EXISTS "Users can read task photos" ON storage.objects;
+CREATE POLICY "Users can read task photos"
+ON storage.objects
+FOR SELECT
+TO authenticated
+USING (
+  bucket_id = 'task_photos'
+  AND public.can_access_task_photo_object(name, false)
+);
+
+DROP POLICY IF EXISTS "Users can update task photos" ON storage.objects;
+CREATE POLICY "Users can update task photos"
+ON storage.objects
+FOR UPDATE
+TO authenticated
+USING (
+  bucket_id = 'task_photos'
+  AND public.can_access_task_photo_object(name, true)
+)
+WITH CHECK (
+  bucket_id = 'task_photos'
+  AND public.can_access_task_photo_object(name, true)
+);
+
+DROP POLICY IF EXISTS "Users can delete task photos" ON storage.objects;
+CREATE POLICY "Users can delete task photos"
+ON storage.objects
+FOR DELETE
+TO authenticated
+USING (
+  bucket_id = 'task_photos'
+  AND public.can_access_task_photo_object(name, true)
+);
+
+DROP POLICY IF EXISTS "Users can see task photos for visible tasks" ON public.task_photos;
+CREATE POLICY "Users can see task photos for visible tasks"
+ON public.task_photos
+FOR SELECT
+USING (public.can_view_task(task_id));
+
+DROP POLICY IF EXISTS "Users can manage task photos for editable tasks" ON public.task_photos;
+CREATE POLICY "Users can manage task photos for editable tasks"
+ON public.task_photos
+FOR INSERT
+WITH CHECK (
+  public.can_manage_task(task_id)
+  AND uploaded_by_user_id = auth.uid()
+);
+
+DROP POLICY IF EXISTS "Users can update task photos for editable tasks" ON public.task_photos;
+CREATE POLICY "Users can update task photos for editable tasks"
+ON public.task_photos
+FOR UPDATE
+USING (public.can_manage_task(task_id))
+WITH CHECK (public.can_manage_task(task_id));
+
+DROP POLICY IF EXISTS "Users can delete task photos for editable tasks" ON public.task_photos;
+CREATE POLICY "Users can delete task photos for editable tasks"
+ON public.task_photos
+FOR DELETE
+USING (public.can_manage_task(task_id));
 
 -- ============================================================================
 -- TASK_DEPENDENCIES TABLE POLICIES
@@ -2621,6 +3086,34 @@ CREATE POLICY "Users can delete their own activity logs"
 ON public.activity_log
 FOR DELETE
 USING (user_id = (select auth.uid()));
+
+-- ============================================================================
+-- TASK NOTIFICATION HISTORY (edge function writes via service role; clients read by org)
+-- ============================================================================
+
+CREATE POLICY "Users can view task notification history for their organization"
+ON public.task_notification_history
+FOR SELECT
+TO authenticated
+USING (organization_id = (select get_user_organization_id()));
+
+CREATE POLICY "Users can view dependency notification history for their organization"
+ON public.task_dependency_notification_history
+FOR SELECT
+TO authenticated
+USING (organization_id = (select get_user_organization_id()));
+
+CREATE POLICY "Users can create dependency notification history for their organization"
+ON public.task_dependency_notification_history
+FOR INSERT
+TO authenticated
+WITH CHECK (organization_id = (select get_user_organization_id()));
+
+CREATE POLICY "Users can delete dependency notification history for their organization"
+ON public.task_dependency_notification_history
+FOR DELETE
+TO authenticated
+USING (organization_id = (select get_user_organization_id()));
 
 -- ============================================================================
 -- INVITATIONS TABLE POLICIES
@@ -2737,6 +3230,27 @@ CREATE INDEX IF NOT EXISTS idx_tasks_project_id ON tasks(project_id);
 
 -- Tasks: Filter by assignee
 CREATE INDEX IF NOT EXISTS idx_tasks_assignee_id ON tasks(assignee_id);
+
+-- Task photos: Filter by task
+CREATE INDEX IF NOT EXISTS idx_task_photos_task_id ON task_photos(task_id);
+
+-- Task photos: Filter by project
+CREATE INDEX IF NOT EXISTS idx_task_photos_project_id ON task_photos(project_id);
+
+-- Task photos: Filter by organization
+CREATE INDEX IF NOT EXISTS idx_task_photos_organization_id ON task_photos(organization_id);
+
+-- Task photos: Stable ordering within a task
+CREATE INDEX IF NOT EXISTS idx_task_photos_task_sort_order ON task_photos(task_id, sort_order, created_at);
+
+-- Task photos: Completion evidence
+CREATE INDEX IF NOT EXISTS idx_task_photos_completion
+ON task_photos(task_id, is_completion_photo)
+WHERE is_completion_photo = true;
+
+CREATE INDEX IF NOT EXISTS idx_task_photos_captured_at
+ON task_photos(captured_at)
+WHERE captured_at IS NOT NULL;
 
 -- Tasks: Filter by completion status
 CREATE INDEX IF NOT EXISTS idx_tasks_completed ON tasks(completed);
@@ -2883,6 +3397,10 @@ CREATE INDEX IF NOT EXISTS idx_project_issues_organization_id ON project_issues(
 CREATE INDEX IF NOT EXISTS idx_project_phases_organization_id ON project_phases(organization_id);
 CREATE INDEX IF NOT EXISTS idx_tasks_organization_id ON tasks(organization_id);
 CREATE INDEX IF NOT EXISTS idx_activity_log_organization_id ON activity_log(organization_id);
+CREATE INDEX IF NOT EXISTS idx_task_notification_history_org_date ON task_notification_history(organization_id, notification_date DESC);
+CREATE INDEX IF NOT EXISTS idx_task_notification_history_task ON task_notification_history(task_id, notification_date DESC);
+CREATE INDEX IF NOT EXISTS idx_task_dependency_notification_history_trigger ON task_dependency_notification_history(trigger_task_id, sent_at DESC);
+CREATE INDEX IF NOT EXISTS idx_task_dependency_notification_history_org ON task_dependency_notification_history(organization_id, sent_at DESC);
 
 -- ============================================================================
 -- ADDITIONAL PERFORMANCE INDEXES (From optimization scripts)
@@ -3047,6 +3565,139 @@ WHERE status = 'pending';
 -- FROM pg_stat_user_indexes
 -- WHERE schemaname = 'public'
 -- ORDER BY idx_scan DESC;
+
+-- Desktop notification center foundations
+ALTER TABLE public.organizations
+ADD COLUMN IF NOT EXISTS notification_email_batching_enabled BOOLEAN NOT NULL DEFAULT true;
+
+ALTER TABLE public.organizations
+ADD COLUMN IF NOT EXISTS notification_batch_window_minutes INTEGER NOT NULL DEFAULT 5;
+
+ALTER TABLE public.organizations
+ADD COLUMN IF NOT EXISTS progress_report_send_hour INTEGER NOT NULL DEFAULT 8;
+
+ALTER TABLE public.organizations
+ADD COLUMN IF NOT EXISTS progress_report_timezone TEXT NOT NULL DEFAULT 'America/New_York';
+
+ALTER TABLE public.projects
+ADD COLUMN IF NOT EXISTS notification_email_batching_enabled BOOLEAN;
+
+ALTER TABLE public.projects
+ADD COLUMN IF NOT EXISTS notification_batch_window_minutes INTEGER;
+
+ALTER TABLE public.projects
+ADD COLUMN IF NOT EXISTS dependency_notifications_enabled BOOLEAN;
+
+ALTER TABLE public.task_notification_history
+ADD COLUMN IF NOT EXISTS batch_key UUID;
+
+CREATE TABLE IF NOT EXISTS public.user_notifications (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    organization_id UUID NOT NULL REFERENCES public.organizations(id) ON DELETE CASCADE,
+    project_id UUID REFERENCES public.projects(id) ON DELETE CASCADE,
+    recipient_user_id UUID,
+    recipient_email TEXT NOT NULL,
+    source_type TEXT NOT NULL,
+    source_id UUID,
+    title TEXT NOT NULL,
+    body TEXT NOT NULL,
+    metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+    read_at TIMESTAMPTZ,
+    read_by_user_id UUID,
+    acknowledged_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE(source_type, source_id, recipient_email)
+);
+
+CREATE TABLE IF NOT EXISTS public.notification_action_history (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    notification_id UUID NOT NULL REFERENCES public.user_notifications(id) ON DELETE CASCADE,
+    acted_by_user_id UUID,
+    action_type TEXT NOT NULL,
+    payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_user_notifications_recipient_created
+ON public.user_notifications(recipient_email, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_user_notifications_recipient_user_created
+ON public.user_notifications(recipient_user_id, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_user_notifications_unread
+ON public.user_notifications(recipient_email, read_at, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_notification_action_history_notification
+ON public.notification_action_history(notification_id, created_at DESC);
+
+ALTER TABLE public.user_notifications ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.notification_action_history ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Users can view own notifications" ON public.user_notifications;
+CREATE POLICY "Users can view own notifications"
+ON public.user_notifications
+FOR SELECT
+TO authenticated
+USING (
+    organization_id = (SELECT public.get_user_organization_id())
+    AND (
+        lower(recipient_email) = lower(coalesce(auth.jwt() ->> 'email', ''))
+        OR recipient_user_id = auth.uid()
+    )
+);
+
+DROP POLICY IF EXISTS "Users can update own notifications" ON public.user_notifications;
+CREATE POLICY "Users can update own notifications"
+ON public.user_notifications
+FOR UPDATE
+TO authenticated
+USING (
+    organization_id = (SELECT public.get_user_organization_id())
+    AND (
+        lower(recipient_email) = lower(coalesce(auth.jwt() ->> 'email', ''))
+        OR recipient_user_id = auth.uid()
+    )
+)
+WITH CHECK (
+    organization_id = (SELECT public.get_user_organization_id())
+    AND (
+        lower(recipient_email) = lower(coalesce(auth.jwt() ->> 'email', ''))
+        OR recipient_user_id = auth.uid()
+    )
+);
+
+DROP POLICY IF EXISTS "Service role can insert notifications" ON public.user_notifications;
+CREATE POLICY "Service role can insert notifications"
+ON public.user_notifications
+FOR INSERT
+TO service_role
+WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Users can view own notification actions" ON public.notification_action_history;
+CREATE POLICY "Users can view own notification actions"
+ON public.notification_action_history
+FOR SELECT
+TO authenticated
+USING (
+    EXISTS (
+        SELECT 1
+        FROM public.user_notifications n
+        WHERE n.id = notification_action_history.notification_id
+          AND n.organization_id = (SELECT public.get_user_organization_id())
+          AND (
+            lower(n.recipient_email) = lower(coalesce(auth.jwt() ->> 'email', ''))
+            OR n.recipient_user_id = auth.uid()
+          )
+    )
+);
+
+DROP POLICY IF EXISTS "Service role can insert notification actions" ON public.notification_action_history;
+CREATE POLICY "Service role can insert notification actions"
+ON public.notification_action_history
+FOR INSERT
+TO service_role
+WITH CHECK (true);
 
 -- Notify PostgREST to reload schema after index changes
 NOTIFY pgrst, 'reload schema';

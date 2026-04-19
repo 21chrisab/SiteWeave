@@ -1,64 +1,58 @@
 import i18n from '../i18n/config';
-
-// Helper functions for project calculations
+import {
+    computeWeightedProjectProgressPercent,
+    groupPhasesByProjectId,
+} from './projectProgressRollup.js';
 
 export const calculateProjectProgress = async (projectId, supabaseClient) => {
     try {
-        const { data: phases, error } = await supabaseClient
-            .from('project_phases')
-            .select('*')
-            .eq('project_id', projectId)
-            .order('order');
+        const [{ data: phases, error }, { data: project }] = await Promise.all([
+            supabaseClient
+                .from('project_phases')
+                .select('progress, start_date, end_date, order')
+                .eq('project_id', projectId)
+                .order('order'),
+            supabaseClient
+                .from('projects')
+                .select('due_date')
+                .eq('id', projectId)
+                .maybeSingle(),
+        ]);
 
         if (error || !phases || phases.length === 0) return 0;
-
-        const totalBudget = phases.reduce((sum, phase) => sum + (phase.budget || 0), 0);
-        if (totalBudget === 0) return 0;
-
-        const totalWeightedProgress = phases.reduce((sum, phase) => {
-            const phaseWeight = (phase.budget || 0) / totalBudget;
-            return sum + (phase.progress * phaseWeight);
-        }, 0);
-
-        return Math.round(totalWeightedProgress);
+        return computeWeightedProjectProgressPercent(phases, project?.due_date);
     } catch (error) {
         console.error('Error calculating project progress:', error);
         return 0;
     }
 };
 
-export const calculateProjectBudget = async (projectId, supabaseClient) => {
+export const calculateProjectsProgressMap = async (projects, supabaseClient) => {
     try {
-        const { data: phases, error } = await supabaseClient
+        const projectList = Array.isArray(projects) ? projects.filter((project) => project?.id) : [];
+        if (projectList.length === 0) return {};
+
+        const projectIds = projectList.map((project) => project.id);
+        const { data: allPhases, error } = await supabaseClient
             .from('project_phases')
-            .select('budget, progress')
-            .eq('project_id', projectId);
+            .select('project_id, progress, start_date, end_date, order')
+            .in('project_id', projectIds)
+            .order('order');
 
-        if (error || !phases || phases.length === 0) {
-            return { total: 0, spent: 0, remaining: 0 };
-        }
+        if (error) throw error;
 
-        const total = phases.reduce((sum, phase) => sum + (phase.budget || 0), 0);
-        const spent = phases.reduce((sum, phase) => {
-            return sum + ((phase.budget || 0) * (phase.progress / 100));
-        }, 0);
-        const remaining = total - spent;
-
-        return { total, spent, remaining };
+        const phasesByProject = groupPhasesByProjectId(allPhases || []);
+        return projectList.reduce((acc, project) => {
+            const phases = phasesByProject[project.id] || [];
+            acc[project.id] = phases.length > 0
+                ? computeWeightedProjectProgressPercent(phases, project?.due_date)
+                : 0;
+            return acc;
+        }, {});
     } catch (error) {
-        console.error('Error calculating project budget:', error);
-        return { total: 0, spent: 0, remaining: 0 };
+        console.error('Error calculating batched project progress:', error);
+        return {};
     }
-};
-
-export const formatCurrency = (amount) => {
-    const locale = i18n.language || 'en';
-    return new Intl.NumberFormat(locale, {
-        style: 'currency',
-        currency: 'USD',
-        minimumFractionDigits: 0,
-        maximumFractionDigits: 0
-    }).format(amount);
 };
 
 export const formatDate = (dateString) => {
@@ -106,4 +100,3 @@ export const getStatusColor = (status) => {
             return 'bg-gray-100 text-gray-800';
     }
 };
-

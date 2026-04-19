@@ -1,10 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useAppContext, useLazyDataLoader, supabaseClient } from '../context/AppContext';
 import { useToast } from '../context/ToastContext';
 import ProjectCard from '../components/ProjectCard';
 import ProjectModal from '../components/ProjectModal';
 import CreateFromTemplateModal from '../components/CreateFromTemplateModal';
+import MsProjectImportModal from '../components/MsProjectImportModal';
 import MyDaySidebar from '../components/MyDaySidebar';
 import ConfirmDialog from '../components/ConfirmDialog';
 import DashboardStats from '../components/DashboardStats';
@@ -13,6 +14,7 @@ import ProjectBoardView from '../components/ProjectBoardView';
 import ProjectListView from '../components/ProjectListView';
 import PermissionGuard from '../components/PermissionGuard';
 import ProgressReportModal from '../components/ProgressReportModal';
+import Icon from '../components/Icon';
 import { useProjectShortcuts } from '../hooks/useKeyboardShortcuts';
 import { logProjectCreated, logActivity } from '../utils/activityLogger';
 
@@ -38,12 +40,38 @@ function DashboardView() {
     const [viewType, setViewType] = useState('card'); // 'card', 'list', or 'board'
     const [showProgressReportModal, setShowProgressReportModal] = useState(false);
     const [showCreateFromTemplateModal, setShowCreateFromTemplateModal] = useState(false);
+    const [showMsProjectImportModal, setShowMsProjectImportModal] = useState(false);
+    const [dashboardMenu, setDashboardMenu] = useState(null);
+    const dashboardMenuRef = useRef(null);
 
     // Keyboard shortcuts
     useProjectShortcuts({
         createProject: () => setShowModal(true),
         goToDashboard: () => dispatch({ type: 'SET_VIEW', payload: 'Dashboard' })
     });
+
+    useEffect(() => {
+        if (!dashboardMenu) return undefined;
+
+        const handleClickOutside = (event) => {
+            if (dashboardMenuRef.current && !dashboardMenuRef.current.contains(event.target)) {
+                setDashboardMenu(null);
+            }
+        };
+
+        const handleEscape = (event) => {
+            if (event.key === 'Escape') {
+                setDashboardMenu(null);
+            }
+        };
+
+        document.addEventListener('mousedown', handleClickOutside);
+        document.addEventListener('keydown', handleEscape);
+        return () => {
+            document.removeEventListener('mousedown', handleClickOutside);
+            document.removeEventListener('keydown', handleEscape);
+        };
+    }, [dashboardMenu]);
 
     const handleSaveProject = async (projectData) => {
         if (editingProject) {
@@ -422,39 +450,73 @@ function DashboardView() {
 
     return (
         <>
-            <div className="grid grid-cols-1 xl:grid-cols-4 gap-6 h-full">
-                <div className="xl:col-span-3">
-                    <header className="flex items-center justify-between mb-8" data-onboarding="dashboard-welcome">
-                         <div>
-                            <h1 className="text-3xl font-bold text-gray-900 mb-1">{t('dashboard.title')}</h1>
+            <div className="grid h-full grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1fr)_20rem]">
+                <div className="min-w-0">
+                    <header className="mb-8 flex flex-wrap items-start justify-between gap-3" data-onboarding="dashboard-welcome" ref={dashboardMenuRef}>
+                         <div className="min-w-0">
+                            <h1 className="text-3xl font-bold text-gray-900 mb-1 ui-ellipsis-1">{t('dashboard.title')}</h1>
                             <p className="text-gray-500 text-sm">{t('dashboard.subtitle')}</p>
                         </div>
-                        <div className="flex items-center gap-3">
+                        <div className="flex flex-wrap items-center justify-end gap-2">
                             <ViewSwitcher currentView={viewType} onViewChange={setViewType} />
-                            <PermissionGuard permission="can_manage_progress_reports">
-                                <button
-                                    onClick={() => setShowProgressReportModal(true)}
-                                    className="px-4 py-2 text-sm font-semibold border border-gray-300 text-gray-700 bg-white rounded-lg shadow-xs hover:bg-gray-50 btn-smooth"
-                                    title="Schedule and manage progress reports"
-                                >
-                                    Progress reports
-                                </button>
-                            </PermissionGuard>
                             <PermissionGuard permission="can_create_projects">
                                 <button 
                                     onClick={() => setShowModal(true)} 
                                     data-onboarding="new-project-btn"
-                                    className="px-4 py-2 text-sm font-semibold text-white bg-blue-600 rounded-lg shadow-xs hover:bg-blue-700 btn-smooth"
+                                    className="px-4 py-2 text-sm font-semibold text-white bg-blue-600 rounded-full shadow-xs hover:bg-blue-700 btn-smooth"
                                 >
                                     + {t('dashboard.new_project')}
                                 </button>
-                                <button 
-                                    onClick={() => setShowCreateFromTemplateModal(true)} 
-                                    className="px-4 py-2 text-sm font-semibold text-gray-700 bg-gray-100 rounded-lg shadow-xs hover:bg-gray-200 btn-smooth"
-                                >
-                                    From template
-                                </button>
                             </PermissionGuard>
+                            <div className="relative">
+                                <button
+                                    type="button"
+                                    onClick={() => setDashboardMenu((current) => current === 'actions' ? null : 'actions')}
+                                    className="inline-flex items-center gap-2 rounded-full border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-700 shadow-xs hover:bg-gray-50"
+                                    aria-expanded={dashboardMenu === 'actions'}
+                                >
+                                    <span>Actions</span>
+                                    <Icon path="M6 9l6 6 6-6" className="h-4 w-4" />
+                                </button>
+                                {dashboardMenu === 'actions' && (
+                                    <div className="absolute right-0 top-12 z-20 w-56 rounded-xl border border-gray-200 bg-white p-1 shadow-lg">
+                                        <PermissionGuard permission="can_manage_progress_reports">
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    setShowProgressReportModal(true);
+                                                    setDashboardMenu(null);
+                                                }}
+                                                className="flex w-full items-center rounded-lg px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                                            >
+                                                Progress reports
+                                            </button>
+                                        </PermissionGuard>
+                                        <PermissionGuard permission="can_create_projects">
+                                            <button 
+                                                type="button"
+                                                onClick={() => {
+                                                    setShowCreateFromTemplateModal(true);
+                                                    setDashboardMenu(null);
+                                                }} 
+                                                className="flex w-full items-center rounded-lg px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                                            >
+                                                From template
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    setShowMsProjectImportModal(true);
+                                                    setDashboardMenu(null);
+                                                }}
+                                                className="flex w-full items-center rounded-lg px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                                            >
+                                                Import MS Project XML
+                                            </button>
+                                        </PermissionGuard>
+                                    </div>
+                                )}
+                            </div>
                         </div>
                     </header>
 
@@ -472,7 +534,7 @@ function DashboardView() {
                     {projects.length > 0 ? (
                         <div data-onboarding="project-grid">
                             {viewType === 'card' && (
-                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                                <div className="grid grid-cols-[repeat(auto-fit,minmax(280px,1fr))] gap-4">
                                     {projects.map(p => (
                                         <div key={p.id} data-onboarding="project-cards">
                                             <ProjectCard 
@@ -521,7 +583,7 @@ function DashboardView() {
                 </div>
                 <aside 
                     data-onboarding="my-day-sidebar"
-                    className="bg-white rounded-xl shadow-xs p-5 border border-gray-200 h-fit"
+                    className="h-fit min-w-0 bg-white rounded-xl shadow-xs p-5 border border-gray-200"
                 >
                     <MyDaySidebar />
                 </aside>
@@ -536,6 +598,17 @@ function DashboardView() {
             )}
             {showCreateFromTemplateModal && (
                 <CreateFromTemplateModal onClose={() => setShowCreateFromTemplateModal(false)} />
+            )}
+            {showMsProjectImportModal && (
+                <MsProjectImportModal
+                    context="newProject"
+                    onClose={() => setShowMsProjectImportModal(false)}
+                    onSuccess={(newProjectId) => {
+                        if (newProjectId) {
+                            dispatch({ type: 'SET_VIEW', payload: 'Projects' });
+                        }
+                    }}
+                />
             )}
             <ConfirmDialog
                 isOpen={showDeleteConfirm}

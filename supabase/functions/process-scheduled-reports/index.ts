@@ -25,7 +25,7 @@ serve(async (req) => {
     
     const { data: dueSchedules, error: queryError } = await supabase
       .from('progress_report_schedules')
-      .select('id')
+      .select('id, organization_id')
       .eq('is_active', true)
       .lte('next_send_at', now)
       .or('requires_approval.is.null,requires_approval.eq.false,approval_status.eq.approved')
@@ -95,13 +95,28 @@ serve(async (req) => {
       }
     }
 
+    // Process task-start smart notifications once per run.
+    let notificationResult: Record<string, unknown> | null = null
+    try {
+      const { data: notificationData, error: notificationError } = await supabase.functions.invoke(
+        'process-task-notifications',
+        { body: {} },
+      )
+      notificationResult = notificationError
+        ? { success: false, error: notificationError.message || 'Failed to process task notifications' }
+        : { success: true, ...(notificationData || {}) }
+    } catch (error) {
+      notificationResult = { success: false, error: error.message || 'Failed to process task notifications' }
+    }
+
     return new Response(
       JSON.stringify({ 
         success: true,
         processed: results.length,
         errors: errors.length,
         results: results,
-        error_details: errors
+        error_details: errors,
+        task_notifications: notificationResult,
       }),
       { 
         status: 200, 

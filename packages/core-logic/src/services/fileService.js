@@ -74,6 +74,37 @@ export function getFileUrl(supabase, bucket, path) {
 }
 
 /**
+ * Create a signed URL for a private file
+ * @param {import('@supabase/supabase-js').SupabaseClient} supabase - Supabase client
+ * @param {string} bucket - Storage bucket name
+ * @param {string} path - File path in storage
+ * @param {number} expiresIn - Expiry in seconds
+ * @returns {Promise<string|null>} Signed URL or null when no path is provided
+ */
+export async function createSignedFileUrl(supabase, bucket, path, expiresIn = 3600) {
+  if (!path) return null;
+
+  const { data, error } = await supabase.storage
+    .from(bucket)
+    .createSignedUrl(path, expiresIn);
+
+  if (error) throw error;
+  return data?.signedUrl || null;
+}
+
+/**
+ * Create signed URLs for multiple private files
+ * @param {import('@supabase/supabase-js').SupabaseClient} supabase - Supabase client
+ * @param {string} bucket - Storage bucket name
+ * @param {Array<string>} paths - File paths in storage
+ * @param {number} expiresIn - Expiry in seconds
+ * @returns {Promise<Array<string|null>>} Signed URLs aligned to the input paths
+ */
+export async function createSignedFileUrls(supabase, bucket, paths, expiresIn = 3600) {
+  return Promise.all((paths || []).map((path) => createSignedFileUrl(supabase, bucket, path, expiresIn)));
+}
+
+/**
  * List files in a storage bucket
  * @param {import('@supabase/supabase-js').SupabaseClient} supabase - Supabase client
  * @param {string} bucket - Storage bucket name

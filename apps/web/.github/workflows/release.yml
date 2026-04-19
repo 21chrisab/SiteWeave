@@ -25,8 +25,8 @@ jobs:
     - name: Install dependencies
       run: npm ci
       
-    - name: Build Windows executable
-      run: npm run build:win
+    - name: Build web bundle
+      run: npm run build
       env:
         VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
         VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
@@ -36,13 +36,20 @@ jobs:
         VITE_MICROSOFT_CLIENT_SECRET: ${{ secrets.VITE_MICROSOFT_CLIENT_SECRET }}
         VITE_DROPBOX_APP_KEY: ${{ secrets.VITE_DROPBOX_APP_KEY }}
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Package web build artifact
+      shell: pwsh
+      run: |
+        $tag = "${{ github.ref_name }}"
+        $archive = "SiteWeaveWeb-$tag.zip"
+        Compress-Archive -Path dist/* -DestinationPath $archive -Force
       
     - name: Create Release
       uses: softprops/action-gh-release@v1
       with:
         tag_name: ${{ github.ref_name }}
         name: Release ${{ github.ref_name }}
-        files: release/*.exe
+        files: SiteWeaveWeb-${{ github.ref_name }}.zip
         draft: false
         prerelease: false
         generate_release_notes: true

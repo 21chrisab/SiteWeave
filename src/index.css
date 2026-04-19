@@ -27,3 +27,30 @@ textarea:focus-visible {
   outline-offset: 2px;
 }
 
+/* Desktop layout stability helpers */
+.ui-min-w-0 {
+  min-width: 0;
+}
+
+.ui-ellipsis-1 {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ui-clamp-2 {
+  min-width: 0;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+/* Slightly denser desktop typography for very narrow app windows */
+@media (max-width: 1365px) {
+  .gantt-compact-label {
+    font-size: 0.7rem;
+  }
+}
+

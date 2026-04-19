@@ -3,6 +3,7 @@ import { useAppContext, supabaseClient } from '../context/AppContext';
 import { useToast } from '../context/ToastContext';
 import Icon from './Icon';
 import DateDropdown from './DateDropdown';
+import { getFieldIssueDisplayStatus } from '../utils/fieldIssueStatus';
 
 const FieldIssues = ({ projectId }) => {
     const { state } = useAppContext();
@@ -148,13 +149,14 @@ const FieldIssues = ({ projectId }) => {
         }
     };
 
-    const handleToggleStatus = async (issueId, currentStatus) => {
-        const newStatus = currentStatus === 'open' ? 'closed' : 'open';
+    const handleToggleStatus = async (issue) => {
+        const display = getFieldIssueDisplayStatus(issue);
+        const newStatus = display === 'open' ? 'closed' : 'open';
         try {
             const { error } = await supabaseClient
                 .from('project_issues')
                 .update({ status: newStatus })
-                .eq('id', issueId);
+                .eq('id', issue.id);
 
             if (error) {
                 throw error;
@@ -272,15 +274,15 @@ const FieldIssues = ({ projectId }) => {
         }
     };
 
-    // Filter issues based on status
-    const filteredIssues = fieldIssues.filter(issue => {
-        if (statusFilter === 'open') return issue.status === 'open';
-        if (statusFilter === 'closed') return issue.status === 'closed';
-        return true; // 'all'
+    const filteredIssues = fieldIssues.filter((issue) => {
+        const display = getFieldIssueDisplayStatus(issue);
+        if (statusFilter === 'open') return display === 'open';
+        if (statusFilter === 'closed') return display === 'closed';
+        return true;
     });
 
-    const openCount = fieldIssues.filter(i => i.status === 'open').length;
-    const closedCount = fieldIssues.filter(i => i.status === 'closed').length;
+    const openCount = fieldIssues.filter((i) => getFieldIssueDisplayStatus(i) === 'open').length;
+    const closedCount = fieldIssues.filter((i) => getFieldIssueDisplayStatus(i) === 'closed').length;
 
     return (
         <div className="p-6 bg-white rounded-xl shadow-xs border border-gray-200">
@@ -315,9 +317,11 @@ const FieldIssues = ({ projectId }) => {
                 </div>
             ) : filteredIssues.length > 0 ? (
                 <div className="space-y-4">
-                    {filteredIssues.map((issue) => (
+                    {filteredIssues.map((issue) => {
+                        const displayStatus = getFieldIssueDisplayStatus(issue);
+                        return (
                         <div key={issue.id} className={`border rounded-lg p-4 transition-colors ${
-                            issue.status === 'closed' 
+                            displayStatus === 'closed' 
                                 ? 'bg-gray-50 border-gray-300 opacity-75' 
                                 : 'border-gray-200 bg-white'
                         }`}>
@@ -325,26 +329,26 @@ const FieldIssues = ({ projectId }) => {
                                 <div className="flex-1">
                                     <div className="flex items-center gap-2 mb-1">
                                         <h3 className={`font-semibold ${
-                                            issue.status === 'closed' 
+                                            displayStatus === 'closed' 
                                                 ? 'text-gray-500 line-through' 
                                                 : 'text-gray-900'
                                         }`}>
                                             {issue.title}
                                         </h3>
                                         <button
-                                            onClick={() => handleToggleStatus(issue.id, issue.status)}
+                                            onClick={() => handleToggleStatus(issue)}
                                             className={`px-2 py-1 text-xs font-semibold rounded-full border transition-colors ${
-                                                issue.status === 'open'
+                                                displayStatus === 'open'
                                                     ? 'bg-green-100 text-green-800 border-green-200 hover:bg-green-200'
                                                     : 'bg-gray-100 text-gray-600 border-gray-200 hover:bg-gray-200'
                                             }`}
-                                            title={issue.status === 'open' ? 'Mark as closed' : 'Mark as open'}
+                                            title={displayStatus === 'open' ? 'Mark as closed' : 'Mark as open'}
                                         >
-                                            {issue.status === 'open' ? 'Open' : 'Closed'}
+                                            {displayStatus === 'open' ? 'Open' : 'Closed'}
                                         </button>
                                     </div>
                                     <p className={`text-sm mb-2 ${
-                                        issue.status === 'closed' 
+                                        displayStatus === 'closed' 
                                             ? 'text-gray-400' 
                                             : 'text-gray-600'
                                     }`}>
@@ -353,7 +357,7 @@ const FieldIssues = ({ projectId }) => {
                                     <div className="flex items-center gap-4 text-xs text-gray-500">
                                         <span>Created: {formatDate(issue.created_at)}</span>
                                         {issue.due_date && <span>Due: {formatDate(issue.due_date)}</span>}
-                                        {issue.status === 'closed' && (
+                                        {displayStatus === 'closed' && (
                                             <span className="text-green-600 font-medium">✓ Resolved</span>
                                         )}
                                     </div>
@@ -381,7 +385,8 @@ const FieldIssues = ({ projectId }) => {
                                 </div>
                             </div>
                         </div>
-                    ))}
+                        );
+                    })}
                 </div>
             ) : (
                 <div className="text-center py-12">

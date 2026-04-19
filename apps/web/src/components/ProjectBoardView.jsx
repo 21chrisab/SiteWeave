@@ -1,7 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { useAppContext, supabaseClient } from '../context/AppContext';
-import { formatDateShort, getStatusColor, normalizeStatusDisplay } from '../utils/projectHelpers';
-import { calculateProjectProgress } from '../utils/projectHelpers';
+import {
+    formatDateShort,
+    getStatusColor,
+    normalizeStatusDisplay,
+    calculateProjectsProgressMap,
+} from '../utils/projectHelpers';
 import PermissionGuard from './PermissionGuard';
 
 function ProjectBoardView({ projects, onEdit, onDelete, onProjectClick }) {
@@ -59,23 +63,10 @@ function ProjectBoardView({ projects, onEdit, onDelete, onProjectClick }) {
             setProjectData(initialData);
             
             try {
-                // Load all project progress in parallel for maximum performance
-                const results = await Promise.all(
-                    activeProjects.map(async (project) => {
-                        try {
-                            const progress = await calculateProjectProgress(project.id, supabaseClient);
-                            return { id: project.id, progress: progress || 0 };
-                        } catch (error) {
-                            console.error(`Error loading progress for project ${project.id}:`, error);
-                            return { id: project.id, progress: 0 };
-                        }
-                    })
-                );
-                
-                // Update all at once after parallel loading
+                const progressMap = await calculateProjectsProgressMap(activeProjects, supabaseClient);
                 const data = {};
-                results.forEach(result => {
-                    data[result.id] = { progress: result.progress, loading: false };
+                activeProjects.forEach((project) => {
+                    data[project.id] = { progress: progressMap[project.id] || 0, loading: false };
                 });
                 setProjectData(data);
             } catch (error) {

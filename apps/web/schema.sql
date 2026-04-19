@@ -16,6 +16,12 @@ CREATE TABLE IF NOT EXISTS organizations (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT now()
 );
 
+ALTER TABLE organizations
+ADD COLUMN IF NOT EXISTS progress_report_send_hour INTEGER NOT NULL DEFAULT 8;
+
+ALTER TABLE organizations
+ADD COLUMN IF NOT EXISTS progress_report_timezone TEXT NOT NULL DEFAULT 'America/New_York';
+
 -- Roles Table (Dynamic roles with JSONB permissions)
 CREATE TABLE IF NOT EXISTS roles (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -53,6 +59,7 @@ CREATE TABLE IF NOT EXISTS projects (
     milestones JSONB,
     notification_count INTEGER DEFAULT 0,
     color TEXT,
+    dependency_scheduling_mode TEXT NOT NULL DEFAULT 'auto' CHECK (dependency_scheduling_mode IN ('auto', 'manual')),
     organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT now()
 );
@@ -295,6 +302,7 @@ CREATE TABLE IF NOT EXISTS tasks (
     start_date DATE,
     duration_days INTEGER,
     is_milestone BOOLEAN DEFAULT false,
+    percent_complete INTEGER CHECK (percent_complete IS NULL OR (percent_complete >= 0 AND percent_complete <= 100)),
     created_at TIMESTAMP WITH TIME ZONE DEFAULT now()
 );
 
@@ -320,6 +328,18 @@ CREATE TABLE IF NOT EXISTS project_templates (
     created_by_user_id UUID REFERENCES auth.users(id) ON DELETE SET NULL,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT now(),
     structure JSONB NOT NULL DEFAULT '{}'
+);
+
+-- Schedule import templates (Microsoft Project XML field mapping, org-scoped)
+CREATE TABLE IF NOT EXISTS schedule_import_templates (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    source_type TEXT NOT NULL DEFAULT 'ms_project_xml',
+    config JSONB NOT NULL DEFAULT '{}',
+    created_by_user_id UUID REFERENCES auth.users(id) ON DELETE SET NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT now(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT now()
 );
 
 -- Activity Log Table (for tracking user actions)
@@ -486,11 +506,16 @@ ALTER TABLE tasks ADD COLUMN IF NOT EXISTS is_recurring_instance BOOLEAN DEFAULT
 -- Add workflow steps to tasks table (stored as JSONB)
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS workflow_steps JSONB;
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS current_workflow_step INTEGER DEFAULT 1;
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS workflow_steps_legacy JSONB;
+COMMENT ON COLUMN tasks.workflow_steps IS 'Deprecated: legacy workflow JSON migrated to task_dependencies.';
+COMMENT ON COLUMN tasks.current_workflow_step IS 'Deprecated: legacy workflow pointer no longer used.';
+COMMENT ON COLUMN tasks.workflow_steps_legacy IS 'Read-only archive of deprecated workflow steps captured during migration.';
 
 -- Add Gantt/schedule fields to tasks table
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS start_date DATE;
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS duration_days INTEGER;
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS is_milestone BOOLEAN DEFAULT false;
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS percent_complete INTEGER;
 
 -- ============================================================================
 -- DATA CLEANUP BEFORE FOREIGN KEY CONSTRAINTS
@@ -2439,6 +2464,32 @@ FOR DELETE
 USING (organization_id = (SELECT get_user_organization_id()));
 
 -- ============================================================================
+-- SCHEDULE IMPORT TEMPLATES TABLE POLICIES
+-- ============================================================================
+
+ALTER TABLE public.schedule_import_templates ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Users can view their organization schedule import templates"
+ON public.schedule_import_templates
+FOR SELECT
+USING (organization_id = (SELECT get_user_organization_id()));
+
+CREATE POLICY "Users can create schedule import templates for their organization"
+ON public.schedule_import_templates
+FOR INSERT
+WITH CHECK (organization_id = (SELECT get_user_organization_id()));
+
+CREATE POLICY "Users can update their organization schedule import templates"
+ON public.schedule_import_templates
+FOR UPDATE
+USING (organization_id = (SELECT get_user_organization_id()));
+
+CREATE POLICY "Users can delete their organization schedule import templates"
+ON public.schedule_import_templates
+FOR DELETE
+USING (organization_id = (SELECT get_user_organization_id()));
+
+-- ============================================================================
 -- USER PREFERENCES TABLE POLICIES
 -- ============================================================================
 
@@ -2685,3 +2736,5 @@ CREATE INDEX IF NOT EXISTS idx_tasks_is_milestone ON tasks(is_milestone) WHERE i
 -- Project templates indexes
 CREATE INDEX IF NOT EXISTS idx_project_templates_organization_id ON project_templates(organization_id);
 CREATE INDEX IF NOT EXISTS idx_project_templates_created_at ON project_templates(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_schedule_import_templates_organization_id ON schedule_import_templates(organization_id);
+CREATE INDEX IF NOT EXISTS idx_schedule_import_templates_created_at ON schedule_import_templates(created_at DESC);

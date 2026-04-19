@@ -574,6 +574,28 @@ function InviteAcceptPage() {
         throw new Error('Failed to establish session. Please try signing in manually.');
       }
 
+      // First Org Admin to accept claims founding ownership (e.g. super-admin–provisioned orgs)
+      const invitedRoleName = invitation.roles?.name;
+      if (invitedRoleName === 'Org Admin' && invitation.organization_id && authData?.user?.id) {
+        const { data: orgRow } = await supabase
+          .from('organizations')
+          .select('created_by_user_id')
+          .eq('id', invitation.organization_id)
+          .single();
+
+        if (orgRow && orgRow.created_by_user_id == null) {
+          const { error: claimError } = await supabase
+            .from('organizations')
+            .update({ created_by_user_id: authData.user.id })
+            .eq('id', invitation.organization_id)
+            .is('created_by_user_id', null);
+
+          if (claimError) {
+            console.warn('Could not claim organization created_by_user_id:', claimError);
+          }
+        }
+      }
+
       setMessage(`Welcome to ${invitation.organizations?.name || 'the organization'}!`);
       
       // Step 5: Navigate to the main app

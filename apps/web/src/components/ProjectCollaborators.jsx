@@ -133,7 +133,7 @@ function ProjectCollaborators({ projectId }) {
     <div className="p-6">
       <div className="mb-6">
         <h2 className="text-2xl font-bold text-gray-900">Project Collaborators</h2>
-        <p className="text-gray-600 mt-1">Manage guest access for subcontractors and external team members</p>
+        <p className="text-gray-600 mt-1">Manage guest access for trade partners and external team members</p>
       </div>
 
       <PermissionGuard permission="can_manage_contacts">

@@ -62,6 +62,7 @@ export async function duplicateProject(supabase, projectId, newName, organizatio
         next_milestone: originalProject.next_milestone,
         milestones: originalProject.milestones,
         color: originalProject.color,
+        dependency_scheduling_mode: originalProject.dependency_scheduling_mode || 'auto',
         organization_id: organizationId,
         created_by_user_id: currentUserId ?? originalProject.created_by_user_id,
         project_manager_id: currentUserId ?? originalProject.project_manager_id
@@ -114,6 +115,7 @@ export async function duplicateProject(supabase, projectId, newName, organizatio
         is_milestone: task.is_milestone ?? false,
         priority: task.priority,
         completed: false,
+        percent_complete: task.percent_complete != null ? task.percent_complete : null,
         assignee_id: null,
         recurrence: task.recurrence,
         organization_id: organizationId

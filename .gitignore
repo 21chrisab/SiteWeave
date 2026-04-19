@@ -83,3 +83,6 @@ Thumbs.db
 
 # Local backups
 apps/web-backup/
+
+# Local scratch / vendor mirrors (do not commit)
+_tmp_upstream/

@@ -162,3 +162,59 @@ jobs:
         generate_release_notes: true
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  mac_release:
+    runs-on: macos-latest
+    needs: release
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        ref: main
+        clean: true
+        fetch-depth: 0
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '22.x'
+        cache: ''
+
+    - name: Clean build directories
+      shell: bash
+      run: |
+        rm -rf dist/
+        rm -rf dist-electron/
+        rm -rf release/
+        rm -rf node_modules/.vite
+
+    - name: Install dependencies
+      run: npm ci
+
+    - name: Build macOS app
+      run: npm run build:mac
+      env:
+        VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+        VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+        VITE_GOOGLE_CLIENT_ID: ${{ secrets.VITE_GOOGLE_CLIENT_ID }}
+        VITE_GOOGLE_CLIENT_SECRET: ${{ secrets.VITE_GOOGLE_CLIENT_SECRET }}
+        VITE_MICROSOFT_CLIENT_ID: ${{ secrets.VITE_MICROSOFT_CLIENT_ID }}
+        VITE_MICROSOFT_CLIENT_SECRET: ${{ secrets.VITE_MICROSOFT_CLIENT_SECRET }}
+        VITE_DROPBOX_APP_KEY: ${{ secrets.VITE_DROPBOX_APP_KEY }}
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        ELECTRON_BUILDER_CACHE: ${{ runner.temp }}/electron-builder-cache-${{ github.run_id }}
+
+    - name: Upload macOS assets to existing release
+      shell: bash
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        TAG="${{ github.ref_name }}"
+        shopt -s nullglob
+        files=(release/*.dmg release/*.zip release/latest-mac.yml)
+        if [ ${#files[@]} -eq 0 ]; then
+          echo "ERROR: No macOS release assets found in release/"
+          exit 1
+        fi
+        gh release upload "$TAG" "${files[@]}" --clobber

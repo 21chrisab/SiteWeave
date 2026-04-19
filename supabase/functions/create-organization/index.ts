@@ -65,7 +65,8 @@ serve(async (req) => {
       .insert({
         name: companyName,
         slug: slug,
-        created_by_user_id: user.id
+        // Invited owner claims org on invite accept (see InviteAcceptPage); not the super admin
+        created_by_user_id: null
       })
       .select()
       .single()

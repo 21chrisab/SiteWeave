@@ -55,11 +55,12 @@ function polyfillReactNativeCrypto() {
   if (typeof navigator === 'undefined' || navigator.product !== 'ReactNative') return;
   try {
     if (typeof globalThis.crypto === 'undefined' || !globalThis.crypto.getRandomValues) {
-      require('react-native-get-random-values');
+      // eval hides require from Vite/web bundlers; only runs in React Native
+      eval("require('react-native-get-random-values')");
     }
     if (globalThis.crypto && !globalThis.crypto.subtle) {
       try {
-        const Crypto = require('expo-crypto').default;
+        const Crypto = eval("require('expo-crypto')").default;
         const algoMap = { 'SHA-256': Crypto.CryptoDigestAlgorithm?.SHA256 ?? 'SHA-256' };
         globalThis.crypto.subtle = {
           digest: (alg, data) => Crypto.digest(algoMap[alg] || alg, data),

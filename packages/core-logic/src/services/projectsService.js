@@ -3,6 +3,11 @@
  * Handles all project-related database operations
  */
 
+import {
+  computeWeightedProjectProgressPercent,
+  groupPhasesByProjectId,
+} from '../utils/projectProgressRollup.js';
+
 /**
  * Fetch all projects
  * @param {import('@supabase/supabase-js').SupabaseClient} supabase - Supabase client
@@ -76,15 +81,12 @@ export async function fetchActiveProjectsCount(supabase, userId) {
 /**
  * Fetch user projects with calculated progress
  * Uses RLS policies to automatically filter projects based on user role
+ * Two queries total: projects + batched phases (no N+1 per project).
  * @param {import('@supabase/supabase-js').SupabaseClient} supabase - Supabase client
  * @param {string} userId - User ID (auth.users.id) - not used but kept for API consistency
  * @returns {Promise<Array>} Array of projects with progress
  */
 export async function fetchUserProjectsWithProgress(supabase, userId) {
-  // Use RLS policies - they automatically filter based on:
-  // - Admins: all projects
-  // - PMs: projects where project_manager_id = auth.uid()
-  // - Team: projects where created_by_user_id = auth.uid() OR in project_contacts
   const { data: projects, error } = await supabase
     .from('projects')
     .select('*')
@@ -93,36 +95,25 @@ export async function fetchUserProjectsWithProgress(supabase, userId) {
   if (error) throw error;
   
   const projectsList = projects || [];
-  
-  // Calculate progress for each project
-  const projectsWithProgress = await Promise.all(
-    projectsList.map(async (project) => {
-      // Get phases for this project
-      const { data: phases, error: phasesError } = await supabase
-        .from('project_phases')
-        .select('*')
-        .eq('project_id', project.id)
-        .order('order');
-      
-      if (phasesError || !phases || phases.length === 0) {
-        return { ...project, progress: 0 };
-      }
-      
-      // Calculate weighted progress
-      const totalBudget = phases.reduce((sum, phase) => sum + (phase.budget || 0), 0);
-      if (totalBudget === 0) {
-        return { ...project, progress: 0 };
-      }
-      
-      const totalWeightedProgress = phases.reduce((sum, phase) => {
-        const phaseWeight = (phase.budget || 0) / totalBudget;
-        return sum + (phase.progress * phaseWeight);
-      }, 0);
-      
-      return { ...project, progress: Math.round(totalWeightedProgress) };
-    })
-  );
-  
-  return projectsWithProgress;
-}
+  if (projectsList.length === 0) return [];
 
+  const projectIds = projectsList.map((p) => p.id);
+
+  const { data: allPhases, error: phasesError } = await supabase
+    .from('project_phases')
+    .select('project_id, progress, start_date, end_date, order')
+    .in('project_id', projectIds);
+
+  if (phasesError) throw phasesError;
+
+  const phasesByProject = groupPhasesByProjectId(allPhases || []);
+
+  return projectsList.map((project) => {
+    const phases = phasesByProject[project.id] || [];
+    if (phases.length === 0) {
+      return { ...project, progress: 0 };
+    }
+    const progress = computeWeightedProjectProgressPercent(phases, project?.due_date);
+    return { ...project, progress };
+  });
+}

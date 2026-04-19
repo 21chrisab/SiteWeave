@@ -21,6 +21,12 @@ win:
   target: nsis
   icon: build/icon.png
   verifyUpdateCodeSignature: false
+mac:
+  target:
+    - dmg
+    - zip
+  category: public.app-category.productivity
+  artifactName: ${productName}-${version}-${arch}.${ext}
 # AppX target for MSIX/Store (build with: npm run build:win:appx)
 appx:
   applicationId: com.siteweave.app

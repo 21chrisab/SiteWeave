@@ -320,7 +320,7 @@ function ContactsView() {
             <header className="flex items-center justify-between mb-6">
                 <div>
                     <h1 className="text-3xl font-bold text-gray-900">Contacts</h1>
-                    <p className="text-gray-500">Manage your team members and subcontractors</p>
+                    <p className="text-gray-500">Manage your team members and trade partners</p>
                 </div>
                 <div className="flex gap-3">
                     <button 
@@ -421,7 +421,7 @@ function ContactsView() {
                     onClick={() => setActiveTab('Subcontractors')} 
                     className={`px-4 py-2 text-sm font-semibold ${activeTab === 'Subcontractors' ? 'text-blue-600 border-b-2 border-blue-600' : 'text-gray-500'}`}
                 >
-                    Subcontractors ({subcontractors.length})
+                    Trade Partners ({subcontractors.length})
                 </button>
             </div>
             
@@ -456,7 +456,7 @@ function ContactsView() {
             ) : (
                 <div className="p-6 bg-white rounded-xl shadow-xs border border-gray-200" data-onboarding="contacts-list">
                     <h2 className="text-xl font-bold mb-4">
-                        All Subcontractors ({filteredContacts.length})
+                        All Trade Partners ({filteredContacts.length})
                     </h2>
                     <ul className="space-y-3">
                         {filteredContacts.map(c => (
@@ -476,7 +476,7 @@ function ContactsView() {
                         <div className="text-center py-8 text-gray-500">
                             {searchTerm || statusFilter !== 'All' 
                                 ? 'No contacts match your search criteria' 
-                                : 'No subcontractors found'
+                                : 'No trade partners found'
                             }
                         </div>
                     )}

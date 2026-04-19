@@ -20,7 +20,7 @@ import { getCriticalPathTaskIds } from '../utils/criticalPath';
 import { orderTasksForGantt } from '../utils/ganttOrdering';
 import GanttChart from '../components/GanttChart';
 
-function ProjectDetailsView() {
+function ProjectDetailsView({ routeTab = 'tasks', onTabChange = null }) {
     const { state, dispatch } = useAppContext();
     const { addToast } = useToast();
     const [showTaskModal, setShowTaskModal] = useState(false);
@@ -30,7 +30,7 @@ function ProjectDetailsView() {
     const [selectedTasks, setSelectedTasks] = useState([]);
     const [taskFilter, setTaskFilter] = useState('all'); // all, completed, pending
     const [taskSort, setTaskSort] = useState('due_date'); // due_date, priority
-    const [activeTab, setActiveTab] = useState('tasks'); // tasks, gantt, fieldIssues
+    const [activeTab, setActiveTab] = useState('tasks'); // tasks, gantt, fieldIssues, activity
     const [showShare, setShowShare] = useState(false);
     const [showSaveAsTemplateModal, setShowSaveAsTemplateModal] = useState(false);
     const [fieldIssuesCount, setFieldIssuesCount] = useState(0);
@@ -39,6 +39,32 @@ function ProjectDetailsView() {
     const [ganttCriticalCount, setGanttCriticalCount] = useState(0);
     const [ganttCriticalIds, setGanttCriticalIds] = useState([]);
     const [showCriticalPath, setShowCriticalPath] = useState(true);
+
+    const routeToTabMap = {
+        tasks: 'tasks',
+        gantt: 'gantt',
+        'field-issues': 'fieldIssues',
+        fieldIssues: 'fieldIssues',
+        activity: 'activity'
+    };
+    const tabToRouteMap = {
+        tasks: 'tasks',
+        gantt: 'gantt',
+        fieldIssues: 'field-issues',
+        activity: 'activity'
+    };
+    const setTabAndRoute = (nextTab) => {
+        setActiveTab(nextTab);
+        if (onTabChange) {
+            const nextRouteTab = tabToRouteMap[nextTab] || 'tasks';
+            onTabChange(nextRouteTab);
+        }
+    };
+
+    useEffect(() => {
+        const mapped = routeToTabMap[routeTab] || 'tasks';
+        setActiveTab(mapped);
+    }, [routeTab]);
 
     // Keyboard shortcuts
     useTaskShortcuts({
@@ -191,6 +217,12 @@ function ProjectDetailsView() {
                 return new Date(a.due_date) - new Date(b.due_date);
         }
     });
+
+    const projectActivity = (state.activityLog || []).filter((activity) => {
+        const sameProject = activity.project_id && String(activity.project_id) === String(project?.id);
+        const metadataProject = activity.metadata?.project_id && String(activity.metadata.project_id) === String(project?.id);
+        return sameProject || metadataProject;
+    }).slice(0, 30);
     
     if (!project) {
         return (
@@ -613,10 +645,10 @@ function ProjectDetailsView() {
 
     return (
         <div>
-            <header className="flex items-center justify-between mb-8" data-onboarding="project-header">
+            <header className="flex items-center justify-between mb-6 app-card p-5" data-onboarding="project-header">
                 <div>
-                    <h1 className="text-3xl font-bold text-gray-900">{project.name}</h1>
-                    <p className="text-gray-500">{project.address}</p>
+                    <h1 className="app-section-title">{project.name}</h1>
+                    <p className="app-section-subtitle">{project.address}</p>
                 </div>
                 <div className="flex items-center gap-4">
                     <PermissionGuard 
@@ -700,7 +732,7 @@ function ProjectDetailsView() {
                     )}
                     <button 
                         onClick={() => setShowShare(true)}
-                        className="px-4 py-2 text-sm font-semibold text-white bg-blue-600 rounded-lg shadow-xs hover:bg-blue-700 transition-colors"
+                        className="px-4 py-2 text-sm font-semibold rounded-lg shadow-xs transition-colors app-action-primary"
                         title="Assign crew members from organization directory or invite guests"
                     >
                         + Manage Crew
@@ -708,7 +740,7 @@ function ProjectDetailsView() {
                     <PermissionGuard permission="can_create_projects">
                         <button 
                             onClick={() => setShowSaveAsTemplateModal(true)}
-                            className="px-4 py-2 text-sm font-semibold text-gray-700 bg-gray-100 rounded-lg shadow-xs hover:bg-gray-200 transition-colors"
+                            className="px-4 py-2 text-sm font-semibold rounded-lg shadow-xs transition-colors app-action-secondary"
                             title="Save this project structure as a reusable template"
                         >
                             Save as template
@@ -730,13 +762,13 @@ function ProjectDetailsView() {
             )}
 
             <div className="grid grid-cols-1 lg:grid-cols-5 gap-8">
-                {/* Main Content Area with Tabs */}
-                <div className="lg:col-span-3">
+                {/* Main content — full width on Gantt (sidebar hidden) */}
+                <div className={activeTab === 'gantt' ? 'lg:col-span-5' : 'lg:col-span-3'}>
                     {/* Tab Navigation */}
-                    <div className="border-b border-gray-200 mb-6">
+                    <div className="border-b border-slate-200 mb-6 app-card-soft px-4">
                         <nav className="-mb-px flex space-x-8">
                             <button
-                                onClick={() => setActiveTab('tasks')}
+                                onClick={() => setTabAndRoute('tasks')}
                                 className={`py-2 px-1 text-sm font-medium border-b-2 transition-colors ${
                                     activeTab === 'tasks'
                                         ? 'border-blue-500 text-blue-600'
@@ -746,7 +778,7 @@ function ProjectDetailsView() {
                                 Tasks ({Math.max(allTasks.length, ganttTasks.length)})
                             </button>
                             <button
-                                onClick={() => setActiveTab('gantt')}
+                                onClick={() => setTabAndRoute('gantt')}
                                 className={`py-2 px-1 text-sm font-medium border-b-2 transition-colors ${
                                     activeTab === 'gantt'
                                         ? 'border-blue-500 text-blue-600'
@@ -756,7 +788,7 @@ function ProjectDetailsView() {
                                 Gantt
                             </button>
                             <button
-                                onClick={() => setActiveTab('fieldIssues')}
+                                onClick={() => setTabAndRoute('fieldIssues')}
                                 className={`py-2 px-1 text-sm font-medium border-b-2 transition-colors ${
                                     activeTab === 'fieldIssues'
                                         ? 'border-blue-500 text-blue-600'
@@ -765,13 +797,23 @@ function ProjectDetailsView() {
                             >
                                 Field Issues ({fieldIssuesCount})
                             </button>
+                            <button
+                                onClick={() => setTabAndRoute('activity')}
+                                className={`py-2 px-1 text-sm font-medium border-b-2 transition-colors ${
+                                    activeTab === 'activity'
+                                        ? 'border-blue-500 text-blue-600'
+                                        : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                                }`}
+                            >
+                                Activity
+                            </button>
                         </nav>
                     </div>
 
                     {/* Tab Content */}
                     <div className="min-h-96">
                         {activeTab === 'gantt' && (
-                            <div className="bg-white rounded-xl shadow-xs border border-gray-200 flex flex-col" data-onboarding="gantt-section" style={{ height: 'max(60vh, 500px)', maxHeight: '80vh' }}>
+                            <div className="app-card flex flex-col" data-onboarding="gantt-section" style={{ height: 'max(72vh, 520px)', maxHeight: '90vh' }}>
                                 <div className="flex flex-wrap items-center justify-between gap-4 px-6 pt-5 pb-3 flex-shrink-0">
                                     <h2 className="text-xl font-bold">Gantt</h2>
                                     <div className="flex items-center gap-4">
@@ -800,7 +842,7 @@ function ProjectDetailsView() {
                             </div>
                         )}
                         {activeTab === 'tasks' && (
-                            <div className="p-6 bg-white rounded-xl shadow-xs border border-gray-200" data-onboarding="tasks-section">
+                            <div className="p-6 app-card" data-onboarding="tasks-section">
                                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-4">
                                     <div className="flex items-center gap-4">
                                         <h2 className="text-xl font-bold">Tasks ({Math.max(allTasks.length, ganttTasks.length)})</h2>
@@ -876,6 +918,32 @@ function ProjectDetailsView() {
                             <FieldIssues projectId={project.id} />
                         )}
 
+                        {activeTab === 'activity' && (
+                            <div className="p-6 app-card">
+                                <div className="flex items-center justify-between mb-4">
+                                    <h2 className="text-xl font-bold">Project Activity</h2>
+                                    <span className="text-xs text-gray-500">{projectActivity.length} recent events</span>
+                                </div>
+                                {projectActivity.length === 0 ? (
+                                    <p className="text-sm text-gray-500">No recent activity for this project yet.</p>
+                                ) : (
+                                    <ul className="space-y-2">
+                                        {projectActivity.map((activity) => (
+                                            <li key={activity.id} className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+                                                <p className="text-sm text-gray-800">
+                                                    <span className="font-semibold">{activity.user_name || 'Team member'}</span>{' '}
+                                                    {activity.action || 'updated the project'}
+                                                </p>
+                                                <p className="text-xs text-gray-500 mt-1">
+                                                    {new Date(activity.created_at).toLocaleString()}
+                                                </p>
+                                            </li>
+                                        ))}
+                                    </ul>
+                                )}
+                            </div>
+                        )}
+
                         {/* Workflow Section - Always visible under Tasks */}
                         {activeTab === 'tasks' && (
                             <div className="mt-6">
@@ -885,9 +953,9 @@ function ProjectDetailsView() {
                     </div>
                 </div>
 
-                {/* Project Sidebar */}
-                <div className="lg:col-span-2">
-                    <ProjectSidebar project={project} />
+                {/* Sidebar hidden on Gantt for full-width chart (phases + recent activity on other tabs) */}
+                <div className={activeTab === 'gantt' ? 'hidden' : 'lg:col-span-2'}>
+                    <ProjectSidebar project={project} showProjectPhases={activeTab !== 'gantt'} />
                 </div>
             </div>
             {showTaskModal && <TaskModal project={project} onClose={() => setShowTaskModal(false)} onSave={handleAddTask} isLoading={isCreatingTask} />}

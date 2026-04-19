@@ -383,10 +383,10 @@ function DashboardView() {
         <>
             <div className="grid grid-cols-1 xl:grid-cols-4 gap-6 h-full">
                 <div className="xl:col-span-3">
-                    <header className="flex items-center justify-between mb-8" data-onboarding="dashboard-welcome">
+                    <header className="flex items-center justify-between mb-8 app-card p-5" data-onboarding="dashboard-welcome">
                          <div>
-                            <h1 className="text-3xl font-bold text-gray-900 mb-1">Project Dashboard</h1>
-                            <p className="text-gray-500 text-sm">Manage your construction projects</p>
+                            <h1 className="app-section-title mb-1">Project Dashboard</h1>
+                            <p className="app-section-subtitle">Manage your construction projects</p>
                         </div>
                         <div className="flex items-center gap-3">
                             <ViewSwitcher currentView={viewType} onViewChange={setViewType} />
@@ -394,13 +394,13 @@ function DashboardView() {
                                 <button 
                                     onClick={() => setShowModal(true)} 
                                     data-onboarding="new-project-btn"
-                                    className="px-4 py-2 text-sm font-semibold text-white bg-blue-600 rounded-lg shadow-xs hover:bg-blue-700 btn-smooth"
+                                    className="px-4 py-2 text-sm font-semibold rounded-lg shadow-xs btn-smooth app-action-primary"
                                 >
                                     + New Project
                                 </button>
                                 <button 
                                     onClick={() => setShowCreateFromTemplateModal(true)} 
-                                    className="px-4 py-2 text-sm font-semibold text-gray-700 bg-gray-100 rounded-lg shadow-xs hover:bg-gray-200 btn-smooth"
+                                    className="px-4 py-2 text-sm font-semibold rounded-lg shadow-xs btn-smooth app-action-secondary"
                                 >
                                     From template
                                 </button>
@@ -445,8 +445,8 @@ function DashboardView() {
                             )}
                         </div>
                     ) : (
-                        <div className="flex flex-col items-center justify-center py-20 px-6 text-center">
-                            <div className="w-20 h-20 bg-gray-100 rounded-full flex items-center justify-center mb-5">
+                        <div className="flex flex-col items-center justify-center py-20 px-6 text-center app-card">
+                            <div className="w-20 h-20 bg-slate-100 rounded-full flex items-center justify-center mb-5">
                                 <svg className="w-10 h-10 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
                                 </svg>
@@ -455,7 +455,7 @@ function DashboardView() {
                             <p className="text-gray-500 mb-6 max-w-md text-sm leading-relaxed">Get started by creating your first construction project. Track progress, manage tasks, and collaborate with your team.</p>
                             <button 
                                 onClick={() => setShowModal(true)}
-                                className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium text-sm"
+                                className="px-6 py-3 rounded-lg transition-colors font-medium text-sm app-action-primary"
                             >
                                 Create Your First Project
                             </button>
@@ -464,7 +464,7 @@ function DashboardView() {
                 </div>
                 <aside 
                     data-onboarding="my-day-sidebar"
-                    className="bg-white rounded-xl shadow-xs p-5 border border-gray-200 h-fit"
+                    className="app-card p-5 h-fit"
                 >
                     <MyDaySidebar />
                 </aside>

@@ -68,7 +68,7 @@ const ProjectCard = memo(function ProjectCard({ project, onEdit, onDelete }) {
             onClick={handleCardClick} 
             onMouseEnter={() => setShowActions(true)}
             onMouseLeave={() => setShowActions(false)}
-            className="bg-white p-4 rounded-xl space-y-3 cursor-pointer transition-all hover-lift animate-slide-in relative group"
+            className="relative min-w-0 overflow-hidden rounded-xl bg-white p-4 space-y-3 cursor-pointer transition-all hover-lift animate-slide-in group"
             style={{ boxShadow: '0px 4px 12px rgba(0,0,0,0.05)' }}
             role="button"
             tabIndex={0}
@@ -80,17 +80,15 @@ const ProjectCard = memo(function ProjectCard({ project, onEdit, onDelete }) {
                 }
             }}
         >
-            <div className="flex justify-between items-start">
-                <div className="flex-1 pr-2">
-                    <h3 className="text-xl font-bold">{project.name}</h3>
-                    <p className="text-xs text-gray-500">{project.project_type}</p>
-                </div>
-                <div className="flex items-center gap-2 flex-shrink-0">
-                    <span className={`px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(project.status)}`}>
-                        {normalizeStatusDisplay(project.status) || 'No Status'}
+            <div className="min-w-0 pr-14">
+                <h3 className="text-xl font-bold ui-clamp-2" title={project.name}>{project.name}</h3>
+                <p className="mt-1 text-xs text-gray-500 ui-ellipsis-1" title={project.project_type}>{project.project_type}</p>
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                    <span className={`max-w-full rounded-full px-2 py-1 text-xs font-semibold ${getStatusColor(project.status)}`}>
+                        <span className="ui-ellipsis-1">{normalizeStatusDisplay(project.status) || 'No Status'}</span>
                     </span>
                     {project.notification_count > 0 && (
-                        <div className="flex items-center justify-center w-5 h-5 bg-red-500 text-white text-xs font-bold rounded-full">
+                        <div className="flex h-5 min-w-5 items-center justify-center rounded-full bg-red-500 px-1.5 text-xs font-bold text-white">
                             {project.notification_count}
                         </div>
                     )}
@@ -98,18 +96,23 @@ const ProjectCard = memo(function ProjectCard({ project, onEdit, onDelete }) {
             </div>
             <div>
                 <p className="text-xs text-gray-400 font-semibold">NEXT MILESTONE</p>
-                <p className="text-sm font-medium">{typeof project.next_milestone === 'string' ? project.next_milestone : (project.next_milestone?.name || project.next_milestone?.title || 'No milestone')}</p>
+                <p
+                    className="text-sm font-medium ui-clamp-2"
+                    title={typeof project.next_milestone === 'string' ? project.next_milestone : (project.next_milestone?.name || project.next_milestone?.title || 'No milestone')}
+                >
+                    {typeof project.next_milestone === 'string' ? project.next_milestone : (project.next_milestone?.name || project.next_milestone?.title || 'No milestone')}
+                </p>
             </div>
             
             {/* Progress Status */}
             <ProjectProgressCard project={project} />
             
-            <div className="flex items-center justify-between pt-2 border-t border-gray-100">
-                <div>
+            <div className="flex items-center justify-between gap-3 pt-2 border-t border-gray-100">
+                <div className="min-w-0">
                     <p className="text-xs text-gray-400 font-semibold">DUE DATE</p>
-                    <p className="text-sm font-medium">{formatDate(project.due_date)}</p>
+                    <p className="text-sm font-medium ui-clamp-2">{formatDate(project.due_date)}</p>
                 </div>
-                <div className="flex -space-x-2">
+                <div className="flex shrink-0 -space-x-2">
                     {teamMembers.slice(0, 3).map(member => (
                         <Avatar key={member.id} name={member.name} size="sm" />
                     ))}

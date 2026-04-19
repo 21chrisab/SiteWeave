@@ -6,7 +6,7 @@ import { formatActivityLine } from '../utils/formatActivityLine';
 import { activityLineT } from '../utils/activityLineT';
 import PermissionGuard from './PermissionGuard';
 
-function ProjectSidebar({ project }) {
+function ProjectSidebar({ project, showProjectPhases = true }) {
     const { state } = useAppContext();
     const activityLog = state.activityLog || [];
     const projectNamesById = useMemo(() => {
@@ -68,12 +68,13 @@ function ProjectSidebar({ project }) {
                     </ul>
                 </div>
             )}
-            
-            {/* Progress Status Section */}
+
+            {showProjectPhases && (
             <div className="bg-white rounded-xl shadow-xs border border-gray-200 p-6 h-[600px] overflow-hidden">
                 <BuildPath project={project} />
             </div>
-            
+            )}
+
             <PermissionGuard permission="can_view_activity_history">
             <div className="p-6 bg-white rounded-xl shadow-xs border border-gray-200">
                 <h3 className="font-bold mb-3">Recent Activity</h3>

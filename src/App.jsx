@@ -15,6 +15,9 @@ import UpdateNotification from './components/UpdateNotification'
 import { LazyViewWrapper, DashboardView, ProjectDetailsView, CalendarView, TeamHubView, TeamView, SettingsView } from './components/LazyViews'
 import NoOrganizationView from './views/NoOrganizationView'
 
+let oauthCallbackProcessing = false
+let oauthCallbackProcessed = false
+
 function App() {
   const { state, dispatch } = useAppContext()
   const location = useLocation()
@@ -26,9 +29,11 @@ function App() {
   // Handle OAuth callback - check for auth code in URL or hash fragments
   React.useEffect(() => {
     const handleAuthCallback = async () => {
+      if (oauthCallbackProcessing || oauthCallbackProcessed) return
       // Check for hash fragment tokens (implicit flow)
       const hash = window.location.hash
       if (hash && hash.includes('access_token')) {
+        oauthCallbackProcessing = true
         console.log('OAuth callback detected (hash fragment), processing tokens...')
         try {
           // Parse hash fragment
@@ -45,21 +50,26 @@ function App() {
             
             if (setSessionError) {
               console.error('Error setting session from hash fragment:', setSessionError)
+              oauthCallbackProcessing = false
               return
             }
             
             if (data.session) {
               console.log('OAuth login successful (hash fragment), redirecting to home...')
+              oauthCallbackProcessed = true
               // Clear the hash from URL
               window.history.replaceState({}, document.title, window.location.pathname + window.location.search)
               navigate('/')
+              oauthCallbackProcessing = false
               return
             }
           }
         } catch (error) {
           console.error('Error processing hash fragment:', error)
+          oauthCallbackProcessing = false
           return
         }
+        oauthCallbackProcessing = false
       }
       
       // Check for query parameters (PKCE flow)
@@ -73,6 +83,7 @@ function App() {
       }
       
       if (code) {
+        oauthCallbackProcessing = true
         console.log('OAuth callback detected (PKCE), exchanging code for session...')
         try {
           // Exchange code for session (PKCE flow)
@@ -84,32 +95,33 @@ function App() {
             const { data: { session } } = await supabaseClient.auth.getSession()
             if (session) {
               console.log('Session found after exchange error, proceeding...')
+              oauthCallbackProcessed = true
               window.history.replaceState({}, document.title, window.location.pathname)
               navigate('/')
+              oauthCallbackProcessing = false
               return
             }
+            oauthCallbackProcessing = false
             return
           }
           
           if (data.session) {
             console.log('OAuth login successful (PKCE), redirecting to home...')
+            oauthCallbackProcessed = true
             // Clear the OAuth code from URL
             window.history.replaceState({}, document.title, window.location.pathname)
             navigate('/')
+            oauthCallbackProcessing = false
             return
           } else {
             console.warn('Code exchange succeeded but no session returned')
           }
         } catch (error) {
           console.error('Error during code exchange:', error)
+          oauthCallbackProcessing = false
           return
         }
-      } else {
-        // No OAuth callback, just check for existing session
-        const { data: { session } } = await supabaseClient.auth.getSession()
-        if (session) {
-          navigate('/')
-        }
+        oauthCallbackProcessing = false
       }
     }
     handleAuthCallback()
@@ -122,36 +134,23 @@ function App() {
     }
   }, [state.user, state.mustChangePassword])
 
-  // Check if user needs to see setup wizard (first login for Org Admins ONLY)
+  // Setup wizard: founding Org Admin only, until organizations.setup_wizard_completed_at is set (server-side)
   React.useEffect(() => {
-    const checkSetupWizard = async () => {
-      // Don't show wizard if:
-      // 1. No user logged in
-      // 2. No organization assigned
-      // 3. Password reset is required
-      // 4. User role is not loaded yet
-      if (!state.user || !state.currentOrganization || state.mustChangePassword || !state.userRole) {
-        return
-      }
-
-      // ONLY show setup wizard if user has the exact "Org Admin" role name
-      // This prevents regular members from seeing the setup wizard
-      const isOrgAdmin = state.userRole?.name === 'Org Admin';
-      
-      // Only show wizard for Org Admins who haven't completed setup
-      if (isOrgAdmin) {
-        const setupComplete = localStorage.getItem(`setup_complete_${state.user.id}`)
-        if (!setupComplete) {
-          setShowSetupWizard(true)
-        }
-      } else {
-        // Not an Org Admin - hide wizard if it was showing
-        setShowSetupWizard(false)
-      }
+    if (!state.user || !state.currentOrganization || state.mustChangePassword || !state.userRole) {
+      setShowSetupWizard(false)
+      return
     }
 
-    if (state.user && state.userRole && !state.mustChangePassword) {
-      checkSetupWizard()
+    const isOrgAdmin = state.userRole?.name === 'Org Admin'
+    const isFoundingAdmin =
+      state.currentOrganization.created_by_user_id != null &&
+      state.currentOrganization.created_by_user_id === state.user.id
+    const wizardPending = !state.currentOrganization.setup_wizard_completed_at
+
+    if (isOrgAdmin && isFoundingAdmin && wizardPending) {
+      setShowSetupWizard(true)
+    } else {
+      setShowSetupWizard(false)
     }
   }, [state.user, state.userRole, state.currentOrganization, state.mustChangePassword])
 
@@ -260,9 +259,16 @@ function App() {
     }
   }
 
-  const handleSetupComplete = () => {
-    if (state.user) {
-      localStorage.setItem(`setup_complete_${state.user.id}`, 'true')
+  const handleSetupComplete = async () => {
+    if (state.currentOrganization?.id) {
+      const { data: org } = await supabaseClient
+        .from('organizations')
+        .select('*')
+        .eq('id', state.currentOrganization.id)
+        .single()
+      if (org) {
+        dispatch({ type: 'SET_ORGANIZATION', payload: org })
+      }
     }
     setShowSetupWizard(false)
   }
@@ -286,14 +292,14 @@ function App() {
   }
 
   return (
-    <div className="flex h-screen bg-gray-50 overflow-hidden">
+    <div className="flex h-screen min-w-0 bg-gray-50 overflow-hidden">
       {/* Sidebar - granular boundary so main content can stay up if sidebar crashes */}
       <ErrorBoundary>
         <Sidebar />
       </ErrorBoundary>
 
       {/* Main Content - boundary so sidebar stays up if view crashes */}
-      <main className="flex-1 overflow-y-auto p-6">
+      <main className="flex-1 min-w-0 overflow-y-auto px-4 py-6 lg:px-6">
         <ErrorBoundary>
           {renderView()}
         </ErrorBoundary>

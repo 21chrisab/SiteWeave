@@ -17,6 +17,9 @@ Progress reports (and other mail) are sent through **Resend**. Inboxes such as G
    `SiteWeave Reports <reports@yourdomain.com>`  
    If unset, the function falls back to a default address (which may not match your verified domain).
 
+   Set **`RESEND_VERIFIED_DOMAIN`** to your authenticated sending domain (example: `yourdomain.com`).  
+   The `send-progress-report` function now validates this and will fail if `RESEND_FROM` uses a different domain.
+
 4. **`RESEND_API_KEY`**  
    Must be set for the `send-progress-report` function; scope it appropriately in Resend.
 

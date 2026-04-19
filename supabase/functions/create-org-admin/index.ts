@@ -217,6 +217,17 @@ serve(async (req) => {
 
     console.log(`Profile created/updated: ${profile.id}`)
 
+    // Founding admin: attribute org ownership to the new admin (setup wizard + org metadata)
+    const { error: orgOwnerError } = await supabaseAdmin
+      .from('organizations')
+      .update({ created_by_user_id: authData.user.id })
+      .eq('id', org.id)
+
+    if (orgOwnerError) {
+      console.error('Error setting organization created_by_user_id:', orgOwnerError)
+      throw orgOwnerError
+    }
+
     return new Response(
       JSON.stringify({
         success: true,

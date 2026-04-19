@@ -5,6 +5,17 @@ import { useToast } from '../context/ToastContext';
 import { testSendProgressReport } from '@siteweave/core-logic';
 import LoadingSpinner from './LoadingSpinner';
 
+const SAMPLE_TASK_PHOTO =
+  'data:image/svg+xml;utf8,' +
+  encodeURIComponent(`
+    <svg xmlns="http://www.w3.org/2000/svg" width="240" height="180" viewBox="0 0 240 180">
+      <rect width="240" height="180" fill="#dbeafe" />
+      <rect x="20" y="20" width="200" height="140" rx="10" fill="#bfdbfe" />
+      <path d="M40 130l42-42 24 24 40-52 54 70" fill="none" stroke="#2563eb" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+      <circle cx="88" cy="62" r="14" fill="#60a5fa" />
+    </svg>
+  `);
+
 /**
  * Progress Report Preview Component
  * Shows a live preview of the email using real org/project data where available.
@@ -34,6 +45,10 @@ function ProgressReportPreview({ formData, recipients, scheduleId }) {
   const contacts = state.contacts || [];
 
   const reportSections = formData?.report_sections || {};
+  const includeTaskPhotosInReport =
+    formData?.report_audience_type === 'internal' || reportSections.include_task_photos === true;
+  // Preview should always surface available task photos so users can verify visuals.
+  const showTaskPhotos = true;
   const selectedProject = formData?.project_id
     ? projects.find((p) => String(p.id) === String(formData.project_id))
     : null;
@@ -80,6 +95,67 @@ function ProgressReportPreview({ formData, recipients, scheduleId }) {
       text: t.text,
       completed_at: t.completed_at || t.updated_at || t.created_at || null,
       assignee: getTaskAssigneeName(t),
+      photos: showTaskPhotos
+        ? (t.task_photos || t.photos || []).slice(0, 2).map((photo) => ({
+            thumbnail_url: photo.thumbnail_url || photo.preview_url || SAMPLE_TASK_PHOTO,
+            full_url: photo.full_url || photo.thumbnail_url || photo.preview_url || SAMPLE_TASK_PHOTO,
+            caption: photo.caption,
+            is_completion_photo: photo.is_completion_photo,
+          }))
+        : [],
+    }));
+
+  const parseDay = (value) => {
+    if (!value) return null;
+    const d = new Date(value);
+    if (Number.isNaN(d.getTime())) return null;
+    d.setHours(0, 0, 0, 0);
+    return d;
+  };
+  const todayDay = new Date();
+  todayDay.setHours(0, 0, 0, 0);
+  const oneWeekMs = 7 * 24 * 60 * 60 * 1000;
+  const oneWeekAgo = new Date(todayDay.getTime() - oneWeekMs);
+  const thisWeekEnd = new Date(todayDay.getTime() + oneWeekMs);
+  const nextWeekEnd = new Date(todayDay.getTime() + (2 * oneWeekMs));
+
+  const lastWeekDone = scopedTasks
+    .filter((t) => t?.completed)
+    .filter((t) => {
+      const completedAt = t.completed_at ? new Date(t.completed_at) : null;
+      return completedAt && completedAt >= oneWeekAgo && completedAt < todayDay;
+    })
+    .slice(0, 6)
+    .map((t) => ({
+      text: t.text,
+      completed_at: t.completed_at || t.updated_at || t.created_at || null,
+      assignee: getTaskAssigneeName(t),
+    }));
+
+  const thisWeekPlan = scopedTasks
+    .filter((t) => !t?.completed)
+    .filter((t) => {
+      const d = parseDay(t.start_date);
+      return d && d >= todayDay && d < thisWeekEnd;
+    })
+    .slice(0, 6)
+    .map((t) => ({
+      text: t.text,
+      start_date: t.start_date || null,
+      assignee: getTaskAssigneeName(t),
+    }));
+
+  const nextWeekPlan = scopedTasks
+    .filter((t) => !t?.completed)
+    .filter((t) => {
+      const d = parseDay(t.start_date);
+      return d && d >= thisWeekEnd && d < nextWeekEnd;
+    })
+    .slice(0, 6)
+    .map((t) => ({
+      text: t.text,
+      start_date: t.start_date || null,
+      assignee: getTaskAssigneeName(t),
     }));
 
   const totalTaskCount = scopedTasks.length;
@@ -91,13 +167,26 @@ function ProgressReportPreview({ formData, recipients, scheduleId }) {
     project_name: projectName,
     start_date: periodStart.toISOString(),
     end_date: now.toISOString(),
+    weather_impacts: reportSections.show_weather_impacts
+      ? [
+          {
+            title: 'Heavy rain delay',
+            days_lost: 2,
+            project_name: projectName || 'Project',
+            schedule_shift_applied: true,
+            description: 'Excavation paused for site safety.',
+          },
+        ]
+      : [],
     vitals: {
       tasks_completed_count: completedTaskCount || 2,
       open_tasks_count: totalTaskCount - completedTaskCount || 8,
       current_phase: selectedProject ? 'Active Phase' : null,
       phase_progress_pct: overallProgress || 60,
     },
-    lookahead: [],
+    last_week_done: lastWeekDone,
+    this_week_plan: thisWeekPlan,
+    next_week_plan: nextWeekPlan,
     status_changes: selectedProject
       ? [
           {
@@ -113,9 +202,28 @@ function ProgressReportPreview({ formData, recipients, scheduleId }) {
       completedTasks.length > 0
         ? completedTasks
         : [
-            { text: 'Review drawings', completed_at: now.toISOString(), assignee: 'A. Smith' },
-            { text: 'Order materials', completed_at: now.toISOString(), assignee: null },
-            { text: 'Update timeline', completed_at: now.toISOString(), assignee: 'B. Jones' },
+            {
+              text: 'Review drawings',
+              completed_at: now.toISOString(),
+              assignee: 'A. Smith',
+              photos: showTaskPhotos
+                ? [{ thumbnail_url: SAMPLE_TASK_PHOTO, full_url: SAMPLE_TASK_PHOTO, caption: 'Before install', is_completion_photo: false }]
+                : [],
+            },
+            {
+              text: 'Order materials',
+              completed_at: now.toISOString(),
+              assignee: null,
+              photos: showTaskPhotos
+                ? [{ thumbnail_url: SAMPLE_TASK_PHOTO, full_url: SAMPLE_TASK_PHOTO, caption: 'Delivery confirmation', is_completion_photo: true }]
+                : [],
+            },
+            {
+              text: 'Update timeline',
+              completed_at: now.toISOString(),
+              assignee: 'B. Jones',
+              photos: [],
+            },
           ],
     phase_progress: [
       {
@@ -337,7 +445,7 @@ function ProgressReportPreview({ formData, recipients, scheduleId }) {
                   {reportSections.task_completion !== false && (previewData.completed_tasks || []).length > 0 && (
                     <div className="rounded-lg border-2 border-emerald-200 bg-emerald-50/80 p-3">
                       <h2 className="text-sm font-semibold text-emerald-900 mb-2 uppercase tracking-wide">Completed work</h2>
-                      {(reportSections.show_assignees || reportSections.show_dates)
+                      {(reportSections.show_assignees || reportSections.show_dates) && !showTaskPhotos
                         ? (
                           <table className="w-full text-sm">
                             <tbody>
@@ -359,11 +467,44 @@ function ProgressReportPreview({ formData, recipients, scheduleId }) {
                           </table>
                         )
                         : (
-                          <ul className="space-y-1.5">
+                          <ul className="space-y-3">
                             {(previewData.completed_tasks || []).map((task, i) => (
-                              <li key={i} className="flex items-start gap-2 text-sm text-gray-800">
-                                <span className="text-emerald-600 font-bold shrink-0">✓</span>
-                                <span>{task.text}</span>
+                              <li key={i} className="rounded-md border border-emerald-100 bg-white p-2.5 text-sm text-gray-800">
+                                <div className="flex items-start gap-2">
+                                  <span className="text-emerald-600 font-bold shrink-0">✓</span>
+                                  <div className="flex-1">
+                                    <p>{task.text}</p>
+                                    {(task.assignee || task.completed_at) && (
+                                      <p className="mt-1 text-xs text-gray-400">
+                                        {task.assignee ? `@${task.assignee}` : ''}
+                                        {task.assignee && task.completed_at ? ' · ' : ''}
+                                        {task.completed_at ? new Date(task.completed_at).toLocaleDateString(i18n.language) : ''}
+                                      </p>
+                                    )}
+                                    {showTaskPhotos && Array.isArray(task.photos) && task.photos.length > 0 && (
+                                      <div className="mt-2 flex flex-wrap gap-2">
+                                        {task.photos.map((photo, photoIndex) => (
+                                          <a
+                                            key={photoIndex}
+                                            href={photo.full_url || photo.thumbnail_url}
+                                            target="_blank"
+                                            rel="noreferrer"
+                                            className="block"
+                                          >
+                                            <img
+                                              src={photo.thumbnail_url || photo.full_url}
+                                              alt={photo.caption || task.text}
+                                              className="h-20 w-24 rounded border border-gray-200 object-cover"
+                                            />
+                                            {photo.caption && (
+                                              <p className="mt-1 max-w-24 text-[11px] text-gray-500">{photo.caption}</p>
+                                            )}
+                                          </a>
+                                        ))}
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
                               </li>
                             ))}
                           </ul>
@@ -393,18 +534,74 @@ function ProgressReportPreview({ formData, recipients, scheduleId }) {
                     </div>
                   )}
 
-                  {/* Lookahead */}
-                  {reportSections.lookahead !== false && (previewData.lookahead || []).length > 0 && (
-                    <div className="rounded-lg border border-gray-200 p-3">
-                      <h2 className="text-xs font-semibold text-gray-700 mb-2 uppercase tracking-wide">Coming Up — Next 14 Days</h2>
-                      <ul className="space-y-1.5">
-                        {(previewData.lookahead || []).map((t, i) => (
-                          <li key={i} className="text-sm text-gray-700">
-                            {t.text}
-                            {t.start_date && <span className="text-gray-400 ml-1.5 text-xs">starts {t.start_date}</span>}
+                  {reportSections.show_weather_impacts && (previewData.weather_impacts || []).length > 0 && (
+                    <div className="rounded-lg border border-amber-200 bg-amber-50 p-3">
+                      <h2 className="text-sm font-semibold text-amber-900 mb-2 uppercase tracking-wide">Weather / Schedule impacts</h2>
+                      <ul className="space-y-2">
+                        {(previewData.weather_impacts || []).map((impact, i) => (
+                          <li key={i} className="text-sm text-amber-900">
+                            <span className="font-semibold">{impact.title || 'Weather impact'}</span>
+                            {typeof impact.days_lost === 'number' ? ` — ${impact.days_lost} day(s) lost` : ''}
+                            {impact.schedule_shift_applied ? ' · schedule updated' : ' · logged only'}
+                            {impact.description ? (
+                              <span className="block text-xs text-amber-800 mt-1">{impact.description}</span>
+                            ) : null}
                           </li>
                         ))}
                       </ul>
+                    </div>
+                  )}
+
+                  {reportSections.weekly_plan !== false && (
+                    <div className="rounded-lg border border-gray-200 p-3 space-y-3">
+                      <h2 className="text-xs font-semibold text-gray-700 uppercase tracking-wide">Weekly plan</h2>
+
+                      <div>
+                        <h3 className="text-xs font-semibold text-emerald-800 mb-1">We did this last week</h3>
+                        {(previewData.last_week_done || []).length > 0 ? (
+                          <ul className="space-y-1">
+                            {(previewData.last_week_done || []).map((t, i) => (
+                              <li key={`last-${i}`} className="text-sm text-gray-700">
+                                {t.text}
+                              </li>
+                            ))}
+                          </ul>
+                        ) : (
+                          <p className="text-xs text-gray-500">No completed tasks in the last week.</p>
+                        )}
+                      </div>
+
+                      <div>
+                        <h3 className="text-xs font-semibold text-blue-800 mb-1">Here&apos;s what we are doing this week</h3>
+                        {(previewData.this_week_plan || []).length > 0 ? (
+                          <ul className="space-y-1">
+                            {(previewData.this_week_plan || []).map((t, i) => (
+                              <li key={`this-${i}`} className="text-sm text-gray-700">
+                                {t.text}
+                                {t.start_date && <span className="text-gray-400 ml-1.5 text-xs">starts {t.start_date}</span>}
+                              </li>
+                            ))}
+                          </ul>
+                        ) : (
+                          <p className="text-xs text-gray-500">No tasks scheduled this week.</p>
+                        )}
+                      </div>
+
+                      <div>
+                        <h3 className="text-xs font-semibold text-indigo-800 mb-1">Here&apos;s what we will do next week</h3>
+                        {(previewData.next_week_plan || []).length > 0 ? (
+                          <ul className="space-y-1">
+                            {(previewData.next_week_plan || []).map((t, i) => (
+                              <li key={`next-${i}`} className="text-sm text-gray-700">
+                                {t.text}
+                                {t.start_date && <span className="text-gray-400 ml-1.5 text-xs">starts {t.start_date}</span>}
+                              </li>
+                            ))}
+                          </ul>
+                        ) : (
+                          <p className="text-xs text-gray-500">No tasks scheduled for next week.</p>
+                        )}
+                      </div>
                     </div>
                   )}
                 </>

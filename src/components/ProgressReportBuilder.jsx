@@ -42,7 +42,7 @@ const SECTION_OPTIONS = [
   { key: 'task_completion', label: 'Completed tasks' },
   { key: 'phase_changes',   label: 'Phase progress' },
   { key: 'vitals',          label: 'Summary numbers (total completed, open tasks)' },
-  { key: 'lookahead',       label: '14-day upcoming tasks' },
+  { key: 'weekly_plan',     label: 'Last week / This week / Next week' },
 ];
 
 const DETAIL_TOGGLES = [
@@ -51,6 +51,8 @@ const DETAIL_TOGGLES = [
   { key: 'show_who_changed',       label: 'Show who changed a status and when',                   default: false },
   { key: 'show_phase_delta',       label: 'Show previous progress on phases (e.g. 41% → 51%)',   default: false },
   { key: 'show_blockers',          label: 'Include blockers & issues section',                    default: false },
+  { key: 'show_weather_impacts',   label: 'Include weather / schedule impacts (logged this period)', default: false },
+  { key: 'include_task_photos',    label: 'Include task photos on completed work (uses signed image links)', default: false },
   { key: 'client_friendly_labels', label: 'Use friendly status labels (e.g. "Active" not "In Progress")', default: true },
 ];
 
@@ -59,12 +61,14 @@ const DEFAULT_SECTIONS = {
   task_completion: true,
   phase_changes: true,
   vitals: true,
-  lookahead: true,
+  weekly_plan: true,
   show_assignees: false,
   show_dates: false,
   show_who_changed: false,
   show_phase_delta: false,
   show_blockers: false,
+  show_weather_impacts: false,
+  include_task_photos: false,
   client_friendly_labels: true,
 };
 
@@ -102,6 +106,7 @@ function ProgressReportBuilder({
   const [isSaving, setIsSaving] = useState(false);
   const [recipientsText, setRecipientsText] = useState('');
   const [showAddFromContacts, setShowAddFromContacts] = useState(false);
+  const [orgReportHour, setOrgReportHour] = useState(null);
 
   const [formData, setFormData] = useState({
     name: '',
@@ -147,6 +152,24 @@ function ProgressReportBuilder({
     }
   }, [scheduleId, projectId, defaultReportNameSuffix]);
 
+  useEffect(() => {
+    const loadOrgReportHour = async () => {
+      const orgId = organizationId || state.currentOrganization?.id;
+      if (!orgId) return;
+      const { data } = await supabaseClient
+        .from('organizations')
+        .select('progress_report_send_hour')
+        .eq('id', orgId)
+        .maybeSingle();
+      setOrgReportHour(
+        Number.isFinite(Number(data?.progress_report_send_hour))
+          ? Number(data.progress_report_send_hour)
+          : null
+      );
+    };
+    loadOrgReportHour();
+  }, [organizationId, state.currentOrganization?.id]);
+
   const loadSchedule = async () => {
     setIsLoading(true);
     try {
@@ -163,18 +186,26 @@ function ProgressReportBuilder({
       const isLegacyInternal = data.report_audience_type === 'internal';
       const mappedAudience = data.report_audience_type === 'executive' ? 'executive' : 'standard';
       const base = data.report_sections || {};
+      const legacyWeeklyPlanValue = base.weekly_plan ?? base.lookahead;
       const sections = isLegacyInternal
         ? {
             ...DEFAULT_SECTIONS,
             ...base,
+            weekly_plan: legacyWeeklyPlanValue !== false,
             show_assignees:         base.show_assignees         ?? true,
             show_dates:             base.show_dates             ?? true,
             show_who_changed:       base.show_who_changed       ?? true,
             show_phase_delta:       base.show_phase_delta       ?? true,
             show_blockers:          base.show_blockers          ?? true,
+            show_weather_impacts:   base.show_weather_impacts   ?? true,
+            include_task_photos:    base.include_task_photos    ?? true,
             client_friendly_labels: base.client_friendly_labels ?? false,
           }
-        : { ...DEFAULT_SECTIONS, ...base };
+        : {
+            ...DEFAULT_SECTIONS,
+            ...base,
+            weekly_plan: legacyWeeklyPlanValue !== false,
+          };
 
       setFormData({
         name: data.name,
@@ -207,6 +238,10 @@ function ProgressReportBuilder({
     }
     if (allRecipients.length === 0) {
       addToast('Please add at least one recipient email', 'error');
+      return;
+    }
+    if (formData.frequency !== 'manual' && !Number.isFinite(Number(orgReportHour))) {
+      addToast('Set your organization report hour in Organization Settings before activating automated reports.', 'warning');
       return;
     }
 
@@ -351,6 +386,10 @@ function ProgressReportBuilder({
           {/* Schedule */}
           <div className="space-y-2">
             <label className="block text-sm font-medium text-gray-700">Schedule</label>
+            <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-2 py-1">
+              Automated report send hour is managed in Organization Settings.
+              {Number.isFinite(Number(orgReportHour)) ? ` Current org hour: ${orgReportHour}:00 ET.` : ' Set it there to activate automated sends.'}
+            </p>
             <div className="flex flex-wrap gap-3 items-end">
               <div className="min-w-[140px]">
                 <select

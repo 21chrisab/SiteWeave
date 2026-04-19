@@ -11,8 +11,8 @@ CREATE OR REPLACE FUNCTION has_storage_file_access(file_path TEXT, bucket_name T
 RETURNS BOOLEAN AS $$
 DECLARE
   path_parts TEXT[];
-  org_id UUID;
-  project_id UUID;
+  parsed_org_id UUID;
+  parsed_project_id UUID;
 BEGIN
   -- Parse file path to extract organization_id and project_id
   -- Expected format: {organization_id}/{project_id}/filename.ext or {organization_id}/filename.ext
@@ -21,42 +21,92 @@ BEGIN
   -- Try to extract organization_id from path (first segment)
   IF array_length(path_parts, 1) >= 1 THEN
     BEGIN
-      org_id := path_parts[1]::UUID;
+      parsed_org_id := path_parts[1]::UUID;
     EXCEPTION WHEN OTHERS THEN
-      org_id := NULL;
+      parsed_org_id := NULL;
     END;
   END IF;
   
   -- Try to extract project_id from path (second segment, if exists)
   IF array_length(path_parts, 1) >= 2 THEN
     BEGIN
-      project_id := path_parts[2]::UUID;
+      parsed_project_id := path_parts[2]::UUID;
     EXCEPTION WHEN OTHERS THEN
-      project_id := NULL;
+      parsed_project_id := NULL;
     END;
   END IF;
   
   -- Check if user is organization member
-  IF org_id IS NOT NULL THEN
+  IF parsed_org_id IS NOT NULL THEN
     IF EXISTS (
       SELECT 1 FROM public.profiles
-      WHERE id = auth.uid() AND organization_id = org_id
+      WHERE id = auth.uid() AND organization_id = parsed_org_id
     ) THEN
       RETURN true;
     END IF;
   END IF;
   
   -- Check if user is project collaborator (guest access)
-  IF project_id IS NOT NULL THEN
+  IF parsed_project_id IS NOT NULL THEN
     IF EXISTS (
       SELECT 1 FROM public.project_collaborators
-      WHERE project_id = project_id AND user_id = auth.uid()
+      WHERE project_id = parsed_project_id AND user_id = auth.uid()
     ) THEN
       RETURN true;
     END IF;
   END IF;
   
   RETURN false;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- Task photo paths use: {organization_id}/{project_id}/{task_id}/original/... or thumb/...
+CREATE OR REPLACE FUNCTION can_access_task_photo_object(file_path TEXT, require_manage BOOLEAN DEFAULT false)
+RETURNS BOOLEAN AS $$
+DECLARE
+  path_parts TEXT[];
+  parsed_org_id UUID;
+  parsed_project_id UUID;
+  parsed_task_id UUID;
+  task_org_id UUID;
+  task_project_id UUID;
+BEGIN
+  path_parts := string_to_array(COALESCE(file_path, ''), '/');
+
+  IF array_length(path_parts, 1) < 5 THEN
+    RETURN false;
+  END IF;
+
+  BEGIN
+    parsed_org_id := path_parts[1]::UUID;
+    parsed_project_id := path_parts[2]::UUID;
+    parsed_task_id := path_parts[3]::UUID;
+  EXCEPTION WHEN OTHERS THEN
+    RETURN false;
+  END;
+
+  IF path_parts[4] NOT IN ('original', 'thumb') THEN
+    RETURN false;
+  END IF;
+
+  SELECT t.organization_id, t.project_id
+  INTO task_org_id, task_project_id
+  FROM public.tasks t
+  WHERE t.id = parsed_task_id;
+
+  IF task_org_id IS NULL OR task_project_id IS NULL THEN
+    RETURN false;
+  END IF;
+
+  IF task_org_id <> parsed_org_id OR task_project_id <> parsed_project_id THEN
+    RETURN false;
+  END IF;
+
+  IF require_manage THEN
+    RETURN public.can_manage_task(parsed_task_id);
+  END IF;
+
+  RETURN public.can_view_task(parsed_task_id);
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
@@ -149,5 +199,50 @@ USING (
         AND (storage.foldername(name))[1] = p.organization_id::TEXT
     )
   )
+);
+
+-- ============================================================================
+-- task_photos BUCKET POLICIES
+-- ============================================================================
+
+DROP POLICY IF EXISTS "Users can upload task photos" ON storage.objects;
+DROP POLICY IF EXISTS "Users can read task photos" ON storage.objects;
+DROP POLICY IF EXISTS "Users can update task photos" ON storage.objects;
+DROP POLICY IF EXISTS "Users can delete task photos" ON storage.objects;
+
+CREATE POLICY "Users can upload task photos"
+ON storage.objects FOR INSERT
+TO authenticated
+WITH CHECK (
+  bucket_id = 'task_photos'
+  AND can_access_task_photo_object(name, true)
+);
+
+CREATE POLICY "Users can read task photos"
+ON storage.objects FOR SELECT
+TO authenticated
+USING (
+  bucket_id = 'task_photos'
+  AND can_access_task_photo_object(name, false)
+);
+
+CREATE POLICY "Users can update task photos"
+ON storage.objects FOR UPDATE
+TO authenticated
+USING (
+  bucket_id = 'task_photos'
+  AND can_access_task_photo_object(name, true)
+)
+WITH CHECK (
+  bucket_id = 'task_photos'
+  AND can_access_task_photo_object(name, true)
+);
+
+CREATE POLICY "Users can delete task photos"
+ON storage.objects FOR DELETE
+TO authenticated
+USING (
+  bucket_id = 'task_photos'
+  AND can_access_task_photo_object(name, true)
 );
 

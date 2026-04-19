@@ -1,7 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { useAppContext, supabaseClient } from '../context/AppContext';
-import { formatDateShort, getStatusColor, normalizeStatusDisplay } from '../utils/projectHelpers';
-import { calculateProjectProgress } from '../utils/projectHelpers';
+import {
+    formatDateShort,
+    getStatusColor,
+    normalizeStatusDisplay,
+    calculateProjectsProgressMap,
+} from '../utils/projectHelpers';
 import PermissionGuard from './PermissionGuard';
 
 function ProjectBoardView({ projects, onEdit, onDelete, onProjectClick }) {
@@ -59,23 +63,10 @@ function ProjectBoardView({ projects, onEdit, onDelete, onProjectClick }) {
             setProjectData(initialData);
             
             try {
-                // Load all project progress in parallel for maximum performance
-                const results = await Promise.all(
-                    activeProjects.map(async (project) => {
-                        try {
-                            const progress = await calculateProjectProgress(project.id, supabaseClient);
-                            return { id: project.id, progress: progress || 0 };
-                        } catch (error) {
-                            console.error(`Error loading progress for project ${project.id}:`, error);
-                            return { id: project.id, progress: 0 };
-                        }
-                    })
-                );
-                
-                // Update all at once after parallel loading
+                const progressMap = await calculateProjectsProgressMap(activeProjects, supabaseClient);
                 const data = {};
-                results.forEach(result => {
-                    data[result.id] = { progress: result.progress, loading: false };
+                activeProjects.forEach((project) => {
+                    data[project.id] = { progress: progressMap[project.id] || 0, loading: false };
                 });
                 setProjectData(data);
             } catch (error) {
@@ -199,8 +190,8 @@ function ProjectBoardView({ projects, onEdit, onDelete, onProjectClick }) {
                             onDragLeave={handleDragLeave}
                             onDrop={(e) => handleDrop(e, status)}
                         >
-                            <div className="flex items-center justify-between mb-4">
-                                <div className="flex items-center gap-2">
+                            <div className="flex items-center justify-between mb-4 min-w-0 gap-2">
+                                <div className="flex items-center gap-2 min-w-0">
                                     <span 
                                         className={`inline-block px-3 py-1.5 text-xs font-bold rounded-full ${statusColorClasses}`}
                                         style={{ 
@@ -211,7 +202,7 @@ function ProjectBoardView({ projects, onEdit, onDelete, onProjectClick }) {
                                     >
                                         {displayStatus}
                                     </span>
-                                    <span className="text-gray-600 font-medium text-sm">({statusProjects.length})</span>
+                                    <span className="text-gray-600 font-medium text-sm shrink-0">({statusProjects.length})</span>
                                 </div>
                             </div>
                             <div className="space-y-3 min-h-[100px]">
@@ -230,7 +221,7 @@ function ProjectBoardView({ projects, onEdit, onDelete, onProjectClick }) {
                                             }`}
                                         >
                                             <div className="mb-2">
-                                                <h4 className="font-semibold text-sm text-gray-900 mb-1">{project.name}</h4>
+                                                <h4 className="font-semibold text-sm text-gray-900 mb-1 ui-clamp-2" title={project.name}>{project.name}</h4>
                                                 {project.due_date && (
                                                     <p className="text-xs text-gray-500">
                                                         Due: {formatDateShort(project.due_date)}

@@ -296,31 +296,42 @@ export const AppProvider = ({ children }) => {
       window.__SITEWEAVE_DEBUG__ = {
         getState: () => state,
         getSupabase: () => supabaseClient,
-        clearSetupWizard: (userId) => {
-          if (userId) {
-            localStorage.removeItem(`setup_complete_${userId}`);
-            console.log('Setup wizard flag cleared for user:', userId);
-          } else if (state.user?.id) {
-            localStorage.removeItem(`setup_complete_${state.user.id}`);
-            console.log('Setup wizard flag cleared for current user');
+        clearSetupWizard: async () => {
+          const orgId = state.currentOrganization?.id;
+          if (!orgId) {
+            console.log('No current organization — cannot reset setup wizard');
+            return;
+          }
+          const { error } = await supabaseClient
+            .from('organizations')
+            .update({ setup_wizard_completed_at: null })
+            .eq('id', orgId);
+          if (error) {
+            console.error('clearSetupWizard failed:', error);
           } else {
-            console.log('No user ID provided or user not logged in');
+            console.log('organizations.setup_wizard_completed_at cleared for org', orgId);
           }
         },
         checkSetupWizard: () => {
-          if (state.user?.id) {
-            const setupComplete = localStorage.getItem(`setup_complete_${state.user.id}`);
-            console.log('Setup wizard status:', {
-              userId: state.user.id,
-              setupComplete: setupComplete,
-              userRole: state.userRole?.name,
-              canManageTeam: state.userRole?.permissions?.can_manage_team
-            });
-            return { setupComplete: !!setupComplete, userRole: state.userRole };
-          } else {
+          if (!state.user?.id) {
             console.log('No user logged in');
             return null;
           }
+          const info = {
+            userId: state.user.id,
+            userRole: state.userRole?.name,
+            created_by_user_id: state.currentOrganization?.created_by_user_id,
+            isFoundingAdmin:
+              state.currentOrganization?.created_by_user_id != null &&
+              state.currentOrganization.created_by_user_id === state.user.id,
+            setup_wizard_completed_at: state.currentOrganization?.setup_wizard_completed_at,
+            wizardWouldShow:
+              state.userRole?.name === 'Org Admin' &&
+              state.currentOrganization?.created_by_user_id === state.user.id &&
+              !state.currentOrganization?.setup_wizard_completed_at
+          };
+          console.log('Setup wizard status:', info);
+          return info;
         },
         getOrganization: () => {
           console.log('Current organization:', state.currentOrganization);

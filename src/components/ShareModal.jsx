@@ -261,7 +261,7 @@ function ShareModal({ projectId, onClose }) {
             <label className="mb-2 block text-sm font-medium text-gray-700">
               Invite Guest/Sub
             </label>
-            <p className="text-xs text-gray-500 mb-2">Invite external users (subcontractors, guests) to this project only</p>
+            <p className="text-xs text-gray-500 mb-2">Invite external users (trade partners, guests) to this project only</p>
             <div className="flex gap-2">
               <input
                 value={input}

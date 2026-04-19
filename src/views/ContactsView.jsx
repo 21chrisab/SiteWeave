@@ -352,8 +352,8 @@ function ContactsView({ embedded = false, defaultProjectFilter = null }) {
                     </h1>
                     <p className="text-gray-500">
                         {embedded
-                            ? 'Manage your team members, subcontractors, and project assignments'
-                            : 'Manage your team members and subcontractors'}
+                            ? 'Manage your team members, trade partners, and project assignments'
+                            : 'Manage your team members and trade partners'}
                     </p>
                 </div>
                 <div className="flex gap-3">
@@ -455,7 +455,7 @@ function ContactsView({ embedded = false, defaultProjectFilter = null }) {
                     onClick={() => setActiveTab('Subcontractors')} 
                     className={`px-4 py-2 text-sm font-semibold ${activeTab === 'Subcontractors' ? 'text-blue-600 border-b-2 border-blue-600' : 'text-gray-500'}`}
                 >
-                    Subcontractors ({subcontractors.length})
+                    Trade Partners ({subcontractors.length})
                 </button>
             </div>
             
@@ -490,7 +490,7 @@ function ContactsView({ embedded = false, defaultProjectFilter = null }) {
             ) : (
                 <div className="p-6 bg-white rounded-xl shadow-xs border border-gray-200" data-onboarding="contacts-list">
                     <h2 className="text-xl font-bold mb-4">
-                        All Subcontractors ({filteredContacts.length})
+                        All Trade Partners ({filteredContacts.length})
                     </h2>
                     <ul className="space-y-3">
                         {filteredContacts.map(c => (
@@ -510,7 +510,7 @@ function ContactsView({ embedded = false, defaultProjectFilter = null }) {
                         <div className="text-center py-8 text-gray-500">
                             {searchTerm || statusFilter !== 'All' 
                                 ? 'No contacts match your search criteria' 
-                                : 'No subcontractors found'
+                                : 'No trade partners found'
                             }
                         </div>
                     )}

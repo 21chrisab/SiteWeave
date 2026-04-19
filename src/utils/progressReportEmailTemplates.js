@@ -45,18 +45,21 @@ function translateToClientFriendly(status) {
 /** Derive which sections are enabled; default all content sections true, detail flags false. */
 function resolveSections(schedule) {
   const s = schedule?.report_sections || {};
+  const weeklySetting = s.weekly_plan ?? s.lookahead;
   return {
     status_changes:   s.status_changes   !== false,
     task_completion:  s.task_completion  !== false,
     phase_changes:    s.phase_changes    !== false,
     vitals:           s.vitals           !== false,
-    lookahead:        s.lookahead        !== false,
+    weekly_plan:      weeklySetting      !== false,
     // detail-level toggles (default off = clean client-facing output)
     show_assignees:         s.show_assignees        === true,
     show_dates:             s.show_dates            === true,
     show_who_changed:       s.show_who_changed      === true,
     show_phase_delta:       s.show_phase_delta      === true,
     show_blockers:          s.show_blockers         === true,
+    show_weather_impacts:   s.show_weather_impacts  === true,
+    include_task_photos:    s.include_task_photos === true,
     client_friendly_labels: s.client_friendly_labels !== false, // default true
   };
 }
@@ -71,26 +74,26 @@ function emailShell({ subject, branding, bodyHtml }) {
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>${escapeHtml(subject)}</title>
 </head>
-<body style="margin:0;padding:0;background-color:#f3f4f6;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif;">
+<body style="margin:0;padding:0;background-color:#ffffff;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif;">
   <table role="presentation" style="width:100%;border-collapse:collapse;">
     <tr>
       <td style="padding:24px 20px 32px;">
-        <div style="max-width:600px;margin:0 auto;background:#ffffff;border-radius:8px;overflow:hidden;border:1px solid #e5e7eb;">
-          <div style="padding:32px 36px;">
+        <div style="max-width:600px;margin:0 auto;">
+          <div style="padding:8px 0 20px;">
             ${branding.logo_url ? `<div style="text-align:center;margin-bottom:24px;">
               <img src="${branding.logo_url}" alt="Logo" style="max-height:56px;max-width:180px;">
             </div>` : ''}
             ${bodyHtml}
           </div>
           ${branding.company_footer ? `
-          <div style="padding:20px 36px;background-color:#f9fafb;border-top:1px solid #e5e7eb;">
+          <div style="padding:16px 0 0;margin-top:12px;border-top:1px solid #e5e7eb;">
             <p style="margin:0;color:#9ca3af;font-size:12px;line-height:1.6;">${branding.company_footer}</p>
           </div>` : ''}
           ${branding.email_signature ? `
-          <div style="padding:16px 36px 24px;border-top:1px solid #f3f4f6;">
+          <div style="padding:12px 0 0;margin-top:12px;border-top:1px solid #f3f4f6;">
             <p style="margin:0;color:#374151;font-size:13px;line-height:1.6;">${escapeHtml(branding.email_signature)}</p>
           </div>` : ''}
-          <div style="padding:16px 36px;text-align:center;background-color:#f9fafb;border-top:1px solid #e5e7eb;">
+          <div style="padding:12px 0 0;margin-top:12px;text-align:center;border-top:1px solid #e5e7eb;">
             <p style="margin:0;color:#9ca3af;font-size:11px;">Automated progress report from ${escapeHtml(branding.organization_name || 'SiteWeave')}</p>
           </div>
         </div>
@@ -139,21 +142,39 @@ function vitalsHtml(vitals, primary, secondary) {
 
 // ─── lookahead section ─────────────────────────────────────────────────────────
 
-function lookaheadHtml(lookahead, primary) {
-  if (!lookahead || lookahead.length === 0) return '';
+function weeklyPlanHtml(reportData, primary) {
+  const lastWeek = reportData.last_week_done || [];
+  const thisWeek = reportData.this_week_plan || [];
+  const nextWeek = reportData.next_week_plan || [];
+  const hasAny = lastWeek.length > 0 || thisWeek.length > 0 || nextWeek.length > 0;
+  if (!hasAny) {
+    return `
+    <div style="margin-bottom:28px;">
+      ${sectionHeading('Weekly Plan', primary)}
+      <p style="margin:0;color:#6b7280;font-size:13px;">No updates were scheduled for last week, this week, or next week.</p>
+    </div>`;
+  }
   return `
   <div style="margin-bottom:28px;">
-    <h2 style="color:#1f2937;font-size:14px;font-weight:600;text-transform:uppercase;letter-spacing:0.06em;margin:0 0 12px 0;padding-bottom:8px;border-bottom:2px solid ${primary};">Coming Up — Next 14 Days</h2>
-    <table role="presentation" style="width:100%;border-collapse:collapse;">
-      ${lookahead.map(task => `
-      <tr>
-        <td style="padding:8px 0;border-bottom:1px solid #f3f4f6;color:#374151;font-size:14px;line-height:1.5;">
-          ${escapeHtml(task.text || 'Task')}
-          ${task.start_date ? `<span style="color:#9ca3af;font-size:12px;margin-left:8px;">Starts ${escapeHtml(String(task.start_date))}</span>` : ''}
-        </td>
-        ${task.assignee ? `<td style="padding:8px 0 8px 12px;border-bottom:1px solid #f3f4f6;text-align:right;color:#9ca3af;font-size:12px;white-space:nowrap;">@${escapeHtml(task.assignee)}</td>` : '<td></td>'}
-      </tr>`).join('')}
-    </table>
+    ${sectionHeading('Weekly Plan', primary)}
+    <div style="margin-bottom:14px;">
+      <p style="margin:0 0 6px;color:#065f46;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.04em;">We did this last week</p>
+      ${lastWeek.length
+        ? `<ul style="margin:0;padding-left:18px;color:#374151;">${lastWeek.map((task) => `<li style="margin-bottom:6px;font-size:13px;line-height:1.5;">${escapeHtml(task.text || 'Task')}</li>`).join('')}</ul>`
+        : '<p style="margin:0;color:#6b7280;font-size:13px;">No completed tasks in the last week.</p>'}
+    </div>
+    <div style="margin-bottom:14px;">
+      <p style="margin:0 0 6px;color:#1e3a8a;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.04em;">Here is what we are doing this week</p>
+      ${thisWeek.length
+        ? `<ul style="margin:0;padding-left:18px;color:#374151;">${thisWeek.map((task) => `<li style="margin-bottom:6px;font-size:13px;line-height:1.5;">${escapeHtml(task.text || 'Task')}${task.start_date ? `<span style="color:#9ca3af;font-size:11px;"> (starts ${escapeHtml(String(task.start_date))})</span>` : ''}</li>`).join('')}</ul>`
+        : '<p style="margin:0;color:#6b7280;font-size:13px;">No tasks scheduled this week.</p>'}
+    </div>
+    <div>
+      <p style="margin:0 0 6px;color:#3730a3;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.04em;">Here is what we will do next week</p>
+      ${nextWeek.length
+        ? `<ul style="margin:0;padding-left:18px;color:#374151;">${nextWeek.map((task) => `<li style="margin-bottom:6px;font-size:13px;line-height:1.5;">${escapeHtml(task.text || 'Task')}${task.start_date ? `<span style="color:#9ca3af;font-size:11px;"> (starts ${escapeHtml(String(task.start_date))})</span>` : ''}</li>`).join('')}</ul>`
+        : '<p style="margin:0;color:#6b7280;font-size:13px;">No tasks scheduled for next week.</p>'}
+    </div>
   </div>`;
 }
 
@@ -161,6 +182,46 @@ function lookaheadHtml(lookahead, primary) {
 
 function sectionHeading(title, primary) {
   return `<h2 style="color:#1f2937;font-size:14px;font-weight:600;text-transform:uppercase;letter-spacing:0.06em;margin:0 0 12px 0;padding-bottom:8px;border-bottom:2px solid ${primary};">${escapeHtml(title)}</h2>`;
+}
+
+function weatherImpactsHtml(reportData, primary) {
+  const items = reportData.weather_impacts || [];
+  if (!items.length) return '';
+  return `
+    <div style="margin-bottom:28px;">
+      ${sectionHeading('Weather & schedule impacts', primary)}
+      <ul style="margin:0;padding-left:18px;color:#374151;">
+        ${items.map((w) => `
+          <li style="margin-bottom:12px;font-size:14px;line-height:1.6;">
+            <strong>${escapeHtml(w.title || 'Impact')}</strong>
+            ${w.project_name ? ` <span style="color:#9ca3af;font-size:12px;">(${escapeHtml(w.project_name)})</span>` : ''}
+            <br/>
+            <span style="color:#6b7280;">${escapeHtml(String(w.days_lost ?? ''))} calendar day${Number(w.days_lost) !== 1 ? 's' : ''} lost</span>
+            ${w.schedule_shift_applied ? ' · <span style="color:#059669;">schedule updated</span>' : ' · <span style="color:#9ca3af;">logged only</span>'}
+            ${w.description ? `<br/><span>${escapeHtml(w.description)}</span>` : ''}
+          </li>
+        `).join('')}
+      </ul>
+    </div>`;
+}
+
+function taskPhotosHtml(photos = []) {
+  if (!photos || photos.length === 0) return '';
+  return `
+  <div style="margin-top:10px;display:flex;flex-wrap:wrap;gap:10px;">
+    ${photos.map((photo) => `
+      <div style="width:120px;">
+        <a href="${escapeHtml(photo.full_url || photo.thumbnail_url || '#')}" target="_blank" rel="noreferrer" style="display:block;text-decoration:none;">
+          <img
+            src="${escapeHtml(photo.thumbnail_url || photo.full_url || '')}"
+            alt="${escapeHtml(photo.caption || 'Task photo')}"
+            style="display:block;width:120px;height:90px;object-fit:cover;border-radius:6px;border:1px solid #e5e7eb;background:#f9fafb;"
+          >
+        </a>
+        ${photo.caption ? `<p style="margin:6px 0 0;color:#6b7280;font-size:11px;line-height:1.4;">${escapeHtml(photo.caption)}</p>` : ''}
+        ${photo.is_completion_photo ? `<p style="margin:4px 0 0;color:#059669;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.04em;">Completion photo</p>` : ''}
+      </div>`).join('')}
+  </div>`;
 }
 
 // ─── STANDARD template (replaces both Client and Internal) ────────────────────
@@ -172,11 +233,14 @@ export function generateStandardReportEmail(reportData, schedule, branding) {
   const primary   = branding.primary_color   || '#3B82F6';
   const secondary = branding.secondary_color || '#10B981';
   const sections  = resolveSections(schedule);
+  const isInternalAudience = schedule.report_audience_type === 'internal';
+  const showTaskPhotos = isInternalAudience || sections.include_task_photos;
 
   const hasActivity =
     (reportData.status_changes  && reportData.status_changes.length  > 0) ||
     (reportData.completed_tasks && reportData.completed_tasks.length > 0) ||
-    (reportData.phase_progress  && reportData.phase_progress.length  > 0);
+    (reportData.phase_progress  && reportData.phase_progress.length  > 0) ||
+    (reportData.weather_impacts && reportData.weather_impacts.length > 0);
 
   const snap = reportData.snapshot;
   const snapshotSection = !hasActivity && snap && (snap.open_tasks?.length || snap.phases?.length || snap.open_total != null)
@@ -191,6 +255,7 @@ export function generateStandardReportEmail(reportData, schedule, branding) {
             ${snap.open_tasks.map(ot => `<li style="margin-bottom:5px;font-size:13px;line-height:1.5;">
               ${escapeHtml(ot.text || 'Task')}
               ${ot.due_date ? `<span style="color:#9ca3af;font-size:11px;"> — due ${escapeHtml(String(ot.due_date))}</span>` : ''}
+              ${showTaskPhotos && ot.photos?.length ? taskPhotosHtml(ot.photos) : ''}
             </li>`).join('')}
           </ul>` : ''}
         ${snap.phases?.length ? `
@@ -211,7 +276,23 @@ export function generateStandardReportEmail(reportData, schedule, branding) {
   const tasksHtml = sections.task_completion && reportData.completed_tasks?.length
     ? `<div style="margin-bottom:28px;">
         ${sectionHeading('Completed This Period', primary)}
-        ${(sections.show_assignees || sections.show_dates)
+        ${showTaskPhotos
+          ? `${reportData.completed_tasks.map(task => `
+              <div style="padding:12px 0;border-bottom:1px solid #f3f4f6;">
+                <div style="display:flex;align-items:flex-start;gap:8px;font-size:14px;color:#374151;line-height:1.5;">
+                  <span style="color:${secondary};font-weight:700;flex-shrink:0;">✓</span>
+                  <div style="flex:1;">
+                    <p style="margin:0;font-size:14px;color:#374151;font-weight:600;">${escapeHtml(task.text || task.title)}</p>
+                    <p style="margin:4px 0 0;color:#9ca3af;font-size:11px;">
+                      ${task.assignee ? `@${escapeHtml(task.assignee)}` : ''}
+                      ${task.assignee && task.completed_at ? ' · ' : ''}
+                      ${task.completed_at ? formatDate(task.completed_at) : ''}
+                    </p>
+                    ${taskPhotosHtml(task.photos || [])}
+                  </div>
+                </div>
+              </div>`).join('')}`
+          : (sections.show_assignees || sections.show_dates)
           ? `<table role="presentation" style="width:100%;border-collapse:collapse;">
               ${reportData.completed_tasks.map(task => `
                 <tr style="border-bottom:1px solid #f3f4f6;">
@@ -235,8 +316,10 @@ export function generateStandardReportEmail(reportData, schedule, branding) {
       </div>`
     : '';
 
+  const headerProjectTitle = reportData.project_name || reportData.organization_name || 'Project';
   let body = `
     <h1 style="color:#111827;font-size:22px;font-weight:700;margin:0 0 6px;">Progress Update</h1>
+    <p style="color:#1d4ed8;font-size:16px;font-weight:600;margin:0 0 8px;">${escapeHtml(headerProjectTitle)}</p>
     <p style="color:#6b7280;font-size:13px;margin:0 0 28px;">${escapeHtml(period)}</p>
 
     ${schedule.custom_message ? `
@@ -290,7 +373,9 @@ export function generateStandardReportEmail(reportData, schedule, branding) {
 
     ${snapshotSection}
 
-    ${sections.lookahead ? lookaheadHtml(reportData.lookahead, primary) : ''}
+    ${sections.weekly_plan ? weeklyPlanHtml(reportData, primary) : ''}
+
+    ${sections.show_weather_impacts && reportData.weather_impacts?.length ? weatherImpactsHtml(reportData, primary) : ''}
 
     ${sections.show_blockers && reportData.blockers?.length ? `
     <div style="margin-bottom:28px;background-color:#fef2f2;border:1px solid #fecaca;border-radius:6px;padding:16px 18px;">
@@ -324,9 +409,12 @@ export function generateExecutiveReportEmail(reportData, schedule, branding) {
   const period  = formatReportPeriod(reportData.start_date, reportData.end_date);
   const primary   = branding.primary_color   || '#3B82F6';
   const secondary = branding.secondary_color || '#10B981';
+  const sections = resolveSections(schedule);
 
+  const headerProjectTitle = reportData.project_name || reportData.organization_name || 'Organization';
   let body = `
     <h1 style="color:#111827;font-size:22px;font-weight:700;margin:0 0 6px;">Executive Brief</h1>
+    <p style="color:#1d4ed8;font-size:16px;font-weight:600;margin:0 0 8px;">${escapeHtml(headerProjectTitle)}</p>
     <p style="color:#6b7280;font-size:13px;margin:0 0 28px;">${escapeHtml(period)}</p>
 
     ${reportData.executive_summary ? `
@@ -362,6 +450,8 @@ export function generateExecutiveReportEmail(reportData, schedule, branding) {
         ${reportData.key_highlights.map(h => `<li style="margin-bottom:9px;font-size:14px;line-height:1.6;">${escapeHtml(h)}</li>`).join('')}
       </ul>
     </div>` : ''}
+
+    ${sections.show_weather_impacts && reportData.weather_impacts?.length ? weatherImpactsHtml(reportData, primary) : ''}
 
     ${reportData.project_summary?.length ? `
     <div style="margin-bottom:28px;">
@@ -433,7 +523,7 @@ function generateTextVersion(reportData, schedule, period) {
   if (reportData.completed_tasks?.length) {
     text += `Completed this period:\n`;
     reportData.completed_tasks.forEach(t => {
-      text += `- ✓ ${t.text || t.title}${t.assignee ? ` (@${t.assignee})` : ''}\n`;
+      text += `- ✓ ${t.text || t.title}${t.assignee ? ` (@${t.assignee})` : ''}${t.photos?.length ? ` [${t.photos.length} photo(s)]` : ''}\n`;
     });
     text += '\n';
   }
@@ -446,18 +536,50 @@ function generateTextVersion(reportData, schedule, period) {
     text += '\n';
   }
 
-  if (reportData.lookahead?.length) {
-    text += `Coming Up — Next 14 Days:\n`;
-    reportData.lookahead.forEach(t => {
-      text += `- ${t.text || 'Task'}${t.start_date ? ` (starts ${t.start_date})` : ''}\n`;
+  const sections = resolveSections(schedule);
+  if (sections.show_weather_impacts && reportData.weather_impacts?.length) {
+    text += `Weather & schedule impacts:\n`;
+    reportData.weather_impacts.forEach((w) => {
+      text += `- ${w.title || 'Impact'}: ${w.days_lost} day(s) lost${w.schedule_shift_applied ? ' (schedule updated)' : ' (logged only)'}\n`;
+      if (w.description) text += `  ${w.description}\n`;
     });
+    text += '\n';
+  }
+
+  if (sections.weekly_plan) {
+    text += `Weekly Plan:\n`;
+    text += `We did this last week:\n`;
+    if (reportData.last_week_done?.length) {
+      reportData.last_week_done.forEach((t) => {
+        text += `- ${t.text || 'Task'}\n`;
+      });
+    } else {
+      text += `- No completed tasks in the last week.\n`;
+    }
+    text += `\nHere's what we are doing this week:\n`;
+    if (reportData.this_week_plan?.length) {
+      reportData.this_week_plan.forEach((t) => {
+        text += `- ${t.text || 'Task'}${t.start_date ? ` (starts ${t.start_date})` : ''}\n`;
+      });
+    } else {
+      text += `- No tasks scheduled this week.\n`;
+    }
+    text += `\nHere's what we will do next week:\n`;
+    if (reportData.next_week_plan?.length) {
+      reportData.next_week_plan.forEach((t) => {
+        text += `- ${t.text || 'Task'}${t.start_date ? ` (starts ${t.start_date})` : ''}\n`;
+      });
+    } else {
+      text += `- No tasks scheduled for next week.\n`;
+    }
     text += '\n';
   }
 
   const hasAct =
     reportData.status_changes?.length  ||
     reportData.completed_tasks?.length ||
-    reportData.phase_progress?.length;
+    reportData.phase_progress?.length ||
+    (sections.show_weather_impacts && reportData.weather_impacts?.length);
   const snap = reportData.snapshot;
   if (!hasAct && snap) {
     text += `No activity recorded this window.\n`;

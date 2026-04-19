@@ -87,11 +87,11 @@ function AddContactModal({ onClose, onSave, contact = null, isLoading = false })
                             className="w-full p-3 border rounded-lg bg-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                         >
                             <option value="Team">Team Member</option>
-                            <option value="Subcontractor">Subcontractor</option>
+                            <option value="Subcontractor">Trade Partner</option>
                         </select>
                     </div>
 
-                    {/* Company and Trade (for Subcontractors) */}
+                    {/* Company and Trade (for Trade Partners) */}
                     {type === 'Subcontractor' && (
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <div>

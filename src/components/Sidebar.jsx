@@ -86,7 +86,7 @@ function Sidebar() {
     ];
 
     return (
-        <aside className={`${isCollapsed ? 'w-16' : 'w-64'} bg-white flex flex-col flex-shrink-0 border-r border-gray-100 transition-all duration-300`}>
+        <aside className={`${isCollapsed ? 'w-16' : 'w-64'} min-w-16 bg-white flex flex-col flex-shrink-0 border-r border-gray-100 transition-all duration-300`}>
             <div className="h-16 flex items-center px-5 font-bold text-xl text-gray-800 border-b border-gray-100">
                 {!isCollapsed && (
                     <span>SiteWeave</span>
@@ -159,7 +159,7 @@ function Sidebar() {
                                 ? ['Team', 'Messages', 'Contacts'].includes(state.activeView)
                                 : state.activeView === item.view) ? 'page' : undefined}>
                             {React.cloneElement(ICONS[item.id], { className: "w-5 h-5 flex-shrink-0" })}
-                            {!isCollapsed && <span>{t(`navigation.${NAV_KEYS[item.id]}`)}</span>}
+                            {!isCollapsed && <span className="ui-ellipsis-1">{t(`navigation.${NAV_KEYS[item.id]}`)}</span>}
                         </button>
                         {item.id === 'Projects' && state.activeView === 'Projects' && !isCollapsed && (
                             <div className="pl-8 mt-1.5 space-y-1 border-l-2 border-gray-200 ml-2.5" role="group" aria-label={t('sidebar.project_list')}>

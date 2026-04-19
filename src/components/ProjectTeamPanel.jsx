@@ -82,7 +82,7 @@ function ProjectTeamPanel({ project, contacts, onOpenDirectory }) {
             <section className="w-full min-w-0">
               <div className="mb-3 flex w-full items-center justify-between gap-2">
                 <h4 className="text-xs font-semibold uppercase tracking-wide text-gray-500">
-                  Subcontractors
+                  Trade Partners
                 </h4>
                 <span className="text-xs text-gray-400">{subcontractors.length}</span>
               </div>
@@ -90,7 +90,7 @@ function ProjectTeamPanel({ project, contacts, onOpenDirectory }) {
                 {subcontractors.length > 0 ? (
                   subcontractors.map((contact) => <ContactRow key={contact.id} contact={contact} />)
                 ) : (
-                  <p className="text-sm text-gray-500">No subcontractors assigned.</p>
+                  <p className="text-sm text-gray-500">No trade partners assigned.</p>
                 )}
               </div>
             </section>

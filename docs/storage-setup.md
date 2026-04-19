@@ -2,6 +2,10 @@
 
 This guide explains how to set up the required Supabase Storage buckets for SiteWeave.
 
+## Source Of Truth
+
+Use the versioned SQL in `supabase/migrations/20260407130000_add_task_photos.sql` as the canonical storage-policy setup for task photos, and use `scripts/setup-storage-policies.sql` if you need a manual SQL editor script for local environments. The older simplified bucket-only policy examples below are no longer sufficient for private task photo access.
+
 ## Required Buckets
 
 ### 1. `message_files` Bucket
@@ -27,6 +31,14 @@ Used for general project file storage.
 
 **Setup Steps:**
 Same as above, but use bucket name: `files`
+
+### 3. `task_photos` Bucket
+Used for private task photo originals and thumbnails.
+
+**Recommended Settings:**
+- **Public bucket**: Disabled
+- **File size limit**: 5MB
+- **Allowed MIME types**: `image/jpeg,image/png,image/webp`
 
 ## Storage Policies
 
@@ -97,4 +109,18 @@ To verify your buckets are set up correctly:
 - If using public bucket, ensure "Public bucket" is enabled
 - If using private bucket, ensure proper storage policies are in place
 - Check file path and bucket name in your code
+
+## Task photos: storage cleanup when rows are deleted
+
+The app deletes storage objects when users remove photos through the UI. If a `task_photos` row is removed **without** that path (for example `tasks` deleted with `ON DELETE CASCADE` from SQL or an integration), files can remain in the `task_photos` bucket.
+
+1. Deploy the Edge Function `cleanup-task-photo-storage` (`supabase/functions/cleanup-task-photo-storage`).
+2. In the Supabase Dashboard, open **Database → Webhooks** and create a webhook:
+   - **Table**: `public.task_photos`
+   - **Events**: `DELETE`
+   - **HTTP Request**: `POST` to `https://<project-ref>.supabase.co/functions/v1/cleanup-task-photo-storage`
+   - **HTTP Headers**: `Authorization: Bearer <SERVICE_ROLE_KEY>` (use the service role secret; do not expose it to browsers)
+   - **Payload**: default JSON body is fine; the function accepts either `{ "bucket", "paths" }` or Supabase webhook payloads with `old_record` containing `storage_bucket`, `storage_path`, and `thumbnail_path`.
+
+The handler removes both the original and thumbnail paths from Storage. Duplicate deletes (e.g. after the app already removed the files) are harmless.
 

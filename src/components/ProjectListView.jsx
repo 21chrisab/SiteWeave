@@ -1,114 +1,43 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { useAppContext } from '../context/AppContext';
-import { formatDateShort, formatCurrency, getStatusColor, normalizeStatusDisplay } from '../utils/projectHelpers';
-import { calculateProjectProgress, calculateProjectBudget } from '../utils/projectHelpers';
+import {
+    formatDateShort,
+    getStatusColor,
+    normalizeStatusDisplay,
+    calculateProjectsProgressMap,
+} from '../utils/projectHelpers';
 import { supabaseClient } from '../context/AppContext';
 import PermissionGuard from './PermissionGuard';
-import { hasPermission } from '../utils/permissions';
 
 function ProjectListView({ projects, onEdit, onDelete, onProjectClick }) {
-    const { state } = useAppContext();
     const [sortConfig, setSortConfig] = useState({ key: null, direction: 'asc' });
     const [projectData, setProjectData] = useState({});
-    const [isLoading, setIsLoading] = useState(true);
-    const [canViewFinancials, setCanViewFinancials] = useState(false);
-
-    // Check if user can view financials
+    // Load progress for all projects (duration-weighted phase %; prefers task roll-up from DB)
     useEffect(() => {
-        const checkFinancialPermission = async () => {
-            if (!state.user?.id || !state.currentOrganization?.id) {
-                setCanViewFinancials(false);
-                // Clear budget_remaining sort if user loses permission
-                if (sortConfig.key === 'budget_remaining') {
-                    setSortConfig({ key: null, direction: 'asc' });
-                }
-                return;
-            }
-            try {
-                const hasAccess = await hasPermission(
-                    supabaseClient,
-                    state.user.id,
-                    'can_view_financials',
-                    state.currentOrganization.id
-                );
-                setCanViewFinancials(hasAccess);
-                // Clear budget_remaining sort if user doesn't have permission
-                if (!hasAccess && sortConfig.key === 'budget_remaining') {
-                    setSortConfig({ key: null, direction: 'asc' });
-                }
-            } catch (error) {
-                console.error('Error checking financial permission:', error);
-                setCanViewFinancials(false);
-                // Clear budget_remaining sort on error
-                if (sortConfig.key === 'budget_remaining') {
-                    setSortConfig({ key: null, direction: 'asc' });
-                }
-            }
-        };
-        checkFinancialPermission();
-    }, [state.user?.id, state.currentOrganization?.id]);
-
-    // Load progress and budget data for all projects IN PARALLEL
-    React.useEffect(() => {
         const loadProjectData = async () => {
-            setIsLoading(true);
-            // Initialize all projects with default values first
             const initialData = {};
             projects.forEach(project => {
-                initialData[project.id] = { progress: 0, budget: { total: 0, spent: 0, remaining: 0 }, loading: true };
+                initialData[project.id] = { progress: 0, loading: true };
             });
-            setProjectData(initialData); // Show initial state immediately
-            
-            // Load all project data in parallel for maximum performance
+            setProjectData(initialData);
+
             try {
-                const results = await Promise.all(
-                    projects.map(async (project) => {
-                        try {
-                            const [progress, budget] = await Promise.all([
-                                calculateProjectProgress(project.id, supabaseClient),
-                                calculateProjectBudget(project.id, supabaseClient)
-                            ]);
-                            return {
-                                id: project.id,
-                                progress: progress || 0,
-                                budget: budget || { total: 0, spent: 0, remaining: 0 }
-                            };
-                        } catch (error) {
-                            console.error(`Error loading data for project ${project.id}:`, error);
-                            return {
-                                id: project.id,
-                                progress: 0,
-                                budget: { total: 0, spent: 0, remaining: 0 }
-                            };
-                        }
-                    })
-                );
-                
-                // Update all at once after parallel loading
+                const progressMap = await calculateProjectsProgressMap(projects, supabaseClient);
                 const newData = {};
-                results.forEach(result => {
-                    newData[result.id] = { progress: result.progress, budget: result.budget, loading: false };
+                projects.forEach((project) => {
+                    newData[project.id] = { progress: progressMap[project.id] || 0, loading: false };
                 });
                 setProjectData(newData);
             } catch (error) {
                 console.error('Error loading project data:', error);
-            } finally {
-                setIsLoading(false);
             }
         };
         if (projects.length > 0) {
             loadProjectData();
-        } else {
-            setIsLoading(false);
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [projects.length, projects.map(p => p.id).join(',')]);
 
     const handleSort = (key) => {
-        // Prevent sorting by budget_remaining if user doesn't have permission
-        if (key === 'budget_remaining' && !canViewFinancials) {
-            return;
-        }
         let direction = 'asc';
         if (sortConfig.key === key && sortConfig.direction === 'asc') {
             direction = 'desc';
@@ -138,10 +67,6 @@ function ProjectListView({ projects, onEdit, onDelete, onProjectClick }) {
                 case 'due_date':
                     aValue = a.due_date ? new Date(a.due_date).getTime() : 0;
                     bValue = b.due_date ? new Date(b.due_date).getTime() : 0;
-                    break;
-                case 'budget_remaining':
-                    aValue = projectData[a.id]?.budget?.remaining || 0;
-                    bValue = projectData[b.id]?.budget?.remaining || 0;
                     break;
                 default:
                     return 0;
@@ -187,11 +112,11 @@ function ProjectListView({ projects, onEdit, onDelete, onProjectClick }) {
     return (
         <div className="bg-white rounded-xl shadow-xs border border-gray-200 overflow-hidden">
             <div className="w-full">
-                <table className="w-full table-auto">
+                <table className="w-full table-fixed">
                     <thead className="bg-gray-50 border-b border-gray-200">
                         <tr>
                             <th
-                                className="px-4 sm:px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider cursor-pointer hover:bg-gray-100 min-w-[150px]"
+                                className="px-4 sm:px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider cursor-pointer hover:bg-gray-100 w-[30%]"
                                 onClick={() => handleSort('name')}
                             >
                                 <div className="flex items-center gap-2">
@@ -209,8 +134,9 @@ function ProjectListView({ projects, onEdit, onDelete, onProjectClick }) {
                                 </div>
                             </th>
                             <th
-                                className="px-4 sm:px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider cursor-pointer hover:bg-gray-100 min-w-[140px]"
+                                className="px-4 sm:px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider cursor-pointer hover:bg-gray-100 w-[22%]"
                                 onClick={() => handleSort('progress')}
+                                title="Overall % from phase lengths and each phase’s progress (tasks and schedule)."
                             >
                                 <div className="flex items-center gap-2">
                                     Progress
@@ -226,17 +152,6 @@ function ProjectListView({ projects, onEdit, onDelete, onProjectClick }) {
                                     <SortIcon columnKey="due_date" />
                                 </div>
                             </th>
-                            {canViewFinancials && (
-                                <th
-                                    className="px-4 sm:px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
-                                    onClick={() => handleSort('budget_remaining')}
-                                >
-                                    <div className="flex items-center gap-2">
-                                        Budget Rem.
-                                        <SortIcon columnKey="budget_remaining" />
-                                    </div>
-                                </th>
-                            )}
                             <th className="px-4 sm:px-6 py-3 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider">
                                 Actions
                             </th>
@@ -244,7 +159,7 @@ function ProjectListView({ projects, onEdit, onDelete, onProjectClick }) {
                     </thead>
                     <tbody className="bg-white divide-y divide-gray-200">
                         {sortedProjects.map((project) => {
-                            const data = projectData[project.id] || { progress: 0, budget: { remaining: 0 } };
+                            const data = projectData[project.id] || { progress: 0 };
                             const progress = Math.max(0, Math.min(100, data.progress || 0));
                             return (
                                 <tr
@@ -253,11 +168,13 @@ function ProjectListView({ projects, onEdit, onDelete, onProjectClick }) {
                                     onClick={() => onProjectClick && onProjectClick(project)}
                                 >
                                     <td className="px-4 sm:px-6 py-4">
-                                        <div className="text-sm font-semibold text-gray-900">{project.name}</div>
-                                        <div className="text-xs text-gray-500">{project.project_type}</div>
+                                        <div className="text-sm font-semibold text-gray-900 ui-ellipsis-1" title={project.name}>{project.name}</div>
+                                        <div className="text-xs text-gray-500 ui-ellipsis-1" title={project.project_type}>{project.project_type}</div>
                                     </td>
                                     <td className="px-4 sm:px-6 py-4">
-                                        <span className={`px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(project.status)}`}>
+                                        <span
+                                            className={`inline-flex items-center whitespace-nowrap px-2.5 py-1 text-xs font-semibold leading-none rounded-full ${getStatusColor(project.status)}`}
+                                        >
                                             {normalizeStatusDisplay(project.status) || 'N/A'}
                                         </span>
                                     </td>
@@ -273,7 +190,7 @@ function ProjectListView({ projects, onEdit, onDelete, onProjectClick }) {
                                                     {progress > 0 ? (
                                                         <div
                                                             className={`h-full rounded-full transition-all duration-300 ${getProgressColor(progress)}`}
-                                                            style={{ 
+                                                            style={{
                                                                 width: `${Math.max(0, Math.min(100, progress))}%`,
                                                                 minWidth: '4px'
                                                             }}
@@ -292,15 +209,6 @@ function ProjectListView({ projects, onEdit, onDelete, onProjectClick }) {
                                     <td className="px-4 sm:px-6 py-4 text-sm text-gray-600">
                                         {formatDateShort(project.due_date) || '—'}
                                     </td>
-                                    {canViewFinancials && (
-                                        <td className="px-4 sm:px-6 py-4 text-sm font-medium text-gray-900">
-                                            {data.loading ? (
-                                                <div className="w-16 h-4 bg-gray-200 rounded animate-pulse"></div>
-                                            ) : (
-                                                formatCurrency(data.budget?.remaining || 0)
-                                            )}
-                                        </td>
-                                    )}
                                     <td className="px-4 sm:px-6 py-3 text-right">
                                         <div className="flex items-center justify-end gap-1">
                                             <PermissionGuard permission="can_edit_projects">
@@ -344,4 +252,3 @@ function ProjectListView({ projects, onEdit, onDelete, onProjectClick }) {
 }
 
 export default ProjectListView;
-

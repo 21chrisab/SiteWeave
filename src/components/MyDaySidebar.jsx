@@ -35,9 +35,18 @@ function MyDaySidebar() {
         : [];
 
     const today = new Date();
-    const todayEvents = calendarEvents.filter(event =>
-        new Date(event.start_time).toDateString() === today.toDateString()
-    );
+    const todayStart = new Date(today);
+    todayStart.setHours(0, 0, 0, 0);
+    const todayEnd = new Date(todayStart);
+    todayEnd.setDate(todayEnd.getDate() + 1);
+    // Include events that overlap any part of "today", not just those starting today.
+    const todayEvents = calendarEvents.filter((event) => {
+        const start = event?.start_time ? new Date(event.start_time) : null;
+        const end = event?.end_time ? new Date(event.end_time) : start;
+        if (!start || Number.isNaN(start.getTime())) return false;
+        const safeEnd = !end || Number.isNaN(end.getTime()) ? start : end;
+        return start < todayEnd && safeEnd >= todayStart;
+    });
 
     // Get recent activity from the database (filtered by RLS)
     const recentActivity = activityLog.slice(0, 4).map(activity => ({
@@ -74,19 +83,19 @@ function MyDaySidebar() {
                     <span>Live</span>
                 </div>
             </div>
-            <div>
+            <div className="min-w-0">
                 <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">TO-DO ({myTodos.length})</h3>
                 <div className="space-y-2.5">
                     {myTodos.length > 0 ? myTodos.map(task => (
                         <div key={task.id} className="flex items-center gap-2.5 text-sm text-gray-700">
                             <input type="checkbox" className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
-                            <span className="flex-1">{task.text}</span>
+                            <span className="flex-1 ui-clamp-2">{task.text}</span>
                         </div>
                     )) : <p className="text-sm text-center py-3 text-gray-400">No tasks assigned to you.</p>}
                 </div>
             </div>
             <PermissionGuard permission="can_view_activity_history">
-            <div>
+            <div className="min-w-0">
                 <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">RECENT ACTIVITY</h3>
                  <div className="space-y-2.5">
                     {recentActivity.length > 0 ? recentActivity.map(activity => (
@@ -99,7 +108,7 @@ function MyDaySidebar() {
                                 </div>
                             )}
                             <div className="flex-1 min-w-0">
-                                <p className="text-gray-700"><span className="font-semibold">{activity.user.name}</span> {activity.description}</p>
+                                <p className="text-gray-700 ui-clamp-3"><span className="font-semibold">{activity.user.name}</span> {activity.description}</p>
                                 <p className="text-xs text-gray-400 mt-0.5">{activity.time}</p>
                             </div>
                         </div>
@@ -109,7 +118,7 @@ function MyDaySidebar() {
                 </div>
             </div>
             </PermissionGuard>
-            <div>
+            <div className="min-w-0">
                 <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">TODAY'S CALENDAR ({todayEvents.length})</h3>
                  <div className="space-y-2.5">
                      {todayEvents.length > 0 ? todayEvents.map(event => {
@@ -124,10 +133,17 @@ function MyDaySidebar() {
                         
                         // Determine icon based on event category or title
                         const getEventIcon = () => {
-                            const title = event.title.toLowerCase();
+                            const title = (event.title || '').toLowerCase();
                             const category = event.category?.toLowerCase();
-                            
-                            if (title.includes('standup') || title.includes('meeting') || category === 'meeting') {
+
+                            if (
+                                title.includes('standup') ||
+                                title.includes('meeting') ||
+                                title.includes('sync') ||
+                                title.includes('call') ||
+                                title.includes('1:1') ||
+                                category === 'meeting'
+                            ) {
                                 // Video camera icon for meetings
                                 return "M15.75 10.5l4.72-4.72a.75.75 0 011.28.53v11.38a.75.75 0 01-1.28.53l-4.72-4.72M4.5 18.75h9a2.25 2.25 0 002.25-2.25v-9a2.25 2.25 0 00-2.25-2.25h-9A2.25 2.25 0 002.25 7.5v9a2.25 2.25 0 002.25 2.25z";
                             } else if (title.includes('site') || title.includes('visit') || title.includes('inspection')) {
@@ -151,9 +167,9 @@ function MyDaySidebar() {
                                         </svg>
                                     </div>
                                     <div className="flex-1 min-w-0">
-                                        <h4 className="font-semibold text-gray-900 text-sm leading-tight">{event.title}</h4>
-                                        <p className="text-xs text-gray-500 mt-1">
-                                            {timeString} • {location}
+                                        <h4 className="font-semibold text-gray-900 text-sm leading-tight ui-clamp-2">{event.title}</h4>
+                                        <p className="mt-1 text-xs text-gray-500 ui-clamp-2">
+                                            {event.is_all_day ? 'All day' : timeString} • {location}
                                         </p>
                                     </div>
                                 </div>

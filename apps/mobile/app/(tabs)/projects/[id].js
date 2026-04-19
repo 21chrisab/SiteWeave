@@ -2,13 +2,14 @@ import { View, Text, StyleSheet, ScrollView, SectionList, FlatList } from 'react
 import { useState, useEffect } from 'react';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useAuth } from '../../../context/AuthContext';
-import { 
-  fetchProject, 
+import {
+  fetchProject,
   fetchTasksByProject,
   fetchUserProjectsWithProgress,
   completeTask,
   updateTask,
-  fetchProjectIssues
+  fetchProjectIssues,
+  computeWeightedProjectProgressPercent,
 } from '@siteweave/core-logic';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -96,16 +97,11 @@ export default function ProjectDetailScreen() {
       setTasks(tasksData || []);
       setPhases(phasesResult.data || []);
 
-      // Calculate progress
+      // Duration-weighted project % (same as web/desktop; prefers stored phase progress from DB)
       if (phasesResult.data && phasesResult.data.length > 0) {
-        const totalBudget = phasesResult.data.reduce((sum, phase) => sum + (phase.budget || 0), 0);
-        if (totalBudget > 0) {
-          const totalWeightedProgress = phasesResult.data.reduce((sum, phase) => {
-            const phaseWeight = (phase.budget || 0) / totalBudget;
-            return sum + (phase.progress * phaseWeight);
-          }, 0);
-          setProgress(Math.round(totalWeightedProgress));
-        }
+        setProgress(computeWeightedProjectProgressPercent(phasesResult.data, projectData.due_date));
+      } else {
+        setProgress(0);
       }
     } catch (error) {
       console.error('Error loading project data:', error);

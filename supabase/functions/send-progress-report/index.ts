@@ -3,12 +3,14 @@
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { PDFDocument, StandardFonts, rgb } from 'https://esm.sh/pdf-lib@1.17.1'
 import { buildProgressReportEmail } from '../_shared/progressReportEmailTemplates.ts'
 
 // RESEND_API_KEY required to send. RESEND_FROM optional (verified domain in Resend). See docs/email-deliverability-resend.md (SPF/DKIM/DMARC).
 const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY')
 const RESEND_FROM =
   Deno.env.get('RESEND_FROM') ?? 'SiteWeave Notifications <notifications@siteweave.org>'
+const RESEND_VERIFIED_DOMAIN = (Deno.env.get('RESEND_VERIFIED_DOMAIN') || '').trim().toLowerCase()
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
@@ -80,6 +82,23 @@ serve(async (req) => {
     }
 
     const supabase = createClient(supabaseUrl, supabaseServiceKey)
+    const fromEmailMatch = RESEND_FROM.match(/<([^>]+)>/)
+    const fromEmail = (fromEmailMatch?.[1] || RESEND_FROM).trim().toLowerCase()
+    const fromDomain = fromEmail.includes('@') ? fromEmail.split('@').pop() : ''
+    if (!fromDomain) {
+      return new Response(
+        JSON.stringify({ error: 'Invalid RESEND_FROM format. Use "Name <address@domain.com>".' }),
+        { status: 500, headers: { 'Content-Type': 'application/json', ...corsHeaders } },
+      )
+    }
+    if (RESEND_VERIFIED_DOMAIN && fromDomain !== RESEND_VERIFIED_DOMAIN) {
+      return new Response(
+        JSON.stringify({
+          error: `Sender domain mismatch. RESEND_FROM uses ${fromDomain} but RESEND_VERIFIED_DOMAIN is ${RESEND_VERIFIED_DOMAIN}.`,
+        }),
+        { status: 500, headers: { 'Content-Type': 'application/json', ...corsHeaders } },
+      )
+    }
 
     // Fetch schedule configuration
     const { data: schedule, error: scheduleError } = await supabase
@@ -214,6 +233,14 @@ serve(async (req) => {
       .select('*')
       .eq('organization_id', schedule.organization_id)
       .maybeSingle()
+    const { data: organization, error: organizationError } = await supabase
+      .from('organizations')
+      .select('progress_report_send_hour, progress_report_timezone')
+      .eq('id', schedule.organization_id)
+      .maybeSingle()
+    if (organizationError) {
+      console.warn('Unable to load org progress report schedule settings:', organizationError.message)
+    }
 
     const brandingData = branding || {
       logo_url: null,
@@ -228,6 +255,10 @@ serve(async (req) => {
       filtered_data as Record<string, unknown>,
       schedule,
       brandingData,
+    )
+    const pdfAttachment = await generateProgressReportPdf(
+      filtered_data as Record<string, unknown>,
+      schedule.name || 'Progress Report',
     )
 
     // Determine recipients (null-safe: relation may be missing or empty)
@@ -269,7 +300,13 @@ serve(async (req) => {
           to: recipients,
           subject: emailContent.subject,
           html: emailContent.html,
-          text: emailContent.text
+          text: emailContent.text,
+          attachments: [
+            {
+              filename: pdfAttachment.filename,
+              content: pdfAttachment.contentBase64,
+            },
+          ],
         })
       })
 
@@ -317,7 +354,13 @@ serve(async (req) => {
       const nextSendDate = calculateNextSendDate(
         schedule.frequency,
         schedule.frequency_value,
-        new Date().toISOString()
+        new Date().toISOString(),
+        Number.isFinite(Number(organization?.progress_report_send_hour))
+          ? Number(organization?.progress_report_send_hour)
+          : 8,
+        typeof organization?.progress_report_timezone === 'string' && organization.progress_report_timezone
+          ? organization.progress_report_timezone
+          : 'America/New_York',
       )
 
       await supabase
@@ -361,42 +404,167 @@ serve(async (req) => {
 })
 
 // frequency_value: weekly/bi-weekly = day of week 0-6 (0=Sunday); monthly = 1, 15, or -1 (last day)
-function calculateNextSendDate(frequency, frequencyValue, lastSentAt) {
+function calculateNextSendDate(
+  frequency,
+  frequencyValue,
+  lastSentAt,
+  sendHourLocal = 8,
+  timeZone = 'America/New_York',
+) {
   const baseDate = new Date(lastSentAt)
+  const safeHour = Number.isFinite(Number(sendHourLocal))
+    ? Math.max(0, Math.min(23, Number(sendHourLocal)))
+    : 8
   const dayOfWeek = frequencyValue != null && frequencyValue >= 0 && frequencyValue <= 6 ? frequencyValue : 0
+  const baseLocalDate = getLocalCalendarDate(baseDate, timeZone)
+  const withLocalHour = (value: Date) => zonedDateTimeToUtc({
+    year: value.getUTCFullYear(),
+    month: value.getUTCMonth() + 1,
+    day: value.getUTCDate(),
+    hour: safeHour,
+    minute: 0,
+    second: 0,
+  }, timeZone)
 
   switch (frequency) {
     case 'weekly': {
-      const next = new Date(baseDate)
-      next.setDate(next.getDate() + 7)
-      while (next.getDay() !== dayOfWeek) next.setDate(next.getDate() + 1)
-      return next
+      const next = new Date(baseLocalDate)
+      next.setUTCDate(next.getUTCDate() + 7)
+      while (next.getUTCDay() !== dayOfWeek) next.setUTCDate(next.getUTCDate() + 1)
+      return withLocalHour(next)
     }
     case 'bi-weekly': {
-      const next = new Date(baseDate)
-      next.setDate(next.getDate() + 14)
-      while (next.getDay() !== dayOfWeek) next.setDate(next.getDate() + 1)
-      return next
+      const next = new Date(baseLocalDate)
+      next.setUTCDate(next.getUTCDate() + 14)
+      while (next.getUTCDay() !== dayOfWeek) next.setUTCDate(next.getUTCDate() + 1)
+      return withLocalHour(next)
     }
     case 'monthly': {
-      const y = baseDate.getFullYear()
-      const m = baseDate.getMonth()
+      const y = baseLocalDate.getUTCFullYear()
+      const m = baseLocalDate.getUTCMonth()
       if (frequencyValue === -1 || frequencyValue === 31) {
-        return new Date(y, m + 2, 0)
+        return withLocalHour(new Date(Date.UTC(y, m + 2, 0)))
       }
       if (frequencyValue === 15) {
-        return new Date(y, m + 1, 15)
+        return withLocalHour(new Date(Date.UTC(y, m + 1, 15)))
       }
-      return new Date(y, m + 1, 1)
+      return withLocalHour(new Date(Date.UTC(y, m + 1, 1)))
     }
     case 'custom':
       if (frequencyValue && frequencyValue > 0) {
-        return new Date(baseDate.getTime() + frequencyValue * 24 * 60 * 60 * 1000)
+        const next = new Date(baseLocalDate)
+        next.setUTCDate(next.getUTCDate() + frequencyValue)
+        return withLocalHour(next)
       }
       return null
     case 'manual':
       return null
     default:
       return null
+  }
+}
+
+function getLocalCalendarDate(date: Date, timeZone: string) {
+  const parts = getDateTimeParts(date, timeZone)
+  return new Date(Date.UTC(parts.year, parts.month - 1, parts.day))
+}
+
+function getDateTimeParts(date: Date, timeZone: string) {
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  })
+  const mapped = Object.fromEntries(
+    formatter
+      .formatToParts(date)
+      .filter((part) => part.type !== 'literal')
+      .map((part) => [part.type, part.value]),
+  )
+  return {
+    year: Number(mapped.year),
+    month: Number(mapped.month),
+    day: Number(mapped.day),
+    hour: Number(mapped.hour),
+    minute: Number(mapped.minute),
+    second: Number(mapped.second),
+  }
+}
+
+function zonedDateTimeToUtc(
+  desired: { year: number; month: number; day: number; hour: number; minute: number; second: number },
+  timeZone: string,
+) {
+  let utcGuess = Date.UTC(
+    desired.year,
+    desired.month - 1,
+    desired.day,
+    desired.hour,
+    desired.minute,
+    desired.second,
+  )
+
+  for (let i = 0; i < 3; i += 1) {
+    const actual = getDateTimeParts(new Date(utcGuess), timeZone)
+    const desiredAsUtc = Date.UTC(
+      desired.year,
+      desired.month - 1,
+      desired.day,
+      desired.hour,
+      desired.minute,
+      desired.second,
+    )
+    const actualAsUtc = Date.UTC(
+      actual.year,
+      actual.month - 1,
+      actual.day,
+      actual.hour,
+      actual.minute,
+      actual.second,
+    )
+    utcGuess += desiredAsUtc - actualAsUtc
+  }
+
+  return new Date(utcGuess)
+}
+
+async function generateProgressReportPdf(reportData: Record<string, unknown>, scheduleName: string) {
+  const title = String(reportData?.project_name || reportData?.organization_name || scheduleName || 'Progress Report')
+  const period = String(reportData?.start_date || '')
+    ? `${String(reportData?.start_date || '')} to ${String(reportData?.end_date || '') || 'now'}`
+    : 'Current reporting period'
+  const completed = Number((reportData as Record<string, unknown>)?.completed_tasks_count || 0)
+  const open = Number((reportData as Record<string, unknown>)?.open_tasks_count || 0)
+
+  const pdf = await PDFDocument.create()
+  const page = pdf.addPage([612, 792])
+  const regular = await pdf.embedFont(StandardFonts.Helvetica)
+  const bold = await pdf.embedFont(StandardFonts.HelveticaBold)
+
+  page.drawText('SiteWeave Progress Report', { x: 48, y: 744, size: 20, font: bold, color: rgb(0.1, 0.14, 0.2) })
+  page.drawText(title, { x: 48, y: 716, size: 16, font: bold, color: rgb(0.12, 0.24, 0.54) })
+  page.drawText(`Period: ${period}`, { x: 48, y: 690, size: 11, font: regular, color: rgb(0.35, 0.39, 0.47) })
+  page.drawText(`Completed tasks: ${completed}`, { x: 48, y: 660, size: 12, font: regular, color: rgb(0.1, 0.14, 0.2) })
+  page.drawText(`Open tasks: ${open}`, { x: 48, y: 640, size: 12, font: regular, color: rgb(0.1, 0.14, 0.2) })
+  page.drawText('For full report details, open SiteWeave and view Progress Report History.', {
+    x: 48,
+    y: 600,
+    size: 10,
+    font: regular,
+    color: rgb(0.35, 0.39, 0.47),
+  })
+
+  const pdfBytes = await pdf.save()
+  let binary = ''
+  for (const byte of pdfBytes) binary += String.fromCharCode(byte)
+  const contentBase64 = btoa(binary)
+  return {
+    filename: `${title.replace(/[^a-z0-9]+/gi, '-').replace(/^-+|-+$/g, '').toLowerCase() || 'progress-report'}.pdf`,
+    contentBase64,
   }
 }

@@ -14,9 +14,10 @@
  */
 export async function saveProjectAsTemplate(supabase, projectId, organizationId, userId, templateName, templateDescription = '') {
   try {
-    const [phasesRes, tasksRes] = await Promise.all([
+    const [projectRes, phasesRes, tasksRes] = await Promise.all([
+      supabase.from('projects').select('dependency_scheduling_mode').eq('id', projectId).single(),
       supabase.from('project_phases').select('name, order').eq('project_id', projectId).order('order', { ascending: true }),
-      supabase.from('tasks').select('id, text, due_date, start_date, duration_days, is_milestone, priority')
+      supabase.from('tasks').select('id, text, due_date, start_date, duration_days, is_milestone, priority, percent_complete')
       .eq('project_id', projectId).order('created_at', { ascending: true })
     ]);
     const phases = phasesRes.data || [];
@@ -39,6 +40,9 @@ export async function saveProjectAsTemplate(supabase, projectId, organizationId,
         lag_days: d.lag_days ?? 0
       }));
     const structure = {
+      settings: {
+        dependency_scheduling_mode: projectRes.data?.dependency_scheduling_mode || 'auto',
+      },
       phases: phases.map(p => ({ name: p.name, order: p.order })),
       tasks: tasks.map(t => ({
         text: t.text,
@@ -46,7 +50,8 @@ export async function saveProjectAsTemplate(supabase, projectId, organizationId,
         start_date: t.start_date,
         duration_days: t.duration_days,
         is_milestone: t.is_milestone ?? false,
-        priority: t.priority
+        priority: t.priority,
+        percent_complete: t.percent_complete ?? null
       })),
       dependencies
     };
@@ -99,7 +104,7 @@ export async function createProjectFromTemplate(supabase, templateId, organizati
       .eq('id', templateId)
       .single();
     if (tErr || !template) return { success: false, error: 'Template not found' };
-    const { phases = [], tasks = [], dependencies = [] } = template.structure || {};
+    const { settings = {}, phases = [], tasks = [], dependencies = [] } = template.structure || {};
     if (!tasks.length) return { success: false, error: 'Template has no tasks' };
 
     let referenceStart = null;
@@ -122,7 +127,8 @@ export async function createProjectFromTemplate(supabase, templateId, organizati
         project_number: projectNumber || null,
         status: 'Planning',
         organization_id: organizationId,
-        created_by_user_id: userId
+        created_by_user_id: userId,
+        dependency_scheduling_mode: settings.dependency_scheduling_mode || 'auto',
       })
       .select('id')
       .single();
@@ -148,7 +154,8 @@ export async function createProjectFromTemplate(supabase, templateId, organizati
       duration_days: t.duration_days,
       is_milestone: t.is_milestone ?? false,
       priority: t.priority,
-      completed: false,
+      percent_complete: t.percent_complete != null ? t.percent_complete : null,
+      completed: (t.percent_complete != null ? t.percent_complete >= 100 : false),
       organization_id: organizationId
     }));
     const { data: insertedTasks, error: tasksErr } = await supabase

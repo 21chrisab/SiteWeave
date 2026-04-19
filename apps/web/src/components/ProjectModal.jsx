@@ -26,6 +26,9 @@ function ProjectModal({ onClose, onSave, isLoading = false, project = null }) {
     const [duplicateAddress, setDuplicateAddress] = useState('');
     const [duplicateProjectNumber, setDuplicateProjectNumber] = useState('');
     const [isDuplicating, setIsDuplicating] = useState(false);
+    const [taskNotifUseOrgDefaults, setTaskNotifUseOrgDefaults] = useState(true);
+    const [taskNotifEnabled, setTaskNotifEnabled] = useState(true);
+    const [taskNotifLeadDays, setTaskNotifLeadDays] = useState('14, 7');
 
     const isEditMode = !!project;
     
@@ -52,6 +55,12 @@ function ProjectModal({ onClose, onSave, isLoading = false, project = null }) {
             setStatus(project.status || 'Planning');
             setDueDate(project.due_date || '');
             setNextMilestone(project.next_milestone || '');
+            setTaskNotifUseOrgDefaults(project.task_notifications_use_org_defaults !== false);
+            setTaskNotifEnabled(project.task_start_notifications_enabled !== false);
+            const leadDays = Array.isArray(project.task_start_notification_lead_days) && project.task_start_notification_lead_days.length > 0
+                ? project.task_start_notification_lead_days
+                : [14, 7];
+            setTaskNotifLeadDays(leadDays.join(', '));
             
             // Load existing project contacts
             const existingContacts = state.contacts
@@ -66,8 +75,20 @@ function ProjectModal({ onClose, onSave, isLoading = false, project = null }) {
             // Reset when creating new project
             setSelectedContacts([]);
             setEmailAddresses([]);
+            setTaskNotifUseOrgDefaults(true);
+            setTaskNotifEnabled(true);
+            setTaskNotifLeadDays('14, 7');
         }
     }, [project, state.contacts]);
+
+    const parseLeadDays = (raw) => {
+        const values = String(raw || '')
+            .split(',')
+            .map((part) => parseInt(part.trim(), 10))
+            .filter((num) => Number.isFinite(num) && num >= 0 && num <= 365);
+        const deduped = Array.from(new Set(values));
+        return deduped.length > 0 ? deduped.sort((a, b) => b - a) : [14, 7];
+    };
 
     const handleSubmit = (e) => {
         e.preventDefault();
@@ -83,6 +104,9 @@ function ProjectModal({ onClose, onSave, isLoading = false, project = null }) {
             status,
             due_date: due_date || null,
             next_milestone: next_milestone || null,
+            task_notifications_use_org_defaults: taskNotifUseOrgDefaults,
+            task_start_notifications_enabled: taskNotifUseOrgDefaults ? null : taskNotifEnabled,
+            task_start_notification_lead_days: taskNotifUseOrgDefaults ? null : parseLeadDays(taskNotifLeadDays),
             selectedContacts: ownerAugmentedContacts,
             emailAddresses: emailAddresses
         };
@@ -291,6 +315,42 @@ function ProjectModal({ onClose, onSave, isLoading = false, project = null }) {
                     <div className="mb-6">
                         <label className="block text-sm font-semibold mb-1 text-gray-600">Next Milestone</label>
                         <input type="text" value={next_milestone} onChange={e => setNextMilestone(e.target.value)} className="w-full p-2 border rounded-lg" placeholder="e.g., Foundation Complete" />
+                    </div>
+
+                    <div className="mb-6 p-4 border border-gray-200 rounded-lg bg-gray-50">
+                        <h3 className="text-sm font-semibold text-gray-800 mb-2">Smart Task Notifications</h3>
+                        <label className="flex items-center gap-2 text-sm text-gray-700 mb-2">
+                            <input
+                                type="checkbox"
+                                checked={taskNotifUseOrgDefaults}
+                                onChange={(e) => setTaskNotifUseOrgDefaults(e.target.checked)}
+                                className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                            />
+                            Use organization defaults
+                        </label>
+                        {!taskNotifUseOrgDefaults && (
+                            <div className="space-y-2">
+                                <label className="flex items-center gap-2 text-sm text-gray-700">
+                                    <input
+                                        type="checkbox"
+                                        checked={taskNotifEnabled}
+                                        onChange={(e) => setTaskNotifEnabled(e.target.checked)}
+                                        className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                    />
+                                    Email assignees before task start
+                                </label>
+                                <div>
+                                    <label className="block text-xs text-gray-500 mb-1">Lead days before start (comma-separated)</label>
+                                    <input
+                                        type="text"
+                                        value={taskNotifLeadDays}
+                                        onChange={(e) => setTaskNotifLeadDays(e.target.value)}
+                                        className="w-full p-2 border rounded-lg text-sm"
+                                        placeholder="14, 7"
+                                    />
+                                </div>
+                            </div>
+                        )}
                     </div>
                     
                     <div className="mb-6">

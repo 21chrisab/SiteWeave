@@ -20,6 +20,11 @@ function SettingsView() {
   const [appVersion, setAppVersion] = useState(packageJson.version);
   const [googleCalendarSynced, setGoogleCalendarSynced] = useState(false);
   const [outlookCalendarSynced, setOutlookCalendarSynced] = useState(false);
+  const [orgTaskNotifEnabled, setOrgTaskNotifEnabled] = useState(true);
+  const [orgTaskNotifLeadDays, setOrgTaskNotifLeadDays] = useState('14, 7');
+  const [orgReportSendHour, setOrgReportSendHour] = useState(8);
+  const [isLoadingOrgTaskNotif, setIsLoadingOrgTaskNotif] = useState(false);
+  const [isSavingOrgTaskNotif, setIsSavingOrgTaskNotif] = useState(false);
   
   // Form states
   const [fullName, setFullName] = useState(state.user?.user_metadata?.full_name || '');
@@ -48,6 +53,71 @@ function SettingsView() {
 
     fetchVersion();
   }, []);
+
+  useEffect(() => {
+    const loadOrgTaskNotificationSettings = async () => {
+      const orgId = state.currentOrganization?.id;
+      if (!orgId) return;
+      setIsLoadingOrgTaskNotif(true);
+      try {
+        const { data, error } = await supabaseClient
+          .from('organizations')
+          .select('task_start_notifications_enabled, task_start_notification_lead_days, progress_report_send_hour')
+          .eq('id', orgId)
+          .single();
+        if (error) throw error;
+        setOrgTaskNotifEnabled(data?.task_start_notifications_enabled !== false);
+        const days = Array.isArray(data?.task_start_notification_lead_days) && data.task_start_notification_lead_days.length > 0
+          ? data.task_start_notification_lead_days
+          : [14, 7];
+        setOrgTaskNotifLeadDays(days.join(', '));
+        setOrgReportSendHour(
+          Number.isFinite(Number(data?.progress_report_send_hour))
+            ? Math.max(0, Math.min(23, Number(data.progress_report_send_hour)))
+            : 8
+        );
+      } catch (error) {
+        addToast(`Error loading smart notifications: ${error.message}`, 'error');
+      } finally {
+        setIsLoadingOrgTaskNotif(false);
+      }
+    };
+    loadOrgTaskNotificationSettings();
+  }, [state.currentOrganization?.id]);
+
+  const parseLeadDays = (raw) => {
+    const values = String(raw || '')
+      .split(',')
+      .map((part) => parseInt(part.trim(), 10))
+      .filter((num) => Number.isFinite(num) && num >= 0 && num <= 365);
+    const deduped = Array.from(new Set(values));
+    return deduped.length > 0 ? deduped.sort((a, b) => b - a) : [14, 7];
+  };
+
+  const saveOrgTaskNotificationSettings = async () => {
+    const orgId = state.currentOrganization?.id;
+    if (!orgId) return;
+    setIsSavingOrgTaskNotif(true);
+    try {
+      const leadDays = parseLeadDays(orgTaskNotifLeadDays);
+      const { error } = await supabaseClient
+        .from('organizations')
+        .update({
+          task_start_notifications_enabled: orgTaskNotifEnabled,
+          task_start_notification_lead_days: leadDays,
+          progress_report_send_hour: Math.max(0, Math.min(23, Number(orgReportSendHour) || 8)),
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', orgId);
+      if (error) throw error;
+      setOrgTaskNotifLeadDays(leadDays.join(', '));
+      addToast('Smart notification defaults saved', 'success');
+    } catch (error) {
+      addToast(`Error saving smart notifications: ${error.message}`, 'error');
+    } finally {
+      setIsSavingOrgTaskNotif(false);
+    }
+  };
 
   // Check calendar sync status
   useEffect(() => {
@@ -182,6 +252,57 @@ function SettingsView() {
                     >
                       Manage Team Members →
                     </button>
+                  </PermissionGuard>
+                </div>
+                <div className="pt-3 border-t border-gray-200">
+                  <PermissionGuard permission="can_manage_users">
+                    <div className="space-y-2">
+                      <p className="text-sm font-medium text-gray-800">Smart Notifications</p>
+                      {isLoadingOrgTaskNotif ? (
+                        <p className="text-xs text-gray-500">Loading…</p>
+                      ) : (
+                        <>
+                          <label className="flex items-center gap-2 text-sm text-gray-700">
+                            <input
+                              type="checkbox"
+                              checked={orgTaskNotifEnabled}
+                              onChange={(e) => setOrgTaskNotifEnabled(e.target.checked)}
+                              className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                            />
+                            Email assignees before task start
+                          </label>
+                          <div>
+                            <label className="block text-xs text-gray-500 mb-1">Lead days before start (comma-separated)</label>
+                            <input
+                              type="text"
+                              value={orgTaskNotifLeadDays}
+                              onChange={(e) => setOrgTaskNotifLeadDays(e.target.value)}
+                              className="w-full px-2 py-1.5 border border-gray-300 rounded-md text-sm"
+                              placeholder="14, 7"
+                            />
+                          </div>
+                          <button
+                            type="button"
+                            onClick={saveOrgTaskNotificationSettings}
+                            disabled={isSavingOrgTaskNotif}
+                            className="px-3 py-1.5 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50"
+                          >
+                            {isSavingOrgTaskNotif ? 'Saving…' : 'Save smart notifications'}
+                          </button>
+                          <div>
+                            <label className="block text-xs text-gray-500 mb-1">Automated progress report send hour (ET)</label>
+                            <input
+                              type="number"
+                              min="0"
+                              max="23"
+                              value={orgReportSendHour}
+                              onChange={(e) => setOrgReportSendHour(e.target.value)}
+                              className="w-full px-2 py-1.5 border border-gray-300 rounded-md text-sm"
+                            />
+                          </div>
+                        </>
+                      )}
+                    </div>
                   </PermissionGuard>
                 </div>
               </>

@@ -21,7 +21,7 @@ SiteWeave/
 
 ### Desktop App (Electron)
 - **Location:** `src/`
-- **Build:** `npm run build:win` (from root)
+- **Build:** `npm run build:win` (Windows) or `npm run build:mac` (macOS) from root
 - **Tech Stack:** Electron, React, Vite
 
 ### Web App
@@ -93,7 +93,11 @@ npm start
 
 ### Desktop App
 ```bash
+# Windows export
 npm run build:win
+
+# macOS export
+npm run build:mac
 ```
 
 ### Web App

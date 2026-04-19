@@ -8,7 +8,7 @@ export const ROLE_PRESETS = [
   {
     id: 'estimator',
     defaultName: 'Estimator',
-    description: 'Creates project estimates and manages budgets',
+    description: 'Creates project estimates and scope plans',
     defaultPermissions: {
       can_manage_team: false,
       can_manage_users: false,
@@ -88,7 +88,7 @@ export const ROLE_PRESETS = [
   {
     id: 'accountant',
     defaultName: 'Accountant',
-    description: 'Manages financial records and reporting',
+    description: 'Manages reporting and documentation',
     defaultPermissions: {
       can_manage_team: false,
       can_manage_users: false,

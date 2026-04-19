@@ -471,10 +471,10 @@ function MessagesView({ showTeamPanel = false, onOpenDirectory = null }) {
     };
 
     return (
-        <div className="flex h-full min-h-0">
+        <div className="flex h-full min-h-0 min-w-0">
             <aside 
                 data-onboarding="message-channels"
-                className="w-80 bg-white rounded-l-xl shadow-xs border border-gray-200 flex flex-col p-4"
+                className="w-72 xl:w-80 min-w-0 bg-white rounded-l-xl shadow-xs border border-gray-200 flex flex-col p-4"
             >
                 <h2 className="text-xl font-bold mb-4 px-2">Projects</h2>
                 <ul className="space-y-1 overflow-y-auto flex-1">
@@ -494,7 +494,7 @@ function MessagesView({ showTeamPanel = false, onOpenDirectory = null }) {
                     })}
                 </ul>
             </aside>
-            <main className="flex-1 bg-white rounded-r-xl shadow-xs border-t border-r border-b border-gray-200 flex overflow-hidden">
+            <main className="flex-1 min-w-0 bg-white rounded-r-xl shadow-xs border-t border-r border-b border-gray-200 flex overflow-hidden">
                 {activeChannel ? (
                     <div className="flex min-h-0 flex-1">
                     <section className="flex min-h-0 flex-1 flex-col overflow-hidden">
@@ -630,7 +630,7 @@ function MessagesView({ showTeamPanel = false, onOpenDirectory = null }) {
                                         value={newMessage}
                                         onChange={handleInputChange}
                                         onKeyDown={handleKeyDown}
-                                        placeholder="Type a message... (use @ to mention team members)"
+                                        placeholder="Type a message..."
                                         data-onboarding="message-input"
                                         className="w-full p-3 border rounded-lg resize-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                                         rows="1"
