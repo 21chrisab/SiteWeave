@@ -94,7 +94,7 @@ function ProjectDetailsView({ routeTab = 'tasks', onTabChange = null }) {
                 const [tasksResult, fieldIssuesResult] = await Promise.all([
                     supabaseClient
                         .from('tasks')
-                        .select('*, contacts(name, avatar_url)')
+                        .select('*, contacts!fk_tasks_assignee_id(name, avatar_url)')
                         .eq('project_id', state.selectedProjectId)
                         .order('due_date', { ascending: true, nullsFirst: false })
                         .order('id', { ascending: true }),
@@ -133,7 +133,7 @@ function ProjectDetailsView({ routeTab = 'tasks', onTabChange = null }) {
                 const [tasksResult, depsResult] = await Promise.all([
                     supabaseClient
                         .from('tasks')
-                        .select('id, text, start_date, due_date, duration_days, is_milestone, project_id, completed, parent_task_id, assignee_id, contacts(name)')
+                        .select('id, text, start_date, due_date, duration_days, is_milestone, project_id, completed, parent_task_id, assignee_id, contacts!fk_tasks_assignee_id(name)')
                         .eq('project_id', projectId)
                         .order('start_date', { ascending: true, nullsFirst: true }),
                     supabaseClient

@@ -195,7 +195,7 @@ export async function getVirtualContacts(supabase, userId, organizationId, userP
           project_id,
           contact_id,
           role,
-          contacts (
+          contacts!fk_project_contacts_contact_id (
             id,
             name,
             email,

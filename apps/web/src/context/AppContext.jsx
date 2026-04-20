@@ -969,10 +969,10 @@ export const AppProvider = ({ children }) => {
     const tasksSubscription = supabaseClient.channel('public:tasks')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'tasks' }, async (payload) => {
         if (payload.eventType === 'INSERT') {
-          const { data: updatedTask } = await supabaseClient.from('tasks').select('*, contacts(name, avatar_url)').eq('id', payload.new.id).single();
+          const { data: updatedTask } = await supabaseClient.from('tasks').select('*, contacts!fk_tasks_assignee_id(name, avatar_url)').eq('id', payload.new.id).single();
           if (updatedTask) dispatch({ type: 'ADD_TASK', payload: updatedTask });
         } else if (payload.eventType === 'UPDATE') {
-          const { data: updatedTask } = await supabaseClient.from('tasks').select('*, contacts(name, avatar_url)').eq('id', payload.new.id).single();
+          const { data: updatedTask } = await supabaseClient.from('tasks').select('*, contacts!fk_tasks_assignee_id(name, avatar_url)').eq('id', payload.new.id).single();
           if (updatedTask) dispatch({ type: 'UPDATE_TASK', payload: updatedTask });
         } else if (payload.eventType === 'DELETE') {
           dispatch({ type: 'DELETE_TASK', payload: payload.old.id });

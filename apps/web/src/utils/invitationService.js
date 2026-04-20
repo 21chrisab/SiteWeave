@@ -105,7 +105,7 @@ export async function sendInvitation(email, organizationId, roleId = null, invit
         // Get inviter details
         const { data: inviter } = await supabaseClient
             .from('profiles')
-            .select('*, contacts(*)')
+            .select('*, contacts!fk_profiles_contact(*)')
             .eq('id', invitedByUserId)
             .single();
 
@@ -420,7 +420,7 @@ export async function resendInvitation(invitationId) {
 
         const { data: inviter } = await supabaseClient
             .from('profiles')
-            .select('*, contacts(*)')
+            .select('*, contacts!fk_profiles_contact(*)')
             .eq('id', invitation.invited_by_user_id)
             .single();
 

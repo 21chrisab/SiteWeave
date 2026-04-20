@@ -8,12 +8,17 @@ export default function NotificationCenterBell() {
   const [unreadCount, setUnreadCount] = React.useState(0)
 
   const loadNotifications = React.useCallback(async () => {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('user_notifications')
-      .select('id,title,body,created_at,read_at,project_id,action_url')
+      .select('id,title,body,created_at,read_at,project_id,metadata')
       .order('created_at', { ascending: false })
       .limit(20)
 
+    if (error) {
+      setItems([])
+      setUnreadCount(0)
+      return
+    }
     const list = data || []
     setItems(list)
     setUnreadCount(list.filter((item) => !item.read_at).length)
@@ -62,7 +67,7 @@ export default function NotificationCenterBell() {
             {items.map((item) => (
               <Link
                 key={item.id}
-                to={item.action_url || (item.project_id ? `/projects/${item.project_id}/tasks` : '/')}
+                to={item.project_id ? `/projects/${item.project_id}/tasks` : '/'}
                 className={`block px-3 py-2.5 border-b border-slate-100 last:border-b-0 hover:bg-slate-50 ${item.read_at ? '' : 'bg-blue-50/50'}`}
                 onClick={() => handleNotificationClick(item.id)}
               >

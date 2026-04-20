@@ -90,7 +90,8 @@ export function createSupabaseClient(supabaseUrl, supabaseAnonKey) {
   const authOptions = {
     autoRefreshToken: true,
     persistSession: true,
-    detectSessionInUrl: isReactNative,
+    // Browser OAuth returns tokens in the URL; they must be parsed into a session (RN uses deep links separately).
+    detectSessionInUrl: !isReactNative,
     storageKey: 'supabase.auth.token',
     flowType: hasWebCrypto ? 'pkce' : 'implicit',
   };
