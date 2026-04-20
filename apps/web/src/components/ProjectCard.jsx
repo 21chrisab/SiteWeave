@@ -1,4 +1,5 @@
 import React, { useState, memo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAppContext } from '../context/AppContext';
 import Icon from './Icon';
 import Avatar from './Avatar';
@@ -8,6 +9,7 @@ import { normalizeStatusDisplay } from '../utils/projectHelpers';
 
 const ProjectCard = memo(function ProjectCard({ project, onEdit, onDelete }) {
     const { dispatch, state } = useAppContext();
+    const navigate = useNavigate();
     const [showActions, setShowActions] = useState(false);
     
     // Get all members for this project:
@@ -83,6 +85,7 @@ const ProjectCard = memo(function ProjectCard({ project, onEdit, onDelete }) {
         }
         dispatch({ type: 'SET_PROJECT', payload: project.id });
         dispatch({ type: 'SET_VIEW', payload: 'Projects' });
+        navigate(`/projects/${project.id}/tasks`);
     };
 
     const handleEdit = (e) => {

@@ -7,10 +7,10 @@ import ForcePasswordReset from './components/ForcePasswordReset'
 import AppShell from './layouts/AppShell'
 import LoginView from './views/LoginView'
 import ProjectWorkspaceView from './views/ProjectWorkspaceView'
-import MessagesView from './views/MessagesView'
 import DashboardView from './views/DashboardView'
 import CalendarView from './views/CalendarView'
 import TeamView from './views/TeamView'
+import TeamHubView from './views/TeamHubView'
 import SettingsView from './views/SettingsView'
 import NoOrganizationView from './views/NoOrganizationView'
 import { ROUTE_PATHS } from './config/routes'
@@ -159,9 +159,11 @@ export default function AppStandalone() {
         <Route path={ROUTE_PATHS.projectGantt} element={<ProjectWorkspaceRoute routeTab="gantt" />} />
         <Route path={ROUTE_PATHS.projectFieldIssues} element={<ProjectWorkspaceRoute routeTab="field-issues" />} />
         <Route path={ROUTE_PATHS.projectActivity} element={<ProjectWorkspaceRoute routeTab="activity" />} />
-        <Route path={ROUTE_PATHS.messages} element={<RouteStateSync view="Messages"><MessagesView /></RouteStateSync>} />
+        <Route path={ROUTE_PATHS.messages} element={<Navigate to={ROUTE_PATHS.team} replace />} />
         <Route path={ROUTE_PATHS.calendar} element={<RouteStateSync view="Calendar"><CalendarView /></RouteStateSync>} />
-        <Route path={ROUTE_PATHS.team} element={<RouteStateSync view="Organization"><TeamView /></RouteStateSync>} />
+        <Route path={ROUTE_PATHS.team} element={<TeamHubView />} />
+        <Route path={ROUTE_PATHS.teamDirectory} element={<TeamHubView />} />
+        <Route path={ROUTE_PATHS.organization} element={<RouteStateSync view="Organization"><TeamView /></RouteStateSync>} />
         <Route path={ROUTE_PATHS.settings} element={<RouteStateSync view="Settings"><SettingsView /></RouteStateSync>} />
         <Route path={ROUTE_PATHS.notifications} element={<RouteStateSync view="Settings"><SettingsView /></RouteStateSync>} />
       </Route>

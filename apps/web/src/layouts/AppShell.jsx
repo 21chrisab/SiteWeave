@@ -2,7 +2,6 @@ import React from 'react'
 import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { PRIMARY_NAV_ITEMS } from '../config/routes'
 import { supabase } from '../supabaseClient'
-import NotificationCenterBell from '../components/NotificationCenterBell'
 import { useAppContext } from '../context/AppContext'
 import Avatar from '../components/Avatar'
 import Icon from '../components/Icon'
@@ -73,8 +72,8 @@ export default function AppShell({ session }) {
         </aside>
 
         <div className="flex flex-col min-h-screen">
-          <header className="h-14 bg-white/95 border-b border-slate-200 backdrop-blur-xs px-4 sm:px-6 flex items-center justify-end gap-3">
-            <nav className="lg:hidden flex items-center gap-1 flex-wrap justify-end mr-auto">
+          <header className="lg:hidden h-14 bg-white/95 border-b border-slate-200 backdrop-blur-xs px-4 flex items-center">
+            <nav className="flex items-center gap-1 flex-wrap w-full">
               {PRIMARY_NAV_ITEMS.map((item) => (
                 <NavLink
                   key={item.to}
@@ -85,7 +84,6 @@ export default function AppShell({ session }) {
                 </NavLink>
               ))}
             </nav>
-            <NotificationCenterBell />
           </header>
 
           <main className="flex-1 p-4 sm:p-6">

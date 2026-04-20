@@ -1,3 +1,7 @@
+/**
+ * Legacy web shell retained for reference only.
+ * Production entry uses `main.jsx` -> `AppStandalone.jsx`.
+ */
 import React from 'react'
 import { Link, Route, Routes, useNavigate, useParams, useLocation } from 'react-router-dom'
 import { supabase } from './supabaseClient'

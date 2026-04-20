@@ -29,11 +29,34 @@ npm run build
 
 See [DEPLOYMENT.md](./DEPLOYMENT.md) for detailed instructions on deploying to Netlify.
 
+## Routes
+
+- `/` Dashboard
+- `/projects` Project dashboard
+- `/projects/:id/tasks` Project workspace (tasks)
+- `/projects/:id/gantt` Gantt schedule
+- `/projects/:id/field-issues` Field issues
+- `/projects/:id/activity` Project activity
+- `/team` Team Hub (discussions)
+- `/team/directory` Team Hub (directory)
+- `/organization` Organization roles and member management
+- `/calendar` Calendar
+- `/settings` Settings
+
+`/messages` redirects to `/team`.
+
 ## Features
 
-- Project viewing and management
-- Task tracking
-- File and photo viewing
-- Real-time messaging
+- Project and task management
+- Gantt scheduling with dependencies
+- Team Hub: project discussions + embedded directory
+- Organization roles and member administration
+- Progress report scheduling and preview
+- MS Project XML import
+- Calendar management and weather widget
 - OAuth authentication (Google, Microsoft)
+
+## Known limitations
+
+- Field issue file uploads are intentionally disabled in the current product flow.
 

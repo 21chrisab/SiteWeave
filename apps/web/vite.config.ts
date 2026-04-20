@@ -18,7 +18,7 @@ export default defineConfig({
   ],
   resolve: {
     alias: {
-      '@siteweave/core-logic': path.resolve(__dirname, './packages/core-logic/src/index.js'),
+      '@siteweave/core-logic': path.resolve(__dirname, '../../packages/core-logic/src/index.js'),
       'frappe-gantt/dist/frappe-gantt.css': path.resolve(__dirname, './node_modules/frappe-gantt/dist/frappe-gantt.css')
     }
   },
@@ -32,7 +32,21 @@ export default defineConfig({
     },
     rollupOptions: {
       output: {
-        manualChunks: undefined
+        manualChunks(id) {
+          if (id.includes('node_modules/react') || id.includes('node_modules/react-dom')) {
+            return 'react-vendor'
+          }
+          if (id.includes('node_modules/@supabase/')) {
+            return 'supabase-vendor'
+          }
+          if (id.includes('node_modules/jspdf') || id.includes('node_modules/html2canvas')) {
+            return 'pdf-vendor'
+          }
+          if (id.includes('node_modules/frappe-gantt')) {
+            return 'gantt-vendor'
+          }
+          return undefined
+        }
       }
     }
   },

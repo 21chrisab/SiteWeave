@@ -4,7 +4,7 @@ import DateDropdown from './DateDropdown';
 import PermissionGuard from './PermissionGuard';
 import Avatar from './Avatar';
 
-const TaskItem = memo(function TaskItem({ task, onToggle, onEdit, onDelete, isSelected, onSelect }) {
+const TaskItem = memo(function TaskItem({ task, onToggle, onEdit, onDelete, isSelected, onSelect, onOpenPhotos = null }) {
     const [isEditing, setIsEditing] = useState(false);
     const [editText, setEditText] = useState(task.text);
     const [editStartDate, setEditStartDate] = useState(task.start_date || '');
@@ -152,6 +152,16 @@ const TaskItem = memo(function TaskItem({ task, onToggle, onEdit, onDelete, isSe
                     )
                 )}
                 <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity" role="group" aria-label="Task actions">
+                    {onOpenPhotos && (
+                        <button
+                            onClick={() => onOpenPhotos(task.id)}
+                            className="p-1 text-gray-500 hover:text-indigo-600"
+                            title="Manage task photos"
+                            aria-label={`Manage photos for task: ${task.text}`}
+                        >
+                            <Icon path="M3 16.5V7.5A1.5 1.5 0 014.5 6h3.879a1.5 1.5 0 001.06-.44l1.122-1.12A1.5 1.5 0 0111.621 4H19.5A1.5 1.5 0 0121 5.5v11A1.5 1.5 0 0119.5 18h-15A1.5 1.5 0 013 16.5zM8.25 12.75l1.5 1.5 2.5-2.5 3 3" className="w-4 h-4" />
+                        </button>
+                    )}
                     <PermissionGuard permission="can_edit_tasks">
                         <button
                             onClick={() => setIsEditing(true)}

@@ -1,11 +1,13 @@
 import React, { useState, useMemo, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAppContext, supabaseClient } from '../context/AppContext';
 import { useToast } from '../context/ToastContext';
 import AddContactModal from '../components/AddContactModal';
 import ContactCard from '../components/ContactCard';
 import ConfirmDialog from '../components/ConfirmDialog';
 
-function ContactsView() {
+function ContactsView({ embedded = false, defaultProjectFilter = null }) {
+    const navigate = useNavigate();
     const { state, dispatch } = useAppContext();
     const { addToast } = useToast();
     const [activeTab, setActiveTab] = useState('Team');
@@ -33,6 +35,12 @@ function ContactsView() {
     const [assignContact, setAssignContact] = useState(null);
     const [selectedAssignProject, setSelectedAssignProject] = useState('');
     const [isAssigningContact, setIsAssigningContact] = useState(false);
+
+    useEffect(() => {
+        if (defaultProjectFilter != null && defaultProjectFilter !== '') {
+            setProjectFilter(String(defaultProjectFilter));
+        }
+    }, [defaultProjectFilter]);
 
     // Listen for tour navigation to switch to Subcontractors tab
     useEffect(() => {
@@ -308,19 +316,25 @@ function ContactsView() {
             const channel = state.messageChannels.find(ch => String(ch.project_id) === String(firstProjectId));
             if (channel) {
                 dispatch({ type: 'SET_CHANNEL', payload: channel.id });
+                navigate('/team');
+                addToast('Opening project discussion.', 'info');
                 return;
             }
         }
-        dispatch({ type: 'SET_VIEW', payload: 'Messages' });
-        addToast('Switching to Messages. Select a channel to start chatting.', 'info');
+        navigate('/team');
+        addToast('Open Team and pick a project channel to start chatting.', 'info');
     };
 
     return (
         <>
-            <header className="flex items-center justify-between mb-6">
+            <header className={`flex items-center justify-between ${embedded ? 'mb-4' : 'mb-6'}`}>
                 <div>
-                    <h1 className="text-3xl font-bold text-gray-900">Contacts</h1>
-                    <p className="text-gray-500">Manage your team members and trade partners</p>
+                    <h1 className={`${embedded ? 'text-2xl' : 'text-3xl'} font-bold text-gray-900`}>
+                        {embedded ? 'Directory' : 'Contacts'}
+                    </h1>
+                    {!embedded && (
+                        <p className="text-gray-500">Manage your team members and trade partners</p>
+                    )}
                 </div>
                 <div className="flex gap-3">
                     <button 

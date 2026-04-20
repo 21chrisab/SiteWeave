@@ -1,8 +1,17 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useAppContext, supabaseClient } from '../context/AppContext';
 import { useToast } from '../context/ToastContext';
+import {
+    attachTaskPhotoUrls,
+    deleteTaskPhoto,
+    fetchTaskPhotos,
+    reorderTaskPhotos,
+    updateTaskPhoto,
+    uploadTaskPhotoSet,
+} from '@siteweave/core-logic';
 import TaskItem from '../components/TaskItem';
 import TaskModal from '../components/TaskModal';
+import TaskPhotosModal from '../components/TaskPhotosModal';
 import ProjectSidebar from '../components/ProjectSidebar';
 import ShareModal from '../components/ShareModal';
 import SaveAsTemplateModal from '../components/SaveAsTemplateModal';
@@ -12,13 +21,18 @@ import FieldIssues from '../components/FieldIssues';
 import Workflow from '../components/Workflow';
 import Avatar from '../components/Avatar';
 import PermissionGuard from '../components/PermissionGuard';
+import ActivityHistoryPanel from '../components/ActivityHistoryPanel';
+import WeatherImpactModal from '../components/WeatherImpactModal';
 import { useTaskShortcuts } from '../hooks/useKeyboardShortcuts';
 import { handleApiError, createOptimisticUpdate } from '../utils/errorHandling';
 import { parseRecurrence } from '../utils/recurrenceService';
 import { logTaskCreated, logTaskCompleted, logTaskUncompleted, logTaskUpdated, logTaskDeleted } from '../utils/activityLogger';
 import { getCriticalPathTaskIds } from '../utils/criticalPath';
 import { orderTasksForGantt } from '../utils/ganttOrdering';
+import { buildTaskPhotoDraft, canManageTaskPhotos, revokeTaskPhotoDraftUrls, sortTaskPhotos } from '../utils/taskPhotoUtils';
 import GanttChart from '../components/GanttChart';
+import ProgressReportModal from '../components/ProgressReportModal';
+import MsProjectImportModal from '../components/MsProjectImportModal';
 
 function ProjectDetailsView({ routeTab = 'tasks', onTabChange = null }) {
     const { state, dispatch } = useAppContext();
@@ -32,8 +46,14 @@ function ProjectDetailsView({ routeTab = 'tasks', onTabChange = null }) {
     const [taskSort, setTaskSort] = useState('due_date'); // due_date, priority
     const [activeTab, setActiveTab] = useState('tasks'); // tasks, gantt, fieldIssues, activity
     const [showShare, setShowShare] = useState(false);
+    const [showProgressReportModal, setShowProgressReportModal] = useState(false);
+    const [showMsProjectImportModal, setShowMsProjectImportModal] = useState(false);
+    const [showWeatherImpactModal, setShowWeatherImpactModal] = useState(false);
     const [showSaveAsTemplateModal, setShowSaveAsTemplateModal] = useState(false);
     const [fieldIssuesCount, setFieldIssuesCount] = useState(0);
+    const [photoModalTaskId, setPhotoModalTaskId] = useState(null);
+    const [photoActionTaskIds, setPhotoActionTaskIds] = useState({});
+    const [taskPhotoUploadProgress, setTaskPhotoUploadProgress] = useState(null);
     const [ganttTasks, setGanttTasks] = useState([]);
     const [ganttDependencies, setGanttDependencies] = useState([]);
     const [ganttCriticalCount, setGanttCriticalCount] = useState(0);
@@ -94,7 +114,7 @@ function ProjectDetailsView({ routeTab = 'tasks', onTabChange = null }) {
                 const [tasksResult, fieldIssuesResult] = await Promise.all([
                     supabaseClient
                         .from('tasks')
-                        .select('*, contacts!fk_tasks_assignee_id(name, avatar_url)')
+                        .select('*, contacts!fk_tasks_assignee_id(name, avatar_url), task_photos(*)')
                         .eq('project_id', state.selectedProjectId)
                         .order('due_date', { ascending: true, nullsFirst: false })
                         .order('id', { ascending: true }),
@@ -642,6 +662,148 @@ function ProjectDetailsView({ routeTab = 'tasks', onTabChange = null }) {
         }
     };
 
+    const setTaskPhotoBusy = (taskId, busy) => {
+        setPhotoActionTaskIds((prev) => {
+            const next = { ...prev };
+            if (busy) next[taskId] = true;
+            else delete next[taskId];
+            return next;
+        });
+    };
+
+    const replaceTaskRow = (taskId, nextTask) => {
+        dispatch({ type: 'UPDATE_TASK', payload: nextTask });
+        setProjectTasksList((prev) => prev.map((task) => (task.id === taskId ? nextTask : task)));
+    };
+
+    const hydratePhotoRows = async (rows = []) => {
+        if (!rows.length) return [];
+        const hydrated = await attachTaskPhotoUrls(supabaseClient, sortTaskPhotos(rows));
+        return sortTaskPhotos(hydrated);
+    };
+
+    const handleOpenTaskPhotos = async (taskId) => {
+        const task = allTasks.find((row) => row.id === taskId) || state.tasks.find((row) => row.id === taskId);
+        if (!task) return;
+        setPhotoModalTaskId(taskId);
+        try {
+            const rows = await fetchTaskPhotos(supabaseClient, taskId);
+            const hydrated = await hydratePhotoRows(rows || []);
+            replaceTaskRow(taskId, { ...task, task_photos: hydrated });
+        } catch (error) {
+            addToast(error.message || 'Could not load task photos.', 'error');
+        }
+    };
+
+    const handleAddTaskPhotos = async (taskId, files) => {
+        const task = allTasks.find((row) => row.id === taskId) || state.tasks.find((row) => row.id === taskId);
+        if (!task || !project) return;
+
+        setTaskPhotoBusy(taskId, true);
+        let preparedPhotos = [];
+        try {
+            preparedPhotos = await Promise.all(
+                files.map((file, index) => buildTaskPhotoDraft(file, (task.task_photos?.length || 0) + index))
+            );
+            const uploadedPhotos = [];
+            for (let index = 0; index < preparedPhotos.length; index++) {
+                const photo = preparedPhotos[index];
+                setTaskPhotoUploadProgress({ taskId, current: index + 1, total: preparedPhotos.length });
+                const row = await uploadTaskPhotoSet(supabaseClient, {
+                    taskId,
+                    organizationId: project.organization_id,
+                    projectId: project.id,
+                    originalFile: photo.originalFile,
+                    thumbnailFile: photo.thumbnailFile,
+                    caption: photo.caption,
+                    isCompletionPhoto: photo.is_completion_photo,
+                    uploadedByUserId: state.user?.id,
+                    sortOrder: (task.task_photos?.length || 0) + index,
+                    capturedAt: photo.captured_at || null,
+                });
+                uploadedPhotos.push(row);
+            }
+            const hydratedUploadedPhotos = await hydratePhotoRows(uploadedPhotos);
+            replaceTaskRow(taskId, {
+                ...task,
+                task_photos: sortTaskPhotos([...(task.task_photos || []), ...hydratedUploadedPhotos]),
+            });
+            addToast('Task photos uploaded.', 'success');
+        } catch (error) {
+            addToast(error.message || 'Could not upload task photos.', 'error');
+        } finally {
+            revokeTaskPhotoDraftUrls(preparedPhotos);
+            setTaskPhotoUploadProgress(null);
+            setTaskPhotoBusy(taskId, false);
+        }
+    };
+
+    const handleUpdateTaskPhoto = async (taskId, photoId, updates) => {
+        const task = allTasks.find((row) => row.id === taskId) || state.tasks.find((row) => row.id === taskId);
+        if (!task) return;
+        const targetPhoto = (task.task_photos || []).find((photo) => photo.id === photoId || photo.local_id === photoId);
+        if (!targetPhoto?.id) return;
+        setTaskPhotoBusy(taskId, true);
+        try {
+            const updatedPhoto = await updateTaskPhoto(supabaseClient, targetPhoto.id, updates);
+            const hydratedPhoto = (await hydratePhotoRows([updatedPhoto]))[0];
+            replaceTaskRow(taskId, {
+                ...task,
+                task_photos: sortTaskPhotos((task.task_photos || []).map((photo) => photo.id === targetPhoto.id ? { ...photo, ...hydratedPhoto } : photo)),
+            });
+        } catch (error) {
+            addToast(error.message || 'Could not update task photo.', 'error');
+        } finally {
+            setTaskPhotoBusy(taskId, false);
+        }
+    };
+
+    const handleDeleteTaskPhoto = async (taskId, photoId) => {
+        const task = allTasks.find((row) => row.id === taskId) || state.tasks.find((row) => row.id === taskId);
+        if (!task) return;
+        const targetPhoto = (task.task_photos || []).find((photo) => photo.id === photoId || photo.local_id === photoId);
+        if (!targetPhoto?.id) return;
+        setTaskPhotoBusy(taskId, true);
+        try {
+            await deleteTaskPhoto(supabaseClient, targetPhoto);
+            const remainingPhotos = sortTaskPhotos((task.task_photos || []).filter((photo) => photo.id !== targetPhoto.id));
+            if (remainingPhotos.length > 0) {
+                await reorderTaskPhotos(supabaseClient, taskId, remainingPhotos.map((photo) => photo.id));
+                remainingPhotos.forEach((photo, index) => { photo.sort_order = index; });
+            }
+            replaceTaskRow(taskId, { ...task, task_photos: remainingPhotos });
+            addToast('Task photo removed.', 'success');
+        } catch (error) {
+            addToast(error.message || 'Could not delete task photo.', 'error');
+        } finally {
+            setTaskPhotoBusy(taskId, false);
+        }
+    };
+
+    const handleMoveTaskPhoto = async (taskId, photoId, direction) => {
+        const task = allTasks.find((row) => row.id === taskId) || state.tasks.find((row) => row.id === taskId);
+        if (!task) return;
+        const currentPhotos = sortTaskPhotos(task.task_photos || []);
+        const currentIndex = currentPhotos.findIndex((photo) => photo.id === photoId || photo.local_id === photoId);
+        const nextIndex = currentIndex + direction;
+        if (currentIndex < 0 || nextIndex < 0 || nextIndex >= currentPhotos.length) return;
+        const reorderedPhotos = [...currentPhotos];
+        const [movedPhoto] = reorderedPhotos.splice(currentIndex, 1);
+        reorderedPhotos.splice(nextIndex, 0, movedPhoto);
+        setTaskPhotoBusy(taskId, true);
+        try {
+            await reorderTaskPhotos(supabaseClient, taskId, reorderedPhotos.map((photo) => photo.id));
+            replaceTaskRow(taskId, {
+                ...task,
+                task_photos: reorderedPhotos.map((photo, index) => ({ ...photo, sort_order: index })),
+            });
+        } catch (error) {
+            addToast(error.message || 'Could not reorder task photos.', 'error');
+        } finally {
+            setTaskPhotoBusy(taskId, false);
+        }
+    };
+
 
     return (
         <div>
@@ -746,6 +908,39 @@ function ProjectDetailsView({ routeTab = 'tasks', onTabChange = null }) {
                             Save as template
                         </button>
                     </PermissionGuard>
+                    <PermissionGuard permission="can_manage_progress_reports">
+                        <button
+                            type="button"
+                            onClick={() => setShowProgressReportModal(true)}
+                            className="px-4 py-2 text-sm font-semibold text-white bg-emerald-600 rounded-lg shadow-xs hover:bg-emerald-700 transition-colors flex items-center gap-2"
+                            title="Schedule and manage progress reports"
+                        >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                            </svg>
+                            Progress reports
+                        </button>
+                    </PermissionGuard>
+                    <PermissionGuard permission="can_create_projects">
+                        <button
+                            type="button"
+                            onClick={() => setShowMsProjectImportModal(true)}
+                            className="px-4 py-2 text-sm font-semibold rounded-lg shadow-xs transition-colors bg-slate-700 text-white hover:bg-slate-800"
+                            title="Import tasks and schedule from Microsoft Project XML"
+                        >
+                            Import MS Project XML
+                        </button>
+                    </PermissionGuard>
+                    <PermissionGuard permission="can_edit_tasks">
+                        <button
+                            type="button"
+                            onClick={() => setShowWeatherImpactModal(true)}
+                            className="px-4 py-2 text-sm font-semibold rounded-lg shadow-xs transition-colors bg-indigo-600 text-white hover:bg-indigo-700"
+                            title="Log weather impacts and delays"
+                        >
+                            Weather impacts
+                        </button>
+                    </PermissionGuard>
                 </div>
             </header>
 
@@ -758,6 +953,26 @@ function ProjectDetailsView({ routeTab = 'tasks', onTabChange = null }) {
                     projectId={project.id} 
                     projectName={project.name} 
                     onClose={() => setShowSaveAsTemplateModal(false)} 
+                />
+            )}
+
+            {showProgressReportModal && project && (
+                <ProgressReportModal projectId={project.id} onClose={() => setShowProgressReportModal(false)} />
+            )}
+
+            {showMsProjectImportModal && project && (
+                <MsProjectImportModal
+                    context="existing"
+                    projectId={project.id}
+                    projectName={project.name}
+                    onClose={() => setShowMsProjectImportModal(false)}
+                    onSuccess={() => setShowMsProjectImportModal(false)}
+                />
+            )}
+            {showWeatherImpactModal && project && (
+                <WeatherImpactModal
+                    project={project}
+                    onClose={() => setShowWeatherImpactModal(false)}
                 />
             )}
 
@@ -891,6 +1106,7 @@ function ProjectDetailsView({ routeTab = 'tasks', onTabChange = null }) {
                                                 onDelete={handleDeleteTask}
                                                 isSelected={selectedTasks.includes(task.id)}
                                                 onSelect={handleTaskSelect}
+                                                onOpenPhotos={handleOpenTaskPhotos}
                                             />
                                         ))}
                                     </ul>
@@ -920,27 +1136,12 @@ function ProjectDetailsView({ routeTab = 'tasks', onTabChange = null }) {
 
                         {activeTab === 'activity' && (
                             <div className="p-6 app-card">
-                                <div className="flex items-center justify-between mb-4">
-                                    <h2 className="text-xl font-bold">Project Activity</h2>
-                                    <span className="text-xs text-gray-500">{projectActivity.length} recent events</span>
-                                </div>
-                                {projectActivity.length === 0 ? (
-                                    <p className="text-sm text-gray-500">No recent activity for this project yet.</p>
-                                ) : (
-                                    <ul className="space-y-2">
-                                        {projectActivity.map((activity) => (
-                                            <li key={activity.id} className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
-                                                <p className="text-sm text-gray-800">
-                                                    <span className="font-semibold">{activity.user_name || 'Team member'}</span>{' '}
-                                                    {activity.action || 'updated the project'}
-                                                </p>
-                                                <p className="text-xs text-gray-500 mt-1">
-                                                    {new Date(activity.created_at).toLocaleString()}
-                                                </p>
-                                            </li>
-                                        ))}
-                                    </ul>
-                                )}
+                                <ActivityHistoryPanel
+                                    mode="project"
+                                    organizationId={project.organization_id || state.currentOrganization?.id}
+                                    projectId={project.id}
+                                    title="Project activity"
+                                />
                             </div>
                         )}
 
@@ -968,6 +1169,26 @@ function ProjectDetailsView({ routeTab = 'tasks', onTabChange = null }) {
                 confirmText="Delete"
                 cancelText="Cancel"
             />
+            {photoModalTaskId && (
+                <TaskPhotosModal
+                    task={allTasks.find((task) => task.id === photoModalTaskId)}
+                    onClose={() => setPhotoModalTaskId(null)}
+                    onAddPhotos={handleAddTaskPhotos}
+                    onUpdatePhoto={handleUpdateTaskPhoto}
+                    onDeletePhoto={handleDeleteTaskPhoto}
+                    onMovePhoto={handleMoveTaskPhoto}
+                    canManagePhotos={canManageTaskPhotos({
+                        project,
+                        userId: state.user?.id,
+                        userContactId: state.userContactId,
+                        userRoleName: state.userRole?.name,
+                        canEditTasks: state.userRole?.permissions?.can_edit_tasks === true,
+                        task: allTasks.find((task) => task.id === photoModalTaskId),
+                    })}
+                    photoActionBusy={Boolean(photoActionTaskIds[photoModalTaskId])}
+                    photoUploadProgress={taskPhotoUploadProgress?.taskId === photoModalTaskId ? taskPhotoUploadProgress : null}
+                />
+            )}
         </div>
     );
 }

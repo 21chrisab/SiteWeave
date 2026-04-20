@@ -8,7 +8,6 @@ import { getFieldIssueDisplayStatus } from '../utils/fieldIssueStatus';
 const FieldIssues = ({ projectId }) => {
     const { state } = useAppContext();
     const { addToast } = useToast();
-    const [isUploading, setIsUploading] = useState(false);
     const [fieldIssues, setFieldIssues] = useState([]);
     const [isLoading, setIsLoading] = useState(true);
     const [showCreateModal, setShowCreateModal] = useState(false);
@@ -88,15 +87,6 @@ const FieldIssues = ({ projectId }) => {
         const date = new Date(dateString);
         return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
     };
-
-
-    const handleFileUpload = async (issueId, event) => {
-        const file = event.target.files[0];
-        if (!file) return;
-
-        addToast('File upload feature has been disabled. Storage integration is no longer available.', 'info');
-    };
-
     const handleCreateIssue = async () => {
         if (!newIssue.title.trim()) {
             addToast('Please enter an issue title', 'error');

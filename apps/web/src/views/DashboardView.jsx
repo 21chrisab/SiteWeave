@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAppContext, supabaseClient } from '../context/AppContext';
 import { useToast } from '../context/ToastContext';
 import ProjectCard from '../components/ProjectCard';
@@ -7,6 +8,9 @@ import CreateFromTemplateModal from '../components/CreateFromTemplateModal';
 import MyDaySidebar from '../components/MyDaySidebar';
 import ConfirmDialog from '../components/ConfirmDialog';
 import DashboardStats from '../components/DashboardStats';
+import ProgressReportDashboard from '../components/ProgressReportDashboard';
+import ProgressReportModal from '../components/ProgressReportModal';
+import MsProjectImportModal from '../components/MsProjectImportModal';
 import ViewSwitcher from '../components/ViewSwitcher';
 import ProjectBoardView from '../components/ProjectBoardView';
 import ProjectListView from '../components/ProjectListView';
@@ -14,6 +18,7 @@ import PermissionGuard from '../components/PermissionGuard';
 import { useProjectShortcuts } from '../hooks/useKeyboardShortcuts';
 
 function DashboardView() {
+    const navigate = useNavigate();
     const { state, dispatch } = useAppContext();
     const { addToast } = useToast();
     const [showModal, setShowModal] = useState(false);
@@ -24,6 +29,8 @@ function DashboardView() {
     const [projectToDelete, setProjectToDelete] = useState(null);
     const [viewType, setViewType] = useState('card'); // 'card', 'list', or 'board'
     const [showCreateFromTemplateModal, setShowCreateFromTemplateModal] = useState(false);
+    const [showProgressReportModal, setShowProgressReportModal] = useState(false);
+    const [showMsProjectImportModal, setShowMsProjectImportModal] = useState(false);
 
     // Keyboard shortcuts
     useProjectShortcuts({
@@ -377,6 +384,7 @@ function DashboardView() {
     const handleProjectClick = (project) => {
         dispatch({ type: 'SET_PROJECT', payload: project.id });
         dispatch({ type: 'SET_VIEW', payload: 'Projects' });
+        navigate(`/projects/${project.id}/tasks`);
     };
 
     return (
@@ -404,12 +412,34 @@ function DashboardView() {
                                 >
                                     From template
                                 </button>
+                                <button
+                                    type="button"
+                                    onClick={() => setShowMsProjectImportModal(true)}
+                                    className="px-4 py-2 text-sm font-semibold rounded-lg shadow-xs btn-smooth bg-slate-700 text-white hover:bg-slate-800"
+                                >
+                                    Import MS Project XML
+                                </button>
+                            </PermissionGuard>
+                            <PermissionGuard permission="can_manage_progress_reports">
+                                <button
+                                    type="button"
+                                    onClick={() => setShowProgressReportModal(true)}
+                                    className="px-4 py-2 text-sm font-semibold rounded-lg shadow-xs btn-smooth bg-emerald-600 text-white hover:bg-emerald-700"
+                                >
+                                    Progress reports
+                                </button>
                             </PermissionGuard>
                         </div>
                     </header>
                     
                     {/* Dashboard Statistics */}
                     <DashboardStats />
+
+                    <PermissionGuard permission="can_manage_progress_reports">
+                        <div className="mb-8">
+                            <ProgressReportDashboard />
+                        </div>
+                    </PermissionGuard>
                     
                     {/* Project Views */}
                     {state.projects.length > 0 ? (
@@ -471,6 +501,16 @@ function DashboardView() {
             </div>
             {showCreateFromTemplateModal && (
                 <CreateFromTemplateModal onClose={() => setShowCreateFromTemplateModal(false)} />
+            )}
+            {showProgressReportModal && (
+                <ProgressReportModal onClose={() => setShowProgressReportModal(false)} />
+            )}
+            {showMsProjectImportModal && (
+                <MsProjectImportModal
+                    context="newProject"
+                    onClose={() => setShowMsProjectImportModal(false)}
+                    onSuccess={() => setShowMsProjectImportModal(false)}
+                />
             )}
             {showModal && (
                 <ProjectModal 

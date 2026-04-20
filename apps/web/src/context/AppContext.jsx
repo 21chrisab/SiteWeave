@@ -6,13 +6,16 @@ import React, { createContext, useContext, useEffect, useReducer, useState, useR
 import supabaseElectronAuth from '../utils/supabaseElectronAuth';
 import { supabase as supabaseClient } from '../supabaseClient';
 
-// Single browser client — must match LoginView, useSession, NotificationCenterBell, etc.
+// Single browser client — must match LoginView, useSession, etc.
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
-console.log('Environment variables loaded:');
-console.log('SUPABASE_URL:', SUPABASE_URL ? 'Present' : 'Missing');
-console.log('SUPABASE_ANON_KEY:', SUPABASE_ANON_KEY ? 'Present' : 'Missing');
+if (import.meta.env.DEV) {
+  console.log('Environment variables loaded:', {
+    SUPABASE_URL: SUPABASE_URL ? 'present' : 'missing',
+    SUPABASE_ANON_KEY: SUPABASE_ANON_KEY ? 'present' : 'missing',
+  });
+}
 
 export { supabaseClient };
 
