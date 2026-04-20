@@ -8,7 +8,6 @@ import CreateFromTemplateModal from '../components/CreateFromTemplateModal';
 import MyDaySidebar from '../components/MyDaySidebar';
 import ConfirmDialog from '../components/ConfirmDialog';
 import DashboardStats from '../components/DashboardStats';
-import ProgressReportDashboard from '../components/ProgressReportDashboard';
 import ProgressReportModal from '../components/ProgressReportModal';
 import MsProjectImportModal from '../components/MsProjectImportModal';
 import ViewSwitcher from '../components/ViewSwitcher';
@@ -434,12 +433,6 @@ function DashboardView() {
                     
                     {/* Dashboard Statistics */}
                     <DashboardStats />
-
-                    <PermissionGuard permission="can_manage_progress_reports">
-                        <div className="mb-8">
-                            <ProgressReportDashboard />
-                        </div>
-                    </PermissionGuard>
                     
                     {/* Project Views */}
                     {state.projects.length > 0 ? (
