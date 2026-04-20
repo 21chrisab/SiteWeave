@@ -3,19 +3,16 @@
  * TODO: Refactor - Establish single source of truth (e.g. share via packages/ or document desktop vs web feature flags).
  */
 import React, { createContext, useContext, useEffect, useReducer, useState, useRef } from 'react';
-import { createSupabaseClient } from '@siteweave/core-logic';
 import supabaseElectronAuth from '../utils/supabaseElectronAuth';
+import { supabase as supabaseClient } from '../supabaseClient';
 
-// --- SUPABASE CLIENT ---
+// Single browser client — must match LoginView, useSession, NotificationCenterBell, etc.
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
 console.log('Environment variables loaded:');
 console.log('SUPABASE_URL:', SUPABASE_URL ? 'Present' : 'Missing');
 console.log('SUPABASE_ANON_KEY:', SUPABASE_ANON_KEY ? 'Present' : 'Missing');
-
-// Use shared Supabase client creation
-const supabaseClient = createSupabaseClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 export { supabaseClient };
 

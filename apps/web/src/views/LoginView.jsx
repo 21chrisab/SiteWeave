@@ -41,15 +41,15 @@ export default function LoginView() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-4">
-      <div className="max-w-md w-full app-card p-8 space-y-6 shadow-lg">
+    <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
+      <div className="max-w-md w-full bg-white border border-gray-200 rounded-xl p-6 space-y-5">
         <div>
-          <h1 className="app-section-title text-2xl">Sign in to SiteWeave</h1>
-          <p className="app-section-subtitle mt-1">Standalone web workspace</p>
+          <h1 className="text-2xl font-bold text-gray-900">Sign in to SiteWeave</h1>
+          <p className="text-sm text-gray-600 mt-1">Standalone web workspace</p>
         </div>
         <form className="space-y-4" onSubmit={onSubmit}>
           <input
-            className="w-full border border-slate-200 rounded-lg px-3 py-2.5 bg-white text-slate-900 placeholder:text-slate-400"
+            className="w-full border border-gray-300 rounded-md px-3 py-2"
             type="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
@@ -57,7 +57,7 @@ export default function LoginView() {
             required
           />
           <input
-            className="w-full border border-slate-200 rounded-lg px-3 py-2.5 bg-white text-slate-900 placeholder:text-slate-400"
+            className="w-full border border-gray-300 rounded-md px-3 py-2"
             type="password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
@@ -65,15 +65,29 @@ export default function LoginView() {
             required
           />
           {error ? <p className="text-sm text-red-700">{error}</p> : null}
-          <button type="submit" disabled={isLoading} className="w-full app-action-primary rounded-lg py-2.5 font-medium disabled:opacity-60">
+          <button
+            type="submit"
+            disabled={isLoading}
+            className="w-full bg-blue-600 text-white rounded-md py-2 font-medium hover:bg-blue-700 disabled:opacity-60"
+          >
             {isLoading ? <LoadingSpinner size="sm" text="" /> : 'Sign In'}
           </button>
         </form>
         <div className="grid grid-cols-2 gap-2">
-          <button type="button" onClick={() => onOAuth('google')} className="app-action-secondary rounded-lg py-2 text-sm disabled:opacity-60" disabled={isLoading}>
+          <button
+            type="button"
+            onClick={() => onOAuth('google')}
+            className="border border-gray-300 rounded-md py-2 text-sm hover:bg-gray-50"
+            disabled={isLoading}
+          >
             Google
           </button>
-          <button type="button" onClick={() => onOAuth('azure')} className="app-action-secondary rounded-lg py-2 text-sm disabled:opacity-60" disabled={isLoading}>
+          <button
+            type="button"
+            onClick={() => onOAuth('azure')}
+            className="border border-gray-300 rounded-md py-2 text-sm hover:bg-gray-50"
+            disabled={isLoading}
+          >
             Microsoft
           </button>
         </div>
