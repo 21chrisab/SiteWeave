@@ -2,6 +2,7 @@ import React, { useState, memo } from 'react';
 import Icon from './Icon';
 import DateDropdown from './DateDropdown';
 import PermissionGuard from './PermissionGuard';
+import { addDaysIso, localDateIso } from '../utils/dateHelpers';
 import Avatar from './Avatar';
 
 const TaskItem = memo(function TaskItem({ task, onToggle, onEdit, onDelete, isSelected, onSelect, onOpenPhotos = null }) {
@@ -52,9 +53,45 @@ const TaskItem = memo(function TaskItem({ task, onToggle, onEdit, onDelete, isSe
                         className="w-full p-2 border rounded-lg"
                         placeholder="Task description"
                     />
+                    <div className="flex flex-wrap gap-1.5">
+                        <button
+                            type="button"
+                            onClick={() => {
+                                const t = localDateIso();
+                                setEditStartDate(t);
+                                setEditDueDate(t);
+                            }}
+                            className="rounded-full border border-gray-200 bg-gray-50 px-2.5 py-0.5 text-xs font-medium text-gray-700 hover:bg-gray-100"
+                        >
+                            Today
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => {
+                                const t = localDateIso();
+                                setEditStartDate((s) => s || t);
+                                setEditDueDate(addDaysIso(t, 7) || t);
+                            }}
+                            className="rounded-full border border-gray-200 bg-gray-50 px-2.5 py-0.5 text-xs font-medium text-gray-700 hover:bg-gray-100"
+                        >
+                            +1 week
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => {
+                                const t = localDateIso();
+                                setEditStartDate((s) => s || t);
+                                setEditDueDate(addDaysIso(t, 14) || t);
+                            }}
+                            className="rounded-full border border-gray-200 bg-gray-50 px-2.5 py-0.5 text-xs font-medium text-gray-700 hover:bg-gray-100"
+                        >
+                            +2 weeks
+                        </button>
+                    </div>
                     <div className="flex gap-3 items-end flex-wrap">
                         <div className="flex-1 min-w-[120px]">
                             <DateDropdown 
+                                compact
                                 value={editStartDate} 
                                 onChange={setEditStartDate}
                                 label="Start Date"
@@ -62,6 +99,7 @@ const TaskItem = memo(function TaskItem({ task, onToggle, onEdit, onDelete, isSe
                         </div>
                         <div className="flex-1 min-w-[120px]">
                             <DateDropdown 
+                                compact
                                 value={editDueDate} 
                                 onChange={setEditDueDate}
                                 label="End Date"

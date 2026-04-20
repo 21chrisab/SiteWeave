@@ -3,6 +3,7 @@ import { useAppContext, supabaseClient } from '../context/AppContext';
 import { useToast } from '../context/ToastContext';
 import { createWeatherImpact, listWeatherImpactsForProject } from '@siteweave/core-logic';
 import LoadingSpinner from './LoadingSpinner';
+import DateDropdown from './DateDropdown';
 
 function WeatherImpactModal({ project, onClose }) {
   const { state } = useAppContext();
@@ -95,9 +96,9 @@ function WeatherImpactModal({ project, onClose }) {
               placeholder="Describe what happened"
               className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
             />
-            <div className="grid grid-cols-2 gap-3">
-              <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="rounded-lg border border-gray-300 px-3 py-2 text-sm" />
-              <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="rounded-lg border border-gray-300 px-3 py-2 text-sm" />
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <DateDropdown label="Start date" value={startDate} onChange={setStartDate} />
+              <DateDropdown label="End date" value={endDate} onChange={setEndDate} />
             </div>
             <label className="block text-sm text-gray-700">
               Days lost

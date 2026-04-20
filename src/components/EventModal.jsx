@@ -3,8 +3,10 @@ import { useTranslation } from 'react-i18next';
 import { useAppContext, supabaseClient } from '../context/AppContext';
 import LoadingSpinner from './LoadingSpinner';
 import Icon from './Icon';
+import DateDropdown from './DateDropdown';
 import { parseRecurrence, validateRecurrence } from '../utils/recurrenceService';
 import { getStoredCalendarToken } from '../utils/calendarIntegration';
+import { localDateIso } from '../utils/dateHelpers';
 
 const DEFAULT_CATEGORIES = [
     { id: 'meeting', name: 'Meeting', color: '#3B82F6' },
@@ -402,18 +404,25 @@ function EventModal({ onClose, onSave, onDelete, event = null, date, isLoading =
                     {/* Date and Time - Horizontal Layout */}
                     <div className="pt-3 border-t">
                         <div className="flex items-center gap-3 flex-wrap">
-                            {/* Date Input with Calendar Icon */}
-                            <div className="relative flex-1 min-w-[140px]">
-                                <input 
-                                    type="date" 
-                                    value={startDate} 
-                                    onChange={e => setStartDate(e.target.value)} 
-                                    className="w-full p-2 pr-8 text-sm border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                                    required
-                                />
-                                <Icon 
-                                    path="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5a2.25 2.25 0 002.25-2.25m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5a2.25 2.25 0 012.25 2.25v7.5"
-                                    className="absolute right-2 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none"
+                            <div className="flex flex-col gap-1.5 min-w-[200px] flex-1">
+                                <div className="flex flex-wrap items-center gap-2">
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            const t = localDateIso();
+                                            setStartDate(t);
+                                            setEndDate(t);
+                                        }}
+                                        className="rounded-full border border-gray-200 bg-gray-50 px-2.5 py-0.5 text-xs font-medium text-gray-700 hover:bg-gray-100"
+                                    >
+                                        Today
+                                    </button>
+                                </div>
+                                <DateDropdown
+                                    compact
+                                    value={startDate}
+                                    onChange={(v) => setStartDate(v)}
+                                    label="Date"
                                 />
                             </div>
                             
@@ -630,12 +639,12 @@ function EventModal({ onClose, onSave, onDelete, event = null, date, isLoading =
                                     </select>
 
                                     {recurrenceEndType === 'until' && (
-                                        <input 
-                                            type="date" 
-                                            value={recurrenceEndDate} 
-                                            onChange={e => setRecurrenceEndDate(e.target.value)}
-                                            className="w-full p-1.5 text-sm border rounded-lg focus:ring-2 focus:ring-blue-500"
-                                            required
+                                        <DateDropdown
+                                            compact
+                                            value={recurrenceEndDate}
+                                            onChange={setRecurrenceEndDate}
+                                            label="Until date"
+                                            className="mt-1"
                                         />
                                     )}
 

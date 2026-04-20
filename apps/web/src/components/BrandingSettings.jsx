@@ -241,8 +241,9 @@ function BrandingSettings({ compact = false }) {
               : <span style={{ color: '#fff', fontSize: '13px', opacity: 0.8 }}>Your logo here</span>}
           </div>
           <div style={{ padding: '16px', backgroundColor: '#fff' }}>
-            <p style={{ margin: 0, color: branding.primary_color, fontWeight: 600, fontSize: '14px' }}>
-              Progress Update · Sample Project
+            <p style={{ margin: 0, fontWeight: 600, fontSize: '14px', color: '#111827' }}>
+              Progress Update <span style={{ color: '#9ca3af' }}>—</span>{' '}
+              <span style={{ color: branding.primary_color }}>Sample Project</span>
             </p>
             <p style={{ margin: '6px 0 0', color: branding.secondary_color, fontSize: '13px' }}>
               ✓ 5 tasks completed this period

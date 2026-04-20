@@ -2,8 +2,18 @@ import React, { useState } from 'react';
 import { useAppContext } from '../context/AppContext';
 import LoadingSpinner from './LoadingSpinner';
 import DateDropdown from './DateDropdown';
-import { parseRecurrence, validateRecurrence } from '../utils/recurrenceService';
+import DateRangePicker from './DateRangePicker';
+import TaskDependencyCombobox from './TaskDependencyCombobox';
+import { validateRecurrence } from '../utils/recurrenceService';
+import { addDaysIso, localDateIso } from '../utils/dateHelpers';
 import PermissionGuard from './PermissionGuard';
+
+const fieldClass =
+    'w-full rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-sm text-gray-900 placeholder:text-gray-400 shadow-xs transition focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20';
+const labelClass = 'block text-xs font-medium text-gray-600 mb-1.5';
+const selectClass = `${fieldClass} cursor-pointer appearance-none bg-white`;
+const chipClass =
+    'rounded-full border border-gray-200 bg-white px-3 py-1 text-xs font-medium text-gray-700 shadow-xs transition hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20';
 
 function TaskModal({ project, onClose, onSave, isLoading = false, allTasks = [] }) {
     const { state } = useAppContext();
@@ -13,7 +23,6 @@ function TaskModal({ project, onClose, onSave, isLoading = false, allTasks = [] 
     const [priority, setPriority] = useState('Medium');
     const [assigneeId, setAssigneeId] = useState('');
     
-    // Recurrence state
     const [isRecurring, setIsRecurring] = useState(false);
     const [recurrencePattern, setRecurrencePattern] = useState('weekly');
     const [recurrenceInterval, setRecurrenceInterval] = useState(1);
@@ -22,15 +31,11 @@ function TaskModal({ project, onClose, onSave, isLoading = false, allTasks = [] 
     const [recurrenceEndDate, setRecurrenceEndDate] = useState('');
     const [recurrenceOccurrences, setRecurrenceOccurrences] = useState(10);
     const [selectedPredecessorTaskIds, setSelectedPredecessorTaskIds] = useState([]);
-    
 
-    // Get contacts assigned to this project
     const projectContacts = state.contacts.filter(contact =>
         contact.project_contacts && contact.project_contacts.some(pc => pc.project_id === project.id)
     );
     
-    // Also include org admins even if not in project_contacts
-    // This allows org admins to be assigned tasks on any project in their organization
     const orgAdmins = state.contacts.filter(contact =>
         contact.is_internal &&
         contact.organization_id === project.organization_id &&
@@ -38,17 +43,14 @@ function TaskModal({ project, onClose, onSave, isLoading = false, allTasks = [] 
         contact.role_name.toLowerCase() === 'org admin'
     );
     
-    // Combine and deduplicate by contact id
     const allAssignableContacts = [
         ...projectContacts,
         ...orgAdmins.filter(admin => !projectContacts.some(pc => pc.id === admin.id))
     ];
-    
 
     const handleSubmit = (e) => {
         e.preventDefault();
         
-        // Build recurrence JSON if recurring
         let recurrenceJson = null;
         if (isRecurring) {
             const recurrence = {
@@ -69,13 +71,10 @@ function TaskModal({ project, onClose, onSave, isLoading = false, allTasks = [] 
             recurrenceJson = JSON.stringify(recurrence);
         }
         
-        // Ensure assignee_id is either null or a valid UUID
         let validAssigneeId = null;
         if (assigneeId && assigneeId.trim() !== '') {
-            // Validate it's a valid UUID format
             const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
             if (uuidRegex.test(assigneeId)) {
-                // Verify the contact exists in assignable contacts (project contacts or org admins)
                 const contactExists = allAssignableContacts.some(c => c.id === assigneeId);
                 if (contactExists) {
                     validAssigneeId = assigneeId;
@@ -98,103 +97,153 @@ function TaskModal({ project, onClose, onSave, isLoading = false, allTasks = [] 
         });
     };
 
+    const datePresets = (
+        <>
+            <button
+                type="button"
+                onClick={() => {
+                    const t = localDateIso();
+                    setStartDate(t);
+                    setDueDate(t);
+                }}
+                className={chipClass}
+            >
+                Today
+            </button>
+            <button
+                type="button"
+                onClick={() => {
+                    const t = localDateIso();
+                    setStartDate((s) => s || t);
+                    setDueDate(addDaysIso(t, 7) || t);
+                }}
+                className={chipClass}
+            >
+                +1 week
+            </button>
+            <button
+                type="button"
+                onClick={() => {
+                    const t = localDateIso();
+                    setStartDate((s) => s || t);
+                    setDueDate(addDaysIso(t, 14) || t);
+                }}
+                className={chipClass}
+            >
+                +2 weeks
+            </button>
+        </>
+    );
 
     return (
-        <div className="fixed inset-0 backdrop-blur-[2px] bg-white/20 flex items-center justify-center z-50">
-            <div className="bg-white rounded-lg shadow-2xl p-8 w-full max-w-md">
-                <h2 className="text-2xl font-bold mb-6">Create New Task for {project.name}</h2>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/10 p-4 backdrop-blur-[2px]">
+            <div className="max-h-[92vh] w-full max-w-4xl overflow-y-auto rounded-xl bg-white p-6 shadow-2xl sm:p-8">
+                <h2 className="mb-6 text-xl font-semibold tracking-tight text-gray-900">
+                    Create New Task for {project.name}
+                </h2>
                 <form onSubmit={handleSubmit}>
-                    <div className="mb-4">
-                        <label className="block text-sm font-semibold mb-1 text-gray-600">Task Description</label>
-                        <input type="text" value={text} onChange={e => setText(e.target.value)} className="w-full p-2 border rounded-lg" required />
-                    </div>
-                    <DateDropdown 
-                        value={startDate} 
-                        onChange={setStartDate} 
-                        label="Start Date"
-                        className="mb-4"
-                    />
-                    <DateDropdown 
-                        value={dueDate} 
-                        onChange={setDueDate} 
-                        label="End Date"
-                        className="mb-4"
-                    />
-                    <div className="mb-4">
-                        <label className="block text-sm font-semibold mb-1 text-gray-600">Priority</label>
-                        <select value={priority} onChange={e => setPriority(e.target.value)} className="w-full p-2 border rounded-lg bg-white">
-                            <option>Low</option>
-                            <option>Medium</option>
-                            <option>High</option>
-                        </select>
-                    </div>
-                    <div className="mb-4">
-                        <label className="block text-sm font-semibold mb-1 text-gray-600">Dependencies (Finish-to-Start)</label>
-                        <select
-                            multiple
-                            value={selectedPredecessorTaskIds}
-                            onChange={(e) => {
-                                const values = Array.from(e.target.selectedOptions).map((option) => option.value);
-                                setSelectedPredecessorTaskIds(values);
-                            }}
-                            className="w-full p-2 border rounded-lg bg-white min-h-[96px]"
-                        >
-                            {allTasks.map((task) => (
-                                <option key={task.id} value={task.id}>
-                                    {task.text}
-                                </option>
-                            ))}
-                        </select>
-                        <p className="text-xs text-gray-500 mt-1">
-                            Selected tasks must finish before this task can start.
-                        </p>
-                    </div>
-                    <PermissionGuard permission="can_assign_tasks">
-                        <div className="mb-6">
-                            <label className="block text-sm font-semibold mb-1 text-gray-600">Assignee</label>
-                            <select value={assigneeId} onChange={e => setAssigneeId(e.target.value)} className="w-full p-2 border rounded-lg bg-white">
-                                <option value="">Unassigned</option>
-                                {allAssignableContacts.length > 0 ? (
-                                    allAssignableContacts.map(contact => (
-                                        <option key={contact.id} value={contact.id}>
-                                            {contact.name}
-                                            {orgAdmins.some(admin => admin.id === contact.id) && !projectContacts.some(pc => pc.id === contact.id) && ' (Admin)'}
-                                        </option>
-                                    ))
-                                ) : (
-                                    <option value="" disabled>No team members assigned to this project</option>
-                                )}
-                            </select>
-                            {allAssignableContacts.length === 0 && (
-                                <p className="text-xs text-gray-500 mt-1">
-                                    Add team members to this project first using the "+ Add Team Member" button
-                                </p>
-                            )}
+                    <div className="grid gap-8 lg:grid-cols-[1fr,minmax(280px,340px)]">
+                        <div className="min-w-0 space-y-5">
+                            <div>
+                                <label className={labelClass} htmlFor="web-task-description">Task Description</label>
+                                <input
+                                    id="web-task-description"
+                                    type="text"
+                                    value={text}
+                                    onChange={(e) => setText(e.target.value)}
+                                    className={fieldClass}
+                                    required
+                                />
+                            </div>
+
+                            <DateRangePicker
+                                label="Schedule"
+                                startValue={startDate}
+                                endValue={dueDate}
+                                onChange={({ start, end }) => {
+                                    setStartDate(start);
+                                    setDueDate(end);
+                                }}
+                                presets={datePresets}
+                            />
                         </div>
-                    </PermissionGuard>
+
+                        <aside className="h-fit space-y-4 rounded-xl border border-gray-200 bg-gray-50/90 p-5 lg:sticky lg:top-0">
+                            <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-500">Details</p>
+
+                            <PermissionGuard permission="can_assign_tasks">
+                                <div>
+                                    <label className={labelClass} htmlFor="web-task-assignee">Assignee</label>
+                                    <select
+                                        id="web-task-assignee"
+                                        value={assigneeId}
+                                        onChange={(e) => setAssigneeId(e.target.value)}
+                                        className={selectClass}
+                                    >
+                                        <option value="">Unassigned</option>
+                                        {allAssignableContacts.length > 0 ? (
+                                            allAssignableContacts.map(contact => (
+                                                <option key={contact.id} value={contact.id}>
+                                                    {contact.name}
+                                                    {orgAdmins.some(admin => admin.id === contact.id) && !projectContacts.some(pc => pc.id === contact.id) && ' (Admin)'}
+                                                </option>
+                                            ))
+                                        ) : (
+                                            <option value="" disabled>No team members assigned to this project</option>
+                                        )}
+                                    </select>
+                                    {allAssignableContacts.length === 0 && (
+                                        <p className="mt-1.5 text-xs text-gray-500">
+                                            Add team members to this project first using the &quot;+ Add Team Member&quot; button
+                                        </p>
+                                    )}
+                                </div>
+                            </PermissionGuard>
+
+                            <div>
+                                <label className={labelClass} htmlFor="web-task-priority">Priority</label>
+                                <select
+                                    id="web-task-priority"
+                                    value={priority}
+                                    onChange={(e) => setPriority(e.target.value)}
+                                    className={selectClass}
+                                >
+                                    <option>Low</option>
+                                    <option>Medium</option>
+                                    <option>High</option>
+                                </select>
+                            </div>
+
+                            <TaskDependencyCombobox
+                                allTasks={allTasks}
+                                selectedIds={selectedPredecessorTaskIds}
+                                onChange={setSelectedPredecessorTaskIds}
+                                inputClassName={fieldClass}
+                            />
+                        </aside>
+                    </div>
                     
-                    {/* Recurrence Section */}
-                    <div className="mb-6 space-y-4 pt-4 border-t">
+                    <div className="mt-8 space-y-4 border-t border-gray-200 pt-6">
                         <div className="flex items-center gap-2">
                             <input 
                                 type="checkbox" 
                                 id="isRecurringTask" 
                                 checked={isRecurring} 
-                                onChange={e => setIsRecurring(e.target.checked)}
-                                className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                                onChange={(e) => setIsRecurring(e.target.checked)}
+                                className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                             />
-                            <label htmlFor="isRecurringTask" className="text-sm font-semibold text-gray-600">Repeat Task</label>
+                            <label htmlFor="isRecurringTask" className="text-sm font-medium text-gray-600">Repeat Task</label>
                         </div>
 
                         {isRecurring && (
-                            <div className="ml-6 space-y-4 bg-gray-50 p-4 rounded-lg">
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div className="ml-0 space-y-4 rounded-lg border border-gray-200 bg-gray-50/80 p-4 sm:ml-6">
+                                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                                     <div>
-                                        <label className="block text-sm font-semibold mb-1 text-gray-600">Pattern</label>
+                                        <label className={labelClass}>Pattern</label>
                                         <select 
                                             value={recurrencePattern} 
-                                            onChange={e => setRecurrencePattern(e.target.value)}
-                                            className="w-full p-2 border rounded-lg bg-white focus:ring-2 focus:ring-blue-500"
+                                            onChange={(e) => setRecurrencePattern(e.target.value)}
+                                            className={selectClass}
                                         >
                                             <option value="daily">Daily</option>
                                             <option value="weekly">Weekly</option>
@@ -205,14 +254,14 @@ function TaskModal({ project, onClose, onSave, isLoading = false, allTasks = [] 
                                     </div>
                                     
                                     <div>
-                                        <label className="block text-sm font-semibold mb-1 text-gray-600">Repeat Every</label>
+                                        <label className={labelClass}>Repeat Every</label>
                                         <div className="flex items-center gap-2">
                                             <input 
                                                 type="number" 
                                                 min="1" 
                                                 value={recurrenceInterval} 
-                                                onChange={e => setRecurrenceInterval(parseInt(e.target.value) || 1)}
-                                                className="w-20 p-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                                                onChange={(e) => setRecurrenceInterval(parseInt(e.target.value, 10) || 1)}
+                                                className={`${fieldClass} w-20`}
                                             />
                                             <span className="text-sm text-gray-600">
                                                 {recurrencePattern === 'daily' ? 'day(s)' : 
@@ -226,7 +275,7 @@ function TaskModal({ project, onClose, onSave, isLoading = false, allTasks = [] 
 
                                 {recurrencePattern === 'weekly' && (
                                     <div>
-                                        <label className="block text-sm font-semibold mb-2 text-gray-600">Days of Week</label>
+                                        <label className={`${labelClass} mb-2`}>Days of Week</label>
                                         <div className="flex flex-wrap gap-2">
                                             {[
                                                 { value: 0, label: 'Sun' },
@@ -247,10 +296,10 @@ function TaskModal({ project, onClose, onSave, isLoading = false, allTasks = [] 
                                                             setRecurrenceDaysOfWeek([...recurrenceDaysOfWeek, day.value].sort());
                                                         }
                                                     }}
-                                                    className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                                                    className={`rounded-lg px-3 py-1.5 text-sm font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500/30 ${
                                                         recurrenceDaysOfWeek.includes(day.value)
                                                             ? 'bg-blue-600 text-white'
-                                                            : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'
+                                                            : 'border border-gray-200 bg-white text-gray-700 shadow-xs hover:bg-gray-50'
                                                     }`}
                                                 >
                                                     {day.label}
@@ -261,11 +310,11 @@ function TaskModal({ project, onClose, onSave, isLoading = false, allTasks = [] 
                                 )}
 
                                 <div>
-                                    <label className="block text-sm font-semibold mb-1 text-gray-600">End</label>
+                                    <label className={labelClass}>End</label>
                                     <select 
                                         value={recurrenceEndType} 
-                                        onChange={e => setRecurrenceEndType(e.target.value)}
-                                        className="w-full p-2 border rounded-lg bg-white focus:ring-2 focus:ring-blue-500 mb-2"
+                                        onChange={(e) => setRecurrenceEndType(e.target.value)}
+                                        className={`${selectClass} mb-2`}
                                     >
                                         <option value="never">Never</option>
                                         <option value="until">Until date</option>
@@ -273,12 +322,12 @@ function TaskModal({ project, onClose, onSave, isLoading = false, allTasks = [] 
                                     </select>
 
                                     {recurrenceEndType === 'until' && (
-                                        <input 
-                                            type="date" 
-                                            value={recurrenceEndDate} 
-                                            onChange={e => setRecurrenceEndDate(e.target.value)}
-                                            className="w-full p-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
-                                            required
+                                        <DateDropdown
+                                            value={recurrenceEndDate}
+                                            onChange={setRecurrenceEndDate}
+                                            label="Until date"
+                                            className="mt-1"
+                                            compact
                                         />
                                     )}
 
@@ -288,8 +337,8 @@ function TaskModal({ project, onClose, onSave, isLoading = false, allTasks = [] 
                                                 type="number" 
                                                 min="1" 
                                                 value={recurrenceOccurrences} 
-                                                onChange={e => setRecurrenceOccurrences(parseInt(e.target.value) || 1)}
-                                                className="w-24 p-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                                                onChange={(e) => setRecurrenceOccurrences(parseInt(e.target.value, 10) || 1)}
+                                                className={`${fieldClass} w-24`}
                                                 required
                                             />
                                             <span className="text-sm text-gray-600">occurrences</span>
@@ -304,9 +353,20 @@ function TaskModal({ project, onClose, onSave, isLoading = false, allTasks = [] 
                         )}
                     </div>
                     
-                    <div className="flex justify-end gap-4">
-                        <button type="button" onClick={onClose} disabled={isLoading} className="px-6 py-2 bg-gray-200 text-gray-800 rounded-lg disabled:opacity-50">Cancel</button>
-                        <button type="submit" disabled={isLoading} className="px-6 py-2 text-white bg-blue-600 rounded-lg disabled:opacity-50 flex items-center gap-2">
+                    <div className="mt-8 flex justify-end gap-3">
+                        <button
+                            type="button"
+                            onClick={onClose}
+                            disabled={isLoading}
+                            className="rounded-lg border border-gray-200 bg-white px-5 py-2.5 text-sm font-medium text-gray-700 shadow-xs transition hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20 disabled:opacity-50"
+                        >
+                            Cancel
+                        </button>
+                        <button
+                            type="submit"
+                            disabled={isLoading}
+                            className="flex items-center gap-2 rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-medium text-white shadow-xs transition hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500/30 disabled:opacity-50"
+                        >
                             {isLoading ? (
                                 <>
                                     <LoadingSpinner size="sm" text="" />

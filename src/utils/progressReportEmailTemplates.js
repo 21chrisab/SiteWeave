@@ -11,6 +11,9 @@
 
 import i18n from '../i18n/config';
 
+/** Public URL for progress report header (matches other SiteWeave transactional email). */
+const SITEWEAVE_LOGO_URL = 'https://app.siteweave.org/logo.svg';
+
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
 function escapeHtml(text) {
@@ -42,6 +45,30 @@ function translateToClientFriendly(status) {
   return map[status] || status;
 }
 
+/** SiteWeave mark (optional) + merged title line + reporting period (email-safe table layout). */
+function reportHeaderWithLogo(titleText, headerProjectTitle, primaryColor, period, showSiteweaveLogo) {
+  const accent = primaryColor || '#3B82F6';
+  const logoCell =
+    showSiteweaveLogo !== false
+      ? `<td style="width:52px;vertical-align:top;padding:0 14px 0 0;">
+        <img src="${SITEWEAVE_LOGO_URL}" alt="SiteWeave" width="40" height="40" style="display:block;width:40px;height:40px;border:0;">
+      </td>`
+      : '';
+  return `
+  <table role="presentation" style="width:100%;border-collapse:collapse;margin:0 0 28px;">
+    <tr>
+      ${logoCell}
+      <td style="vertical-align:top;padding:0;">
+        <p style="margin:0;font-size:22px;font-weight:700;color:#111827;line-height:1.3;">
+          ${escapeHtml(titleText)} <span style="color:#9ca3af;font-weight:600;">—</span>
+          <span style="color:${escapeHtml(accent)};font-weight:600;">${escapeHtml(headerProjectTitle)}</span>
+        </p>
+        <p style="margin:8px 0 0;color:#6b7280;font-size:13px;">${escapeHtml(period)}</p>
+      </td>
+    </tr>
+  </table>`;
+}
+
 /** Derive which sections are enabled; default all content sections true, detail flags false. */
 function resolveSections(schedule) {
   const s = schedule?.report_sections || {};
@@ -61,7 +88,16 @@ function resolveSections(schedule) {
     show_weather_impacts:   s.show_weather_impacts  === true,
     include_task_photos:    s.include_task_photos === true,
     client_friendly_labels: s.client_friendly_labels !== false, // default true
+    show_task_phase:        s.show_task_phase === true,
+    show_siteweave_logo:    s.show_siteweave_logo !== false, // default on
   };
+}
+
+/** Small phase label next to a task title when enabled in report_sections. */
+function taskPhaseTagHtml(task, sections, primary) {
+  if (!sections.show_task_phase || !task?.phase_name) return '';
+  const accent = primary || '#3B82F6';
+  return ` <span style="display:inline-block;margin-left:6px;padding:1px 6px;font-size:10px;font-weight:600;color:${escapeHtml(accent)};background-color:#f3f4f6;border-radius:4px;border:1px solid #e5e7eb;white-space:nowrap;vertical-align:middle;line-height:1.25;">${escapeHtml(String(task.phase_name))}</span>`;
 }
 
 // ─── shared email shell ────────────────────────────────────────────────────────
@@ -115,11 +151,11 @@ function vitalsHtml(vitals, primary, secondary) {
   if (vitals.open_tasks_count != null) {
     cells.push({ val: vitals.open_tasks_count, label: 'Open Tasks', color: primary });
   }
-  if (vitals.current_phase) {
+  if (vitals.schedule_day_total != null && vitals.schedule_day_current != null) {
     cells.push({
-      val: vitals.current_phase,
-      subVal: vitals.phase_progress_pct != null ? `${vitals.phase_progress_pct}% complete` : null,
-      label: 'Current Phase',
+      val: `${vitals.schedule_day_current} / ${vitals.schedule_day_total}`,
+      subVal: vitals.schedule_progress_pct != null ? `${vitals.schedule_progress_pct}% through schedule` : null,
+      label: 'General progress',
       color: '#374151',
       isText: true,
     });
@@ -142,7 +178,7 @@ function vitalsHtml(vitals, primary, secondary) {
 
 // ─── lookahead section ─────────────────────────────────────────────────────────
 
-function weeklyPlanHtml(reportData, primary) {
+function weeklyPlanHtml(reportData, primary, sections) {
   const lastWeek = reportData.last_week_done || [];
   const thisWeek = reportData.this_week_plan || [];
   const nextWeek = reportData.next_week_plan || [];
@@ -160,19 +196,19 @@ function weeklyPlanHtml(reportData, primary) {
     <div style="margin-bottom:14px;">
       <p style="margin:0 0 6px;color:#065f46;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.04em;">We did this last week</p>
       ${lastWeek.length
-        ? `<ul style="margin:0;padding-left:18px;color:#374151;">${lastWeek.map((task) => `<li style="margin-bottom:6px;font-size:13px;line-height:1.5;">${escapeHtml(task.text || 'Task')}</li>`).join('')}</ul>`
+        ? `<ul style="margin:0;padding-left:18px;color:#374151;">${lastWeek.map((task) => `<li style="margin-bottom:6px;font-size:13px;line-height:1.5;">${escapeHtml(task.text || 'Task')}${taskPhaseTagHtml(task, sections, primary)}</li>`).join('')}</ul>`
         : '<p style="margin:0;color:#6b7280;font-size:13px;">No completed tasks in the last week.</p>'}
     </div>
     <div style="margin-bottom:14px;">
       <p style="margin:0 0 6px;color:#1e3a8a;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.04em;">Here is what we are doing this week</p>
       ${thisWeek.length
-        ? `<ul style="margin:0;padding-left:18px;color:#374151;">${thisWeek.map((task) => `<li style="margin-bottom:6px;font-size:13px;line-height:1.5;">${escapeHtml(task.text || 'Task')}${task.start_date ? `<span style="color:#9ca3af;font-size:11px;"> (starts ${escapeHtml(String(task.start_date))})</span>` : ''}</li>`).join('')}</ul>`
+        ? `<ul style="margin:0;padding-left:18px;color:#374151;">${thisWeek.map((task) => `<li style="margin-bottom:6px;font-size:13px;line-height:1.5;">${escapeHtml(task.text || 'Task')}${taskPhaseTagHtml(task, sections, primary)}${task.start_date ? `<span style="color:#9ca3af;font-size:11px;"> (starts ${escapeHtml(String(task.start_date))})</span>` : ''}</li>`).join('')}</ul>`
         : '<p style="margin:0;color:#6b7280;font-size:13px;">No tasks scheduled this week.</p>'}
     </div>
     <div>
       <p style="margin:0 0 6px;color:#3730a3;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.04em;">Here is what we will do next week</p>
       ${nextWeek.length
-        ? `<ul style="margin:0;padding-left:18px;color:#374151;">${nextWeek.map((task) => `<li style="margin-bottom:6px;font-size:13px;line-height:1.5;">${escapeHtml(task.text || 'Task')}${task.start_date ? `<span style="color:#9ca3af;font-size:11px;"> (starts ${escapeHtml(String(task.start_date))})</span>` : ''}</li>`).join('')}</ul>`
+        ? `<ul style="margin:0;padding-left:18px;color:#374151;">${nextWeek.map((task) => `<li style="margin-bottom:6px;font-size:13px;line-height:1.5;">${escapeHtml(task.text || 'Task')}${taskPhaseTagHtml(task, sections, primary)}${task.start_date ? `<span style="color:#9ca3af;font-size:11px;"> (starts ${escapeHtml(String(task.start_date))})</span>` : ''}</li>`).join('')}</ul>`
         : '<p style="margin:0;color:#6b7280;font-size:13px;">No tasks scheduled for next week.</p>'}
     </div>
   </div>`;
@@ -253,7 +289,7 @@ export function generateStandardReportEmail(reportData, schedule, branding) {
           <p style="margin:0 0 8px;color:#374151;font-size:13px;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;">Open work</p>
           <ul style="margin:0 0 16px;padding-left:18px;color:#374151;">
             ${snap.open_tasks.map(ot => `<li style="margin-bottom:5px;font-size:13px;line-height:1.5;">
-              ${escapeHtml(ot.text || 'Task')}
+              ${escapeHtml(ot.text || 'Task')}${taskPhaseTagHtml(ot, sections, primary)}
               ${ot.due_date ? `<span style="color:#9ca3af;font-size:11px;"> — due ${escapeHtml(String(ot.due_date))}</span>` : ''}
               ${showTaskPhotos && ot.photos?.length ? taskPhotosHtml(ot.photos) : ''}
             </li>`).join('')}
@@ -282,7 +318,7 @@ export function generateStandardReportEmail(reportData, schedule, branding) {
                 <div style="display:flex;align-items:flex-start;gap:8px;font-size:14px;color:#374151;line-height:1.5;">
                   <span style="color:${secondary};font-weight:700;flex-shrink:0;">✓</span>
                   <div style="flex:1;">
-                    <p style="margin:0;font-size:14px;color:#374151;font-weight:600;">${escapeHtml(task.text || task.title)}</p>
+                    <p style="margin:0;font-size:14px;color:#374151;font-weight:600;">${escapeHtml(task.text || task.title)}${taskPhaseTagHtml(task, sections, primary)}</p>
                     <p style="margin:4px 0 0;color:#9ca3af;font-size:11px;">
                       ${task.assignee ? `@${escapeHtml(task.assignee)}` : ''}
                       ${task.assignee && task.completed_at ? ' · ' : ''}
@@ -297,7 +333,7 @@ export function generateStandardReportEmail(reportData, schedule, branding) {
               ${reportData.completed_tasks.map(task => `
                 <tr style="border-bottom:1px solid #f3f4f6;">
                   <td style="padding:8px 8px 8px 0;width:20px;color:${secondary};font-weight:700;">✓</td>
-                  <td style="padding:8px 0;font-size:14px;color:#374151;">${escapeHtml(task.text || task.title)}</td>
+                  <td style="padding:8px 0;font-size:14px;color:#374151;">${escapeHtml(task.text || task.title)}${taskPhaseTagHtml(task, sections, primary)}</td>
                   ${sections.show_assignees && task.assignee
                     ? `<td style="padding:8px 0 8px 8px;font-size:12px;color:#9ca3af;text-align:right;white-space:nowrap;">@${escapeHtml(task.assignee)}</td>`
                     : '<td></td>'}
@@ -310,7 +346,7 @@ export function generateStandardReportEmail(reportData, schedule, branding) {
               ${reportData.completed_tasks.map(task => `
                 <li style="padding:7px 0;border-bottom:1px solid #f3f4f6;display:flex;align-items:flex-start;gap:8px;font-size:14px;color:#374151;line-height:1.5;">
                   <span style="color:${secondary};font-weight:700;flex-shrink:0;">✓</span>
-                  <span>${escapeHtml(task.text || task.title)}</span>
+                  <span>${escapeHtml(task.text || task.title)}${taskPhaseTagHtml(task, sections, primary)}</span>
                 </li>`).join('')}
             </ul>`}
       </div>`
@@ -318,9 +354,7 @@ export function generateStandardReportEmail(reportData, schedule, branding) {
 
   const headerProjectTitle = reportData.project_name || reportData.organization_name || 'Project';
   let body = `
-    <h1 style="color:#111827;font-size:22px;font-weight:700;margin:0 0 6px;">Progress Update</h1>
-    <p style="color:#1d4ed8;font-size:16px;font-weight:600;margin:0 0 8px;">${escapeHtml(headerProjectTitle)}</p>
-    <p style="color:#6b7280;font-size:13px;margin:0 0 28px;">${escapeHtml(period)}</p>
+    ${reportHeaderWithLogo('Progress Update', headerProjectTitle, primary, period, sections.show_siteweave_logo)}
 
     ${schedule.custom_message ? `
     <div style="background-color:#f0f9ff;border-left:4px solid ${secondary};padding:14px 16px;margin-bottom:28px;border-radius:0 4px 4px 0;">
@@ -373,7 +407,7 @@ export function generateStandardReportEmail(reportData, schedule, branding) {
 
     ${snapshotSection}
 
-    ${sections.weekly_plan ? weeklyPlanHtml(reportData, primary) : ''}
+    ${sections.weekly_plan ? weeklyPlanHtml(reportData, primary, sections) : ''}
 
     ${sections.show_weather_impacts && reportData.weather_impacts?.length ? weatherImpactsHtml(reportData, primary) : ''}
 
@@ -413,9 +447,7 @@ export function generateExecutiveReportEmail(reportData, schedule, branding) {
 
   const headerProjectTitle = reportData.project_name || reportData.organization_name || 'Organization';
   let body = `
-    <h1 style="color:#111827;font-size:22px;font-weight:700;margin:0 0 6px;">Executive Brief</h1>
-    <p style="color:#1d4ed8;font-size:16px;font-weight:600;margin:0 0 8px;">${escapeHtml(headerProjectTitle)}</p>
-    <p style="color:#6b7280;font-size:13px;margin:0 0 28px;">${escapeHtml(period)}</p>
+    ${reportHeaderWithLogo('Executive Brief', headerProjectTitle, primary, period, sections.show_siteweave_logo)}
 
     ${reportData.executive_summary ? `
     <div style="background-color:#f0f9ff;border-left:4px solid ${primary};padding:18px 20px;margin-bottom:28px;border-radius:0 4px 4px 0;">
@@ -495,6 +527,9 @@ export function generateExecutiveReportEmail(reportData, schedule, branding) {
 // ─── plain-text fallback ──────────────────────────────────────────────────────
 
 function generateTextVersion(reportData, schedule, period) {
+  const sections = resolveSections(schedule);
+  const phaseTxt = (t) => (sections.show_task_phase && t?.phase_name ? ` [${t.phase_name}]` : '');
+
   let text = `${schedule.custom_subject || 'Progress Report'}\n\n`;
   text += `${period}\n\n`;
 
@@ -504,7 +539,11 @@ function generateTextVersion(reportData, schedule, period) {
     const v = reportData.vitals;
     if (v.tasks_completed_count != null) text += `Total completed: ${v.tasks_completed_count}\n`;
     if (v.open_tasks_count != null)      text += `Open tasks: ${v.open_tasks_count}\n`;
-    if (v.current_phase)                 text += `Current phase: ${v.current_phase}${v.phase_progress_pct != null ? ` (${v.phase_progress_pct}%)` : ''}\n`;
+    if (v.schedule_day_total != null && v.schedule_day_current != null) {
+      text += `General progress: ${v.schedule_day_current} / ${v.schedule_day_total} days`;
+      if (v.schedule_progress_pct != null) text += ` (${v.schedule_progress_pct}% through schedule)`;
+      text += '\n';
+    }
     text += '\n';
   }
 
@@ -523,7 +562,7 @@ function generateTextVersion(reportData, schedule, period) {
   if (reportData.completed_tasks?.length) {
     text += `Completed this period:\n`;
     reportData.completed_tasks.forEach(t => {
-      text += `- ✓ ${t.text || t.title}${t.assignee ? ` (@${t.assignee})` : ''}${t.photos?.length ? ` [${t.photos.length} photo(s)]` : ''}\n`;
+      text += `- ✓ ${t.text || t.title}${phaseTxt(t)}${t.assignee ? ` (@${t.assignee})` : ''}${t.photos?.length ? ` [${t.photos.length} photo(s)]` : ''}\n`;
     });
     text += '\n';
   }
@@ -536,7 +575,6 @@ function generateTextVersion(reportData, schedule, period) {
     text += '\n';
   }
 
-  const sections = resolveSections(schedule);
   if (sections.show_weather_impacts && reportData.weather_impacts?.length) {
     text += `Weather & schedule impacts:\n`;
     reportData.weather_impacts.forEach((w) => {
@@ -551,7 +589,7 @@ function generateTextVersion(reportData, schedule, period) {
     text += `We did this last week:\n`;
     if (reportData.last_week_done?.length) {
       reportData.last_week_done.forEach((t) => {
-        text += `- ${t.text || 'Task'}\n`;
+        text += `- ${t.text || 'Task'}${phaseTxt(t)}\n`;
       });
     } else {
       text += `- No completed tasks in the last week.\n`;
@@ -559,7 +597,7 @@ function generateTextVersion(reportData, schedule, period) {
     text += `\nHere's what we are doing this week:\n`;
     if (reportData.this_week_plan?.length) {
       reportData.this_week_plan.forEach((t) => {
-        text += `- ${t.text || 'Task'}${t.start_date ? ` (starts ${t.start_date})` : ''}\n`;
+        text += `- ${t.text || 'Task'}${phaseTxt(t)}${t.start_date ? ` (starts ${t.start_date})` : ''}\n`;
       });
     } else {
       text += `- No tasks scheduled this week.\n`;
@@ -567,7 +605,7 @@ function generateTextVersion(reportData, schedule, period) {
     text += `\nHere's what we will do next week:\n`;
     if (reportData.next_week_plan?.length) {
       reportData.next_week_plan.forEach((t) => {
-        text += `- ${t.text || 'Task'}${t.start_date ? ` (starts ${t.start_date})` : ''}\n`;
+        text += `- ${t.text || 'Task'}${phaseTxt(t)}${t.start_date ? ` (starts ${t.start_date})` : ''}\n`;
       });
     } else {
       text += `- No tasks scheduled for next week.\n`;
@@ -584,7 +622,7 @@ function generateTextVersion(reportData, schedule, period) {
   if (!hasAct && snap) {
     text += `No activity recorded this window.\n`;
     text += `Snapshot: ${snap.open_total ?? 0} open, ${snap.completed_total ?? 0} completed overall.\n\n`;
-    snap.open_tasks?.forEach(ot => { text += `- ${ot.text || 'Task'}\n`; });
+    snap.open_tasks?.forEach(ot => { text += `- ${ot.text || 'Task'}${phaseTxt(ot)}\n`; });
     snap.phases?.forEach(ph => { text += `- ${ph.name}: ${ph.progress || 0}%\n`; });
   }
 

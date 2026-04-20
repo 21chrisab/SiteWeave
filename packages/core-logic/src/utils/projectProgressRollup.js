@@ -89,6 +89,50 @@ export function computeWeightedProjectProgressPercent(phases, projectDueDate) {
 }
 
 /**
+ * Calendar span from earliest phase start to latest phase end (after {@link attachFallbackPhaseDates}),
+ * with day counts and a linear % through that window. Returns null if the window cannot be determined.
+ *
+ * @param {Array<{ progress?: number|null, start_date?: string|null, end_date?: string|null, order?: number }>} phases
+ * @param {string|null|undefined} projectDueDate
+ * @param {Date} [now]
+ * @returns {{ schedule_day_current: number, schedule_day_total: number, schedule_progress_pct: number } | null}
+ */
+export function computeProjectScheduleTimeline(phases, projectDueDate, now = new Date()) {
+  if (!phases || phases.length === 0) return null;
+
+  const sorted = [...phases].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+  const normalized = attachFallbackPhaseDates(sorted, projectDueDate);
+
+  let minStart = null;
+  let maxEnd = null;
+  for (const p of normalized) {
+    const s = toUtcDate(p.start_date);
+    const e = toUtcDate(p.end_date);
+    if (s && e) {
+      if (!minStart || s < minStart) minStart = s;
+      if (!maxEnd || e > maxEnd) maxEnd = e;
+    }
+  }
+  if (!minStart || !maxEnd) return null;
+
+  const totalMs = maxEnd.getTime() - minStart.getTime();
+  const totalDays = Math.max(1, Math.floor(totalMs / MS_PER_DAY));
+
+  const today = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+
+  let elapsedDays = Math.floor((today.getTime() - minStart.getTime()) / MS_PER_DAY);
+  elapsedDays = Math.max(0, Math.min(totalDays, elapsedDays));
+
+  const schedule_progress_pct = Math.max(0, Math.min(100, Math.round((elapsedDays / totalDays) * 100)));
+
+  return {
+    schedule_day_current: elapsedDays,
+    schedule_day_total: totalDays,
+    schedule_progress_pct,
+  };
+}
+
+/**
  * Group phase rows from a batched query by project_id (sorted by order).
  * @param {Array<{ project_id: string, order?: number }>} rows
  * @returns {Record<string, Array>}

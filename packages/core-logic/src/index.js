@@ -4,6 +4,7 @@ export * from './supabase/client.js';
 // Progress rollup (duration-weighted; prefers stored phase progress)
 export {
   computeWeightedProjectProgressPercent,
+  computeProjectScheduleTimeline,
   groupPhasesByProjectId,
 } from './utils/projectProgressRollup.js';
 

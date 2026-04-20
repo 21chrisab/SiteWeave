@@ -11,6 +11,7 @@ function TaskPhotoManager({
   onDeletePhoto,
   onMovePhoto,
   emptyMessage = 'No task photos yet.',
+  className = '',
 }) {
   const inputRef = useRef(null);
 
@@ -35,7 +36,7 @@ function TaskPhotoManager({
       : null;
 
   return (
-    <div className="mt-3 rounded-lg border border-gray-200 bg-white/70 p-3">
+    <div className={`mt-3 rounded-lg border border-gray-200 bg-white/70 p-3 ${className}`.trim()}>
       {isBusy && uploadProgress && (
         <div className="mb-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
           <p className="font-medium">{progressLabel || 'Uploading…'}</p>
@@ -68,7 +69,7 @@ function TaskPhotoManager({
               type="button"
               onClick={openPicker}
               disabled={isBusy}
-              className="rounded-md border border-gray-300 px-2.5 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+              className="rounded-md border border-gray-200 px-2.5 py-1 text-xs font-medium text-gray-700 shadow-xs hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20 disabled:cursor-not-allowed disabled:opacity-50"
             >
               Add Photos
             </button>

@@ -2,6 +2,8 @@ import React, { useState, memo, useEffect, useRef, useCallback, useMemo } from '
 import { useTranslation } from 'react-i18next';
 import Icon from './Icon';
 import PermissionGuard from './PermissionGuard';
+import DateDropdown from './DateDropdown';
+import { addDaysIso, localDateIso } from '../utils/dateHelpers';
 
 /** @typedef {null | 'dates' | 'assign' | 'title'} TaskPanel */
 
@@ -484,22 +486,53 @@ const TaskItem = memo(function TaskItem({
                                     </span>
                                 )}
                             </div>
-                            {/* Date inputs */}
-                            <div className="flex items-center gap-2">
-                                <input
-                                    type="date"
+                            <div className="flex flex-wrap gap-1.5">
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        const t = localDateIso();
+                                        setDraftStart(t);
+                                        setDraftDue(t);
+                                    }}
+                                    className="rounded-full border border-gray-200 bg-gray-50 px-2.5 py-0.5 text-xs font-medium text-gray-700 hover:bg-gray-100"
+                                >
+                                    Today
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        const t = localDateIso();
+                                        setDraftStart((s) => s || t);
+                                        setDraftDue(addDaysIso(t, 7) || t);
+                                    }}
+                                    className="rounded-full border border-gray-200 bg-gray-50 px-2.5 py-0.5 text-xs font-medium text-gray-700 hover:bg-gray-100"
+                                >
+                                    +1 week
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        const t = localDateIso();
+                                        setDraftStart((s) => s || t);
+                                        setDraftDue(addDaysIso(t, 14) || t);
+                                    }}
+                                    className="rounded-full border border-gray-200 bg-gray-50 px-2.5 py-0.5 text-xs font-medium text-gray-700 hover:bg-gray-100"
+                                >
+                                    +2 weeks
+                                </button>
+                            </div>
+                            <div className="space-y-2">
+                                <DateDropdown
+                                    compact
+                                    label="Start"
                                     value={draftStart}
-                                    onChange={(e) => setDraftStart(e.target.value)}
-                                    className="flex-1 min-w-0 rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-                                    aria-label="Start date"
+                                    onChange={setDraftStart}
                                 />
-                                <span className="text-gray-400 text-sm">→</span>
-                                <input
-                                    type="date"
+                                <DateDropdown
+                                    compact
+                                    label="Due"
                                     value={draftDue}
-                                    onChange={(e) => setDraftDue(e.target.value)}
-                                    className="flex-1 min-w-0 rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-                                    aria-label="End date"
+                                    onChange={setDraftDue}
                                 />
                             </div>
                             {/* Action row */}

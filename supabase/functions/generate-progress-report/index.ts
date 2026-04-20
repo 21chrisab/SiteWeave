@@ -13,6 +13,87 @@ const corsHeaders = {
 const TASK_PHOTO_SIGNED_URL_TTL_SECONDS = 60 * 60 * 24 * 7
 const MAX_REPORT_PHOTOS_PER_TASK = 3
 
+const MS_PER_DAY = 24 * 60 * 60 * 1000
+
+function toUtcDateBound(dateString: string | null | undefined): Date | null {
+  if (!dateString) return null
+  const parsed = new Date(`${dateString}T00:00:00Z`)
+  return Number.isNaN(parsed.getTime()) ? null : parsed
+}
+
+function attachFallbackPhaseDatesForTimeline(phases: any[], projectDueDate: string | null | undefined): any[] {
+  if (!Array.isArray(phases) || phases.length === 0) return []
+  const hasAnyDate = phases.some((phase) => phase.start_date && phase.end_date)
+  if (hasAnyDate) return phases
+
+  const today = new Date()
+  const start = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()))
+  const due = toUtcDateBound(projectDueDate ?? null)
+  const fallbackEnd =
+    due && due > start ? due : new Date(start.getTime() + phases.length * MS_PER_DAY)
+  const totalDays = Math.max(1, Math.floor((fallbackEnd.getTime() - start.getTime()) / MS_PER_DAY))
+
+  return phases.map((phase, index) => {
+    const rangeStartOffset = Math.floor((index * totalDays) / phases.length)
+    const rangeEndOffset = Math.floor(((index + 1) * totalDays) / phases.length)
+    const phaseStart = new Date(start.getTime() + rangeStartOffset * MS_PER_DAY)
+    const phaseEnd = new Date(
+      start.getTime() + Math.max(rangeStartOffset + 1, rangeEndOffset) * MS_PER_DAY,
+    )
+    return {
+      ...phase,
+      start_date: phase.start_date || phaseStart.toISOString().slice(0, 10),
+      end_date: phase.end_date || phaseEnd.toISOString().slice(0, 10),
+    }
+  })
+}
+
+/** Keep in sync with packages/core-logic `computeProjectScheduleTimeline` (projectProgressRollup.js). */
+function computeProjectScheduleTimeline(
+  phases: any[],
+  projectDueDate: string | null | undefined,
+  now: Date,
+): { schedule_day_current: number; schedule_day_total: number; schedule_progress_pct: number } | null {
+  if (!phases || phases.length === 0) return null
+
+  const sorted = [...phases].sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
+  const normalized = attachFallbackPhaseDatesForTimeline(sorted, projectDueDate)
+
+  let minStart: Date | null = null
+  let maxEnd: Date | null = null
+  for (const p of normalized) {
+    const s = toUtcDateBound(p.start_date)
+    const e = toUtcDateBound(p.end_date)
+    if (s && e) {
+      if (!minStart || s < minStart) minStart = s
+      if (!maxEnd || e > maxEnd) maxEnd = e
+    }
+  }
+  if (!minStart || !maxEnd) return null
+
+  const totalMs = maxEnd.getTime() - minStart.getTime()
+  const totalDays = Math.max(1, Math.floor(totalMs / MS_PER_DAY))
+
+  const today = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()))
+
+  let elapsedDays = Math.floor((today.getTime() - minStart.getTime()) / MS_PER_DAY)
+  elapsedDays = Math.max(0, Math.min(totalDays, elapsedDays))
+
+  const schedule_progress_pct = Math.max(0, Math.min(100, Math.round((elapsedDays / totalDays) * 100)))
+
+  return {
+    schedule_day_current: elapsedDays,
+    schedule_day_total: totalDays,
+    schedule_progress_pct,
+  }
+}
+
+function phaseNameForTask(projectPhaseId: string | null | undefined, phaseList: any[]): string | null {
+  if (!projectPhaseId || !phaseList?.length) return null
+  const ph = phaseList.find((p: any) => String(p.id) === String(projectPhaseId))
+  return ph?.name != null ? String(ph.name) : null
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
@@ -121,7 +202,7 @@ serve(async (req) => {
     if (schedule.project_id) {
       const { data: projectData } = await supabase
         .from('projects')
-        .select('name, status, status_color')
+        .select('name, status, status_color, due_date')
         .eq('id', schedule.project_id)
         .single()
       project = projectData
@@ -261,6 +342,7 @@ serve(async (req) => {
             completed_at: activity.created_at,
             assignee: task.contacts?.name || task.assignee_id,
             project_name: task.projects?.name || project?.name,
+            phase_name: phaseNameForTask((task as any).project_phase_id, phases),
             task_photos: task.task_photos || [],
           })
         }
@@ -293,16 +375,23 @@ serve(async (req) => {
       : completedTasks.map((task: any) => ({ ...task, task_photos: undefined }))
 
     // ── Vitals (deterministic, no AI) ─────────────────────────────────────────
-    // Current active phase = first client-visible phase with progress < 100,
-    // ordered by phase.order (already sorted ascending).
-    const activePhase = visiblePhases.find((p: { progress?: number }) => (p.progress ?? 0) < 100)
     // tasks_completed_count = all tasks marked done in the DB (same as snapshot.completed_total).
     // Period-only completions stay in `completed_tasks` for the "Completed this period" section.
+    // Schedule timeline (day X of Y): project-scoped schedules only — see computeProjectScheduleTimeline.
+    const scheduleTimeline =
+      schedule.project_id && phases.length > 0
+        ? computeProjectScheduleTimeline(phases, project?.due_date ?? null, new Date())
+        : null
     const vitals = {
       tasks_completed_count: doneTasks.length,
       open_tasks_count: openTasks.length,
-      current_phase: (activePhase as any)?.name ?? null,
-      phase_progress_pct: typeof (activePhase as any)?.progress === 'number' ? (activePhase as any).progress : null,
+      ...(scheduleTimeline
+        ? {
+            schedule_day_current: scheduleTimeline.schedule_day_current,
+            schedule_day_total: scheduleTimeline.schedule_day_total,
+            schedule_progress_pct: scheduleTimeline.schedule_progress_pct,
+          }
+        : {}),
     }
 
     // ── Last / this / next week buckets (rolling 7-day windows) ──────────────
@@ -344,6 +433,7 @@ serve(async (req) => {
         text: t.text,
         completed_at: t.completed_at || t.updated_at || t.created_at,
         assignee: (t.contacts as any)?.name ?? null,
+        phase_name: phaseNameForTask(t.project_phase_id, phases),
       }))
 
     const thisWeekPlan = openTasks
@@ -357,6 +447,7 @@ serve(async (req) => {
         text: t.text,
         start_date: t.start_date,
         assignee: (t.contacts as any)?.name ?? null,
+        phase_name: phaseNameForTask(t.project_phase_id, phases),
       }))
 
     const nextWeekPlan = openTasks
@@ -370,6 +461,7 @@ serve(async (req) => {
         text: t.text,
         start_date: t.start_date,
         assignee: (t.contacts as any)?.name ?? null,
+        phase_name: phaseNameForTask(t.project_phase_id, phases),
       }))
 
     // Legacy compatibility: maintain lookahead for older renderers.
@@ -395,10 +487,11 @@ serve(async (req) => {
       next_week_plan: nextWeekPlan,
       lookahead,
       snapshot: {
-        open_tasks: await Promise.all(openTasks.slice(0, 25).map(async (t: { text?: string; due_date?: string; contacts?: { name?: string } | null; task_photos?: any[] }) => ({
+        open_tasks: await Promise.all(openTasks.slice(0, 25).map(async (t: { text?: string; due_date?: string; project_phase_id?: string | null; contacts?: { name?: string } | null; task_photos?: any[] }) => ({
           text: t.text,
           due_date: t.due_date,
           assignee: (t.contacts as any)?.name ?? null,
+          phase_name: phaseNameForTask((t as any).project_phase_id, phases),
           photos: includeTaskPhotos
             ? await buildTaskPhotoAssets(supabase, t.task_photos || [], 1)
             : undefined,
@@ -537,8 +630,9 @@ function generateExecutiveSummary(data: any): string {
   const statusChgs   = data.status_changes?.length  || 0
   const phaseMoved   = data.phase_progress?.length  || 0
   const openCount    = data.snapshot?.open_total    || 0
-  const currentPhase = data.vitals?.current_phase   || null
-  const phasePct     = data.vitals?.phase_progress_pct
+  const dayCur = data.vitals?.schedule_day_current
+  const dayTot = data.vitals?.schedule_day_total
+  const schedPct = data.vitals?.schedule_progress_pct
   const wiCount      = data.weather_impacts?.length || 0
 
   const parts: string[] = []
@@ -546,8 +640,10 @@ function generateExecutiveSummary(data: any): string {
     parts.push(`${completed} task${completed !== 1 ? 's' : ''} completed`)
   if (phaseMoved > 0)
     parts.push(`${phaseMoved} phase${phaseMoved !== 1 ? 's' : ''} advanced`)
-  if (currentPhase)
-    parts.push(`currently in ${currentPhase}${phasePct != null ? ` (${phasePct}%)` : ''}`)
+  if (dayCur != null && dayTot != null)
+    parts.push(
+      `day ${dayCur} of ${dayTot} on the schedule${schedPct != null ? ` (${schedPct}% through)` : ''}`,
+    )
   if (statusChgs > 0)
     parts.push(`${statusChgs} status update${statusChgs !== 1 ? 's' : ''}`)
   if (openCount > 0)
@@ -601,8 +697,12 @@ function generateKeyHighlights(data: any): string[] {
   const periodCompleted = data.completed_tasks?.length ?? 0
   if (periodCompleted > 0)
     highlights.push(`${periodCompleted} task${periodCompleted !== 1 ? 's' : ''} completed this period`)
-  if (v?.current_phase)
-    highlights.push(`Active phase: ${v.current_phase}${v.phase_progress_pct != null ? ` — ${v.phase_progress_pct}% complete` : ''}`)
+  if (v?.schedule_day_total != null && v?.schedule_day_current != null)
+    highlights.push(
+      `Schedule: day ${v.schedule_day_current} of ${v.schedule_day_total}${
+        v.schedule_progress_pct != null ? ` (${v.schedule_progress_pct}% through schedule)` : ''
+      }`,
+    )
   if (data.status_changes?.length > 0)
     highlights.push(`${data.status_changes.length} project status update${data.status_changes.length !== 1 ? 's' : ''}`)
   if (data.phase_progress?.length > 0)
@@ -622,7 +722,7 @@ function generateProjectSummary(data: any, allProjects: any[], phases: any[]): a
     const projPhases = phases.filter((p: any) => p.is_client_visible !== false)
     const progress = projPhases.length > 0
       ? Math.round(projPhases.reduce((sum: number, p: any) => sum + (p.progress || 0), 0) / projPhases.length)
-      : (data.vitals?.phase_progress_pct ?? 0)
+      : (data.vitals?.schedule_progress_pct ?? 0)
     return [{
       name: proj.name || data.project_name || 'Project',
       status: deriveStatusKey(proj.status),

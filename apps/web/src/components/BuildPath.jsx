@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useAppContext, supabaseClient } from '../context/AppContext';
 import { useToast } from '../context/ToastContext';
 import PermissionGuard from './PermissionGuard';
+import DateDropdown from './DateDropdown';
 import { hasPermission } from '../utils/permissions';
 
 // Simple debounce utility
@@ -179,6 +180,11 @@ function BuildPath({ project }) {
                 return newValues;
             });
         }
+    };
+
+    const commitPhaseDateField = (phaseId, field, iso) => {
+        const val = iso || null;
+        handlePhaseUpdate(phaseId, { [field]: val });
     };
 
     const handleAddPhase = async (phaseData) => {
@@ -513,27 +519,23 @@ function BuildPath({ project }) {
 
                         {isEditing && (
                             <PermissionGuard permission="can_edit_projects">
-                                <div className="mt-3 grid grid-cols-2 gap-2">
+                                <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-3">
                                     <div>
                                         <label className="text-xs text-gray-600 block mb-1">Start Date</label>
-                                        <input
-                                            type="date"
-                                            value={editingValues[`${phase.id}_start_date`] !== undefined ? editingValues[`${phase.id}_start_date`] : (phase.start_date || '')}
-                                            onChange={(e) => handleInputChange(phase.id, 'start_date', e.target.value || null)}
-                                            onBlur={() => handleInputBlur(phase.id, 'start_date')}
-                                            className="w-full px-2 py-1 text-sm border border-gray-300 rounded"
-                                            disabled={isLoading}
+                                        <DateDropdown
+                                            compact
+                                            value={phase.start_date || ''}
+                                            onChange={(v) => commitPhaseDateField(phase.id, 'start_date', v)}
+                                            className={isLoading ? 'pointer-events-none opacity-60' : ''}
                                         />
                                     </div>
                                     <div>
                                         <label className="text-xs text-gray-600 block mb-1">End Date</label>
-                                        <input
-                                            type="date"
-                                            value={editingValues[`${phase.id}_end_date`] !== undefined ? editingValues[`${phase.id}_end_date`] : (phase.end_date || '')}
-                                            onChange={(e) => handleInputChange(phase.id, 'end_date', e.target.value || null)}
-                                            onBlur={() => handleInputBlur(phase.id, 'end_date')}
-                                            className="w-full px-2 py-1 text-sm border border-gray-300 rounded"
-                                            disabled={isLoading}
+                                        <DateDropdown
+                                            compact
+                                            value={phase.end_date || ''}
+                                            onChange={(v) => commitPhaseDateField(phase.id, 'end_date', v)}
+                                            className={isLoading ? 'pointer-events-none opacity-60' : ''}
                                         />
                                     </div>
                                 </div>
@@ -606,25 +608,17 @@ function PhaseModal({ phase, onClose, onSave, isLoading }) {
                         />
                     </div>
 
-                    <div className="grid grid-cols-2 gap-3">
-                        <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">Start Date</label>
-                            <input
-                                type="date"
-                                value={formData.start_date}
-                                onChange={(e) => setFormData({ ...formData, start_date: e.target.value })}
-                                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-hidden focus:ring-2 focus:ring-blue-500"
-                            />
-                        </div>
-                        <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">End Date</label>
-                            <input
-                                type="date"
-                                value={formData.end_date}
-                                onChange={(e) => setFormData({ ...formData, end_date: e.target.value })}
-                                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-hidden focus:ring-2 focus:ring-blue-500"
-                            />
-                        </div>
+                    <div className="space-y-4">
+                        <DateDropdown
+                            label="Start Date"
+                            value={formData.start_date}
+                            onChange={(v) => setFormData({ ...formData, start_date: v })}
+                        />
+                        <DateDropdown
+                            label="End Date"
+                            value={formData.end_date}
+                            onChange={(v) => setFormData({ ...formData, end_date: v })}
+                        />
                     </div>
 
                     <div className="flex justify-end gap-3">

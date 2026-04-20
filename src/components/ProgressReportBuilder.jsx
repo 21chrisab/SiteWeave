@@ -46,10 +46,12 @@ const SECTION_OPTIONS = [
 ];
 
 const DETAIL_TOGGLES = [
+  { key: 'show_siteweave_logo',    label: 'Show SiteWeave logo in report header',                  default: true },
   { key: 'show_assignees',         label: 'Show who is assigned to each task',                   default: false },
   { key: 'show_dates',             label: 'Show task completion dates',                           default: false },
   { key: 'show_who_changed',       label: 'Show who changed a status and when',                   default: false },
   { key: 'show_phase_delta',       label: 'Show previous progress on phases (e.g. 41% → 51%)',   default: false },
+  { key: 'show_task_phase',        label: 'Show a small phase tag on each task (helps tell same-named tasks apart)', default: false },
   { key: 'show_blockers',          label: 'Include blockers & issues section',                    default: false },
   { key: 'show_weather_impacts',   label: 'Include weather / schedule impacts (logged this period)', default: false },
   { key: 'include_task_photos',    label: 'Include task photos on completed work (uses signed image links)', default: false },
@@ -62,10 +64,12 @@ const DEFAULT_SECTIONS = {
   phase_changes: true,
   vitals: true,
   weekly_plan: true,
+  show_siteweave_logo: true,
   show_assignees: false,
   show_dates: false,
   show_who_changed: false,
   show_phase_delta: false,
+  show_task_phase: false,
   show_blockers: false,
   show_weather_impacts: false,
   include_task_photos: false,
@@ -116,6 +120,7 @@ function ProgressReportBuilder({
     frequency_value: null,
     custom_subject: '',
     custom_message: '',
+    project_id: projectId || null,
     report_sections: { ...DEFAULT_SECTIONS },
     requires_approval: false,
     include_branding: true,
@@ -151,6 +156,11 @@ function ProgressReportBuilder({
       }));
     }
   }, [scheduleId, projectId, defaultReportNameSuffix]);
+
+  useEffect(() => {
+    if (scheduleId) return;
+    setFormData((prev) => ({ ...prev, project_id: projectId || null }));
+  }, [projectId, scheduleId]);
 
   useEffect(() => {
     const loadOrgReportHour = async () => {
@@ -196,6 +206,7 @@ function ProgressReportBuilder({
             show_dates:             base.show_dates             ?? true,
             show_who_changed:       base.show_who_changed       ?? true,
             show_phase_delta:       base.show_phase_delta       ?? true,
+            show_task_phase:        base.show_task_phase        ?? true,
             show_blockers:          base.show_blockers          ?? true,
             show_weather_impacts:   base.show_weather_impacts   ?? true,
             include_task_photos:    base.include_task_photos    ?? true,
@@ -215,6 +226,7 @@ function ProgressReportBuilder({
         frequency_value: data.frequency_value ?? null,
         custom_subject: data.custom_subject || '',
         custom_message: data.custom_message || '',
+        project_id: data.project_id ?? projectId ?? null,
         report_sections: sections,
         requires_approval: false,
         include_branding: data.include_branding !== false,
@@ -509,7 +521,7 @@ function ProgressReportBuilder({
                     <label key={key} className="flex items-center gap-2 cursor-pointer">
                       <input
                         type="checkbox"
-                        checked={!!formData.report_sections[key]}
+                        checked={key === 'show_siteweave_logo' ? formData.report_sections.show_siteweave_logo !== false : !!formData.report_sections[key]}
                         onChange={(e) => updateSection(key, e.target.checked)}
                         className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                       />
@@ -587,6 +599,7 @@ function ProgressReportBuilder({
           <h3 className="text-sm font-semibold text-gray-700 mb-2">Preview</h3>
           <ProgressReportPreview
             formData={formData}
+            projectId={projectId}
             recipients={allRecipients}
             scheduleId={scheduleId}
           />

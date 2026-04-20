@@ -9,6 +9,7 @@ import {
 import { applyScheduleImpact, suggestScheduleImpactSelection } from '../utils/taskDependencyService';
 import { logWeatherImpactRecorded, logWeatherImpactScheduleApplied } from '../utils/activityLogger';
 import LoadingSpinner from './LoadingSpinner';
+import DateDropdown from './DateDropdown';
 
 /**
  * Modal: log weather / schedule impact, optionally shift task & phase dates with dependency cascade.
@@ -283,25 +284,19 @@ function WeatherImpactModal({
                                         placeholder="What was affected and how…"
                                     />
                                 </div>
-                                <div className="grid grid-cols-2 gap-3">
-                                    <div>
-                                        <label className="block text-sm font-medium text-gray-700">Start date</label>
-                                        <input
-                                            type="date"
-                                            value={startDate}
-                                            onChange={(ev) => setStartDate(ev.target.value)}
-                                            className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
-                                        />
-                                    </div>
-                                    <div>
-                                        <label className="block text-sm font-medium text-gray-700">End date</label>
-                                        <input
-                                            type="date"
-                                            value={endDate}
-                                            onChange={(ev) => setEndDate(ev.target.value)}
-                                            className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
-                                        />
-                                    </div>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                    <DateDropdown
+                                        label="Start date"
+                                        value={startDate}
+                                        onChange={setStartDate}
+                                        className="mt-1"
+                                    />
+                                    <DateDropdown
+                                        label="End date"
+                                        value={endDate}
+                                        onChange={setEndDate}
+                                        className="mt-1"
+                                    />
                                 </div>
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700">Calendar days lost</label>

@@ -2,8 +2,22 @@ import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useAppContext, supabaseClient } from '../context/AppContext';
 import { useToast } from '../context/ToastContext';
-import { testSendProgressReport } from '@siteweave/core-logic';
+import { testSendProgressReport, computeProjectScheduleTimeline } from '@siteweave/core-logic';
 import LoadingSpinner from './LoadingSpinner';
+
+const SITEWEAVE_LOGO_URL = 'https://app.siteweave.org/logo.svg';
+
+function TaskPhaseTag({ show, name }) {
+  if (!show || !name) return null;
+  return (
+    <span
+      className="ml-1.5 inline-block align-middle max-w-[140px] truncate rounded border border-gray-200 bg-gray-100 px-1.5 py-0.5 text-[10px] font-semibold text-blue-600"
+      title={name}
+    >
+      {name}
+    </span>
+  );
+}
 
 const SAMPLE_TASK_PHOTO =
   'data:image/svg+xml;utf8,' +
@@ -21,14 +35,17 @@ const SAMPLE_TASK_PHOTO =
  * Shows a live preview of the email using real org/project data where available.
  * Two preview modes: standard and executive.
  */
-function ProgressReportPreview({ formData, recipients, scheduleId }) {
+function ProgressReportPreview({ formData, recipients, scheduleId, projectId: projectIdProp = null }) {
   const { i18n } = useTranslation();
   const { state } = useAppContext();
   const { addToast } = useToast();
   const [isSendingTest, setIsSendingTest] = useState(false);
+  const [previewPhases, setPreviewPhases] = useState([]);
   const [previewMode, setPreviewMode] = useState(
     () => (formData?.report_audience_type === 'executive' ? 'executive' : 'standard')
   );
+
+  const effectiveProjectId = formData?.project_id ?? projectIdProp ?? null;
 
   // Keep previewMode in sync when the parent changes the audience selector
   const prevAudienceRef = React.useRef(formData?.report_audience_type);
@@ -40,17 +57,49 @@ function ProgressReportPreview({ formData, recipients, scheduleId }) {
     }
   }, [formData?.report_audience_type]);
 
+  React.useEffect(() => {
+    const pid = effectiveProjectId;
+    if (!pid) {
+      setPreviewPhases([]);
+      return undefined;
+    }
+    const ac = new AbortController();
+    (async () => {
+      const { data, error } = await supabaseClient
+        .from('project_phases')
+        .select('*')
+        .eq('project_id', pid)
+        .order('order', { ascending: true });
+      if (ac.signal.aborted) return;
+      if (error) setPreviewPhases([]);
+      else setPreviewPhases(data || []);
+    })();
+    return () => ac.abort();
+  }, [effectiveProjectId]);
+
+  const phaseNameById = React.useMemo(() => {
+    const m = {};
+    (previewPhases || []).forEach((p) => {
+      if (p?.id != null) m[p.id] = p.name;
+    });
+    return m;
+  }, [previewPhases]);
+
+  const phaseLabelForTask = (task) =>
+    task?.project_phase_id ? phaseNameById[task.project_phase_id] || null : null;
+
   const projects = state.projects || [];
   const tasks = state.tasks || [];
   const contacts = state.contacts || [];
 
   const reportSections = formData?.report_sections || {};
+  const showTaskPhaseTag = Boolean(reportSections.show_task_phase);
   const includeTaskPhotosInReport =
     formData?.report_audience_type === 'internal' || reportSections.include_task_photos === true;
   // Preview should always surface available task photos so users can verify visuals.
   const showTaskPhotos = true;
-  const selectedProject = formData?.project_id
-    ? projects.find((p) => String(p.id) === String(formData.project_id))
+  const selectedProject = effectiveProjectId
+    ? projects.find((p) => String(p.id) === String(effectiveProjectId))
     : null;
 
   const handleSendTest = async () => {
@@ -95,6 +144,7 @@ function ProgressReportPreview({ formData, recipients, scheduleId }) {
       text: t.text,
       completed_at: t.completed_at || t.updated_at || t.created_at || null,
       assignee: getTaskAssigneeName(t),
+      phase_name: phaseLabelForTask(t),
       photos: showTaskPhotos
         ? (t.task_photos || t.photos || []).slice(0, 2).map((photo) => ({
             thumbnail_url: photo.thumbnail_url || photo.preview_url || SAMPLE_TASK_PHOTO,
@@ -130,6 +180,7 @@ function ProgressReportPreview({ formData, recipients, scheduleId }) {
       text: t.text,
       completed_at: t.completed_at || t.updated_at || t.created_at || null,
       assignee: getTaskAssigneeName(t),
+      phase_name: phaseLabelForTask(t),
     }));
 
   const thisWeekPlan = scopedTasks
@@ -143,6 +194,7 @@ function ProgressReportPreview({ formData, recipients, scheduleId }) {
       text: t.text,
       start_date: t.start_date || null,
       assignee: getTaskAssigneeName(t),
+      phase_name: phaseLabelForTask(t),
     }));
 
   const nextWeekPlan = scopedTasks
@@ -156,11 +208,21 @@ function ProgressReportPreview({ formData, recipients, scheduleId }) {
       text: t.text,
       start_date: t.start_date || null,
       assignee: getTaskAssigneeName(t),
+      phase_name: phaseLabelForTask(t),
     }));
 
   const totalTaskCount = scopedTasks.length;
   const completedTaskCount = scopedTasks.filter((t) => t?.completed).length;
   const overallProgress = totalTaskCount > 0 ? Math.round((completedTaskCount / totalTaskCount) * 100) : 0;
+
+  const scheduleTimeline = selectedProject
+    ? computeProjectScheduleTimeline(previewPhases, selectedProject.due_date, new Date())
+    : null;
+  const scheduleVitals =
+    scheduleTimeline ||
+    (selectedProject
+      ? { schedule_day_current: 50, schedule_day_total: 100, schedule_progress_pct: 50 }
+      : null);
 
   const baseData = {
     organization_name: organizationName,
@@ -181,8 +243,7 @@ function ProgressReportPreview({ formData, recipients, scheduleId }) {
     vitals: {
       tasks_completed_count: completedTaskCount || 2,
       open_tasks_count: totalTaskCount - completedTaskCount || 8,
-      current_phase: selectedProject ? 'Active Phase' : null,
-      phase_progress_pct: overallProgress || 60,
+      ...(scheduleVitals ? { ...scheduleVitals } : {}),
     },
     last_week_done: lastWeekDone,
     this_week_plan: thisWeekPlan,
@@ -206,6 +267,7 @@ function ProgressReportPreview({ formData, recipients, scheduleId }) {
               text: 'Review drawings',
               completed_at: now.toISOString(),
               assignee: 'A. Smith',
+              phase_name: 'Design',
               photos: showTaskPhotos
                 ? [{ thumbnail_url: SAMPLE_TASK_PHOTO, full_url: SAMPLE_TASK_PHOTO, caption: 'Before install', is_completion_photo: false }]
                 : [],
@@ -214,6 +276,7 @@ function ProgressReportPreview({ formData, recipients, scheduleId }) {
               text: 'Order materials',
               completed_at: now.toISOString(),
               assignee: null,
+              phase_name: 'Procurement',
               photos: showTaskPhotos
                 ? [{ thumbnail_url: SAMPLE_TASK_PHOTO, full_url: SAMPLE_TASK_PHOTO, caption: 'Delivery confirmation', is_completion_photo: true }]
                 : [],
@@ -222,6 +285,7 @@ function ProgressReportPreview({ formData, recipients, scheduleId }) {
               text: 'Update timeline',
               completed_at: now.toISOString(),
               assignee: 'B. Jones',
+              phase_name: 'Design',
               photos: [],
             },
           ],
@@ -344,14 +408,27 @@ function ProgressReportPreview({ formData, recipients, scheduleId }) {
         <div className="bg-white p-4 min-h-[200px]">
           <div className="max-w-[600px] mx-auto font-sans text-[15px] text-gray-800 leading-relaxed">
             <div className="space-y-4">
-              {/* Title + period */}
-              <div>
-                <h1 className="text-xl font-bold text-gray-900" style={{ fontFamily: 'Calibri, Segoe UI, sans-serif' }}>
-                  {previewMode === 'executive' ? 'Executive Brief' : 'Progress Update'}
-                </h1>
-                <p className="text-sm text-gray-600 mt-1">
-                  {new Date(previewData.start_date).toLocaleDateString(i18n.language)} – {new Date(previewData.end_date).toLocaleDateString(i18n.language)}
-                </p>
+              {/* Logo + title + period */}
+              <div className="flex gap-3 items-start">
+                {reportSections.show_siteweave_logo !== false && (
+                  <img src={SITEWEAVE_LOGO_URL} alt="SiteWeave" className="w-10 h-10 shrink-0" width={40} height={40} />
+                )}
+                <div className="min-w-0 flex-1">
+                  <p
+                    className="text-xl font-bold text-gray-900 leading-snug"
+                    style={{ fontFamily: 'Calibri, Segoe UI, sans-serif' }}
+                  >
+                    {previewMode === 'executive' ? 'Executive Brief' : 'Progress Update'}
+                    <span className="text-gray-400 font-semibold"> — </span>
+                    <span className="font-semibold text-blue-600">
+                      {previewData.project_name || previewData.organization_name || 'Your Project'}
+                    </span>
+                  </p>
+                  <p className="text-sm text-gray-600 mt-2">
+                    {new Date(previewData.start_date).toLocaleDateString(i18n.language)} –{' '}
+                    {new Date(previewData.end_date).toLocaleDateString(i18n.language)}
+                  </p>
+                </div>
               </div>
 
               {/* Personal message */}
@@ -408,16 +485,35 @@ function ProgressReportPreview({ formData, recipients, scheduleId }) {
                 <>
                   {/* Vitals row */}
                   {reportSections.vitals !== false && previewData.vitals && (
-                    <div className="grid grid-cols-2 border border-gray-200 rounded-lg overflow-hidden bg-gray-50 text-center">
+                    <div
+                      className={`grid border border-gray-200 rounded-lg overflow-hidden bg-gray-50 text-center ${
+                        previewData.vitals.schedule_day_total != null ? 'grid-cols-3' : 'grid-cols-2'
+                      }`}
+                    >
                       {[
                         { val: previewData.vitals.tasks_completed_count ?? 0, label: 'Total completed', color: 'text-emerald-700' },
-                        { val: previewData.vitals.open_tasks_count ?? 0,      label: 'Open Tasks',      color: 'text-blue-700' },
+                        { val: previewData.vitals.open_tasks_count ?? 0, label: 'Open Tasks', color: 'text-blue-700' },
                       ].map((cell, i) => (
-                        <div key={i} className={`p-3 ${i > 0 ? 'border-l border-gray-200' : ''}`}>
+                        <div key={cell.label} className={`p-3 ${i > 0 ? 'border-l border-gray-200' : ''}`}>
                           <p className={`text-2xl font-bold ${cell.color}`}>{cell.val}</p>
                           <p className="text-xs text-gray-400 uppercase tracking-wide mt-1 font-medium">{cell.label}</p>
                         </div>
                       ))}
+                      {previewData.vitals.schedule_day_total != null && (
+                        <div className="p-3 border-l border-gray-200">
+                          <p className="text-lg font-semibold text-gray-800 leading-tight">
+                            {previewData.vitals.schedule_day_current} / {previewData.vitals.schedule_day_total}
+                          </p>
+                          {previewData.vitals.schedule_progress_pct != null && (
+                            <p className="text-xs text-gray-500 mt-0.5">
+                              {previewData.vitals.schedule_progress_pct}% through schedule
+                            </p>
+                          )}
+                          <p className="text-xs text-gray-400 uppercase tracking-wide mt-1 font-medium">
+                            General progress
+                          </p>
+                        </div>
+                      )}
                     </div>
                   )}
 
@@ -452,7 +548,10 @@ function ProgressReportPreview({ formData, recipients, scheduleId }) {
                               {(previewData.completed_tasks || []).map((task, i) => (
                                 <tr key={i} className="border-b border-emerald-100 last:border-0">
                                   <td className="py-1.5 pr-2 text-emerald-600 font-bold w-4">✓</td>
-                                  <td className="py-1.5 text-gray-800">{task.text}</td>
+                                  <td className="py-1.5 text-gray-800">
+                                    {task.text}
+                                    <TaskPhaseTag show={showTaskPhaseTag} name={task.phase_name} />
+                                  </td>
                                   {reportSections.show_assignees && task.assignee && (
                                     <td className="py-1.5 pl-2 text-gray-400 text-xs text-right whitespace-nowrap">@{task.assignee}</td>
                                   )}
@@ -473,7 +572,10 @@ function ProgressReportPreview({ formData, recipients, scheduleId }) {
                                 <div className="flex items-start gap-2">
                                   <span className="text-emerald-600 font-bold shrink-0">✓</span>
                                   <div className="flex-1">
-                                    <p>{task.text}</p>
+                                    <p className="inline">
+                                      {task.text}
+                                      <TaskPhaseTag show={showTaskPhaseTag} name={task.phase_name} />
+                                    </p>
                                     {(task.assignee || task.completed_at) && (
                                       <p className="mt-1 text-xs text-gray-400">
                                         {task.assignee ? `@${task.assignee}` : ''}
@@ -562,7 +664,8 @@ function ProgressReportPreview({ formData, recipients, scheduleId }) {
                           <ul className="space-y-1">
                             {(previewData.last_week_done || []).map((t, i) => (
                               <li key={`last-${i}`} className="text-sm text-gray-700">
-                                {t.text}
+                                <span className="inline">{t.text}</span>
+                                <TaskPhaseTag show={showTaskPhaseTag} name={t.phase_name} />
                               </li>
                             ))}
                           </ul>
@@ -577,7 +680,8 @@ function ProgressReportPreview({ formData, recipients, scheduleId }) {
                           <ul className="space-y-1">
                             {(previewData.this_week_plan || []).map((t, i) => (
                               <li key={`this-${i}`} className="text-sm text-gray-700">
-                                {t.text}
+                                <span className="inline">{t.text}</span>
+                                <TaskPhaseTag show={showTaskPhaseTag} name={t.phase_name} />
                                 {t.start_date && <span className="text-gray-400 ml-1.5 text-xs">starts {t.start_date}</span>}
                               </li>
                             ))}
@@ -593,7 +697,8 @@ function ProgressReportPreview({ formData, recipients, scheduleId }) {
                           <ul className="space-y-1">
                             {(previewData.next_week_plan || []).map((t, i) => (
                               <li key={`next-${i}`} className="text-sm text-gray-700">
-                                {t.text}
+                                <span className="inline">{t.text}</span>
+                                <TaskPhaseTag show={showTaskPhaseTag} name={t.phase_name} />
                                 {t.start_date && <span className="text-gray-400 ml-1.5 text-xs">starts {t.start_date}</span>}
                               </li>
                             ))}
