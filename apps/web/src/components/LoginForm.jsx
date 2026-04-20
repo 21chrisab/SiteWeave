@@ -3,7 +3,7 @@ import { supabaseClient } from '../context/AppContext';
 import { useToast } from '../context/ToastContext';
 import LoadingSpinner from './LoadingSpinner';
 
-function LoginForm() {
+function LoginForm({ onPasswordSignInSuccess }) {
   const { addToast } = useToast();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -22,6 +22,7 @@ function LoginForm() {
       addToast('Login failed: ' + error.message, 'error');
     } else {
       addToast('Login successful!', 'success');
+      onPasswordSignInSuccess?.();
     }
     setIsLoading(false);
   };

@@ -139,6 +139,7 @@ export default function AppStandalone() {
   }
 
   return (
+    <ToastProvider>
     <Routes>
       <Route path={ROUTE_PATHS.invite} element={<InviteAcceptPage />} />
       <Route path={ROUTE_PATHS.login} element={<LoginView />} />
@@ -146,9 +147,7 @@ export default function AppStandalone() {
         element={(
           <ProtectedRoute session={session}>
             <AppProvider>
-              <ToastProvider>
                 <WorkspaceLayout session={session} />
-              </ToastProvider>
             </AppProvider>
           </ProtectedRoute>
         )}
@@ -167,5 +166,6 @@ export default function AppStandalone() {
         <Route path={ROUTE_PATHS.notifications} element={<RouteStateSync view="Settings"><SettingsView /></RouteStateSync>} />
       </Route>
     </Routes>
+    </ToastProvider>
   )
 }
