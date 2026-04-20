@@ -12,7 +12,9 @@ import {
 import TaskItem from '../components/TaskItem';
 import TaskModal from '../components/TaskModal';
 import TaskPhotosModal from '../components/TaskPhotosModal';
+import PhaseTaskSection from '../components/PhaseTaskSection';
 import ProjectSidebar from '../components/ProjectSidebar';
+import ProjectModal from '../components/ProjectModal';
 import ShareModal from '../components/ShareModal';
 import SaveAsTemplateModal from '../components/SaveAsTemplateModal';
 import ConfirmDialog from '../components/ConfirmDialog';
@@ -49,6 +51,9 @@ function ProjectDetailsView({ routeTab = 'tasks', onTabChange = null }) {
     const [showMsProjectImportModal, setShowMsProjectImportModal] = useState(false);
     const [showWeatherImpactModal, setShowWeatherImpactModal] = useState(false);
     const [showSaveAsTemplateModal, setShowSaveAsTemplateModal] = useState(false);
+    const [showProjectModal, setShowProjectModal] = useState(false);
+    const [isSavingProject, setIsSavingProject] = useState(false);
+    const [projectPhases, setProjectPhases] = useState([]);
     const [fieldIssuesCount, setFieldIssuesCount] = useState(0);
     const [photoModalTaskId, setPhotoModalTaskId] = useState(null);
     const [photoActionTaskIds, setPhotoActionTaskIds] = useState({});
@@ -84,6 +89,36 @@ function ProjectDetailsView({ routeTab = 'tasks', onTabChange = null }) {
         const mapped = routeToTabMap[routeTab] || 'tasks';
         setActiveTab(mapped);
     }, [routeTab]);
+
+    useEffect(() => {
+        if (!state.selectedProjectId) {
+            setProjectPhases([]);
+            return;
+        }
+        const ac = new AbortController();
+        (async () => {
+            const { data, error } = await supabaseClient
+                .from('project_phases')
+                .select('*')
+                .eq('project_id', state.selectedProjectId)
+                .order('order', { ascending: true });
+            if (ac.signal.aborted) return;
+            if (error) {
+                console.error('Error loading project phases:', error);
+                setProjectPhases([]);
+            } else {
+                setProjectPhases(data || []);
+            }
+        })();
+        return () => ac.abort();
+    }, [state.selectedProjectId]);
+
+    const canViewActivityHistory = state.userRole?.permissions?.can_view_activity_history === true;
+    useEffect(() => {
+        if (!canViewActivityHistory && activeTab === 'activity') {
+            setTabAndRoute('tasks');
+        }
+    }, [canViewActivityHistory, activeTab]);
 
     // Keyboard shortcuts
     useTaskShortcuts({
@@ -236,6 +271,15 @@ function ProjectDetailsView({ routeTab = 'tasks', onTabChange = null }) {
                 return new Date(a.due_date) - new Date(b.due_date);
         }
     });
+    const taskPhaseGroups = {
+        unassigned: tasks.filter((task) => !task.project_phase_id),
+    };
+
+    const progressPercentForTasks = (taskList) => {
+        if (!taskList.length) return 0;
+        const done = taskList.filter((task) => task.completed).length;
+        return Math.round((100 * done) / taskList.length);
+    };
 
     const projectActivity = (state.activityLog || []).filter((activity) => {
         const sameProject = activity.project_id && String(activity.project_id) === String(project?.id);
@@ -259,6 +303,101 @@ function ProjectDetailsView({ routeTab = 'tasks', onTabChange = null }) {
             </div>
         );
     }
+
+    const handleSaveProject = async (projectData) => {
+        if (!project) return;
+        setIsSavingProject(true);
+        try {
+            const {
+                selectedContacts = [],
+                emailAddresses = [],
+                ...projectFields
+            } = projectData || {};
+
+            const { data: updatedProject, error: projectError } = await supabaseClient
+                .from('projects')
+                .update(projectFields)
+                .eq('id', project.id)
+                .select()
+                .single();
+
+            if (projectError) throw projectError;
+
+            const orgId = project.organization_id || state.currentOrganization?.id;
+
+            if (orgId && Array.isArray(selectedContacts) && selectedContacts.length > 0) {
+                const projectContactsRows = selectedContacts.map((contactId) => ({
+                    project_id: project.id,
+                    contact_id: contactId,
+                    organization_id: orgId,
+                }));
+                const { error: contactsError } = await supabaseClient
+                    .from('project_contacts')
+                    .upsert(projectContactsRows, {
+                        onConflict: 'project_id,contact_id',
+                        ignoreDuplicates: true,
+                    });
+                if (contactsError && contactsError.code !== '23505') {
+                    addToast('Project updated, but some team links failed to save.', 'warning');
+                }
+            }
+
+            if (orgId && Array.isArray(emailAddresses) && emailAddresses.length > 0) {
+                for (const rawEmail of emailAddresses) {
+                    const email = String(rawEmail || '').trim().toLowerCase();
+                    if (!email) continue;
+
+                    const { data: existingContact } = await supabaseClient
+                        .from('contacts')
+                        .select('id')
+                        .eq('organization_id', orgId)
+                        .eq('email', email)
+                        .maybeSingle();
+
+                    let contactId = existingContact?.id || null;
+                    if (!contactId) {
+                        const { data: newContact, error: contactInsertError } = await supabaseClient
+                            .from('contacts')
+                            .insert({
+                                organization_id: orgId,
+                                name: email.split('@')[0],
+                                email,
+                                type: 'Team',
+                                role: 'Team Member',
+                                status: 'Available',
+                            })
+                            .select()
+                            .single();
+                        if (contactInsertError) {
+                            addToast(`Could not create contact ${email}.`, 'warning');
+                            continue;
+                        }
+                        contactId = newContact.id;
+                        dispatch({ type: 'ADD_CONTACT', payload: newContact });
+                    }
+
+                    const { error: linkError } = await supabaseClient
+                        .from('project_contacts')
+                        .upsert({
+                            project_id: project.id,
+                            contact_id: contactId,
+                            organization_id: orgId,
+                        }, { onConflict: 'project_id,contact_id', ignoreDuplicates: true });
+                    if (linkError && linkError.code !== '23505') {
+                        addToast(`Could not add ${email} to project crew.`, 'warning');
+                    }
+                }
+            }
+
+            dispatch({ type: 'UPDATE_PROJECT', payload: updatedProject });
+            addToast('Project updated successfully!', 'success');
+            setShowProjectModal(false);
+        } catch (error) {
+            addToast('Error updating project: ' + (error.message || 'Unknown error'), 'error');
+        } finally {
+            setIsSavingProject(false);
+        }
+    };
 
     const handleAddTask = async (taskData) => {
         setIsCreatingTask(true);
@@ -603,6 +742,13 @@ function ProjectDetailsView({ routeTab = 'tasks', onTabChange = null }) {
         );
     };
 
+    const handleTaskDrop = async (taskId, phaseId) => {
+        const existing = allTasks.find((task) => String(task.id) === String(taskId));
+        if (!existing) return;
+        if ((existing.project_phase_id || null) === (phaseId || null)) return;
+        await handleEditTask(existing.id, { project_phase_id: phaseId || null });
+    };
+
     const handleBulkComplete = async (taskIds) => {
         const { error } = await supabaseClient.from('tasks').update({ completed: true }).in('id', taskIds);
         if (error) {
@@ -928,6 +1074,15 @@ function ProjectDetailsView({ routeTab = 'tasks', onTabChange = null }) {
                             )}
                         </div>
                     )}
+                    <PermissionGuard permission="can_edit_projects">
+                        <button
+                            onClick={() => setShowProjectModal(true)}
+                            className="px-4 py-2 text-sm font-semibold text-gray-700 bg-gray-100 rounded-lg shadow-xs hover:bg-gray-200 transition-colors"
+                            title="Edit project settings"
+                        >
+                            Edit project
+                        </button>
+                    </PermissionGuard>
                     <button 
                         onClick={() => setShowShare(true)}
                         className="px-4 py-2 text-sm font-semibold rounded-lg shadow-xs transition-colors app-action-primary"
@@ -991,6 +1146,14 @@ function ProjectDetailsView({ routeTab = 'tasks', onTabChange = null }) {
                     onClose={() => setShowSaveAsTemplateModal(false)} 
                 />
             )}
+            {showProjectModal && (
+                <ProjectModal
+                    onClose={() => setShowProjectModal(false)}
+                    onSave={handleSaveProject}
+                    isLoading={isSavingProject}
+                    project={project}
+                />
+            )}
 
             {showProgressReportModal && project && (
                 <ProgressReportModal projectId={project.id} onClose={() => setShowProgressReportModal(false)} />
@@ -1013,8 +1176,8 @@ function ProjectDetailsView({ routeTab = 'tasks', onTabChange = null }) {
             )}
 
             <div className="grid grid-cols-1 lg:grid-cols-5 gap-8">
-                {/* Main content — full width on Gantt (sidebar hidden) */}
-                <div className={activeTab === 'gantt' ? 'lg:col-span-5' : 'lg:col-span-3'}>
+                {/* Main content — full width on Gantt and Tasks (desktop parity) */}
+                <div className={activeTab === 'gantt' || activeTab === 'tasks' ? 'lg:col-span-5' : 'lg:col-span-3'}>
                     {/* Tab Navigation */}
                     <div className="border-b border-slate-200 mb-6 app-card-soft px-4">
                         <nav className="-mb-px flex space-x-8">
@@ -1048,16 +1211,18 @@ function ProjectDetailsView({ routeTab = 'tasks', onTabChange = null }) {
                             >
                                 Field Issues ({fieldIssuesCount})
                             </button>
-                            <button
-                                onClick={() => setTabAndRoute('activity')}
-                                className={`py-2 px-1 text-sm font-medium border-b-2 transition-colors ${
-                                    activeTab === 'activity'
-                                        ? 'border-blue-500 text-blue-600'
-                                        : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                                }`}
-                            >
-                                Activity
-                            </button>
+                            {canViewActivityHistory && (
+                                <button
+                                    onClick={() => setTabAndRoute('activity')}
+                                    className={`py-2 px-1 text-sm font-medium border-b-2 transition-colors ${
+                                        activeTab === 'activity'
+                                            ? 'border-blue-500 text-blue-600'
+                                            : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                                    }`}
+                                >
+                                    Activity
+                                </button>
+                            )}
                         </nav>
                     </div>
 
@@ -1095,34 +1260,40 @@ function ProjectDetailsView({ routeTab = 'tasks', onTabChange = null }) {
                         {activeTab === 'tasks' && (
                             <div className="p-6 app-card" data-onboarding="tasks-section">
                                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-4">
-                                    <div className="flex items-center gap-4">
+                                    <div className="flex flex-wrap items-center gap-3">
                                         <h2 className="text-xl font-bold">Tasks ({Math.max(allTasks.length, ganttTasks.length)})</h2>
-                                        <div className="flex items-center gap-2">
-                                            <label className="text-sm font-medium text-gray-700">Filter:</label>
-                                            <select 
-                                                value={taskFilter} 
-                                                onChange={(e) => setTaskFilter(e.target.value)}
-                                                className="px-3 py-1 border border-gray-300 rounded-md text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                        <div className="inline-flex items-center rounded-full border border-gray-200 bg-gray-50 p-1">
+                                            <button
+                                                type="button"
+                                                onClick={() => setTaskFilter('all')}
+                                                className={`rounded-full px-3 py-1 text-xs font-semibold transition-colors ${
+                                                    taskFilter === 'all' ? 'bg-white text-gray-900 shadow-xs' : 'text-gray-500 hover:text-gray-700'
+                                                }`}
                                             >
-                                                <option value="all">All Tasks</option>
-                                                <option value="pending">Pending</option>
-                                                <option value="completed">Completed</option>
-                                            </select>
-                                        </div>
-                                        <div className="flex items-center gap-2">
-                                            <label className="text-sm font-medium text-gray-700">Sort by:</label>
-                                            <select 
-                                                value={taskSort} 
-                                                onChange={(e) => setTaskSort(e.target.value)}
-                                                className="px-3 py-1 border border-gray-300 rounded-md text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                                All
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => setTaskFilter('pending')}
+                                                className={`rounded-full px-3 py-1 text-xs font-semibold transition-colors ${
+                                                    taskFilter === 'pending' ? 'bg-white text-gray-900 shadow-xs' : 'text-gray-500 hover:text-gray-700'
+                                                }`}
                                             >
-                                                <option value="due_date">Due Date</option>
-                                                <option value="priority">Priority</option>
-                                            </select>
+                                                Open
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => setTaskFilter('completed')}
+                                                className={`rounded-full px-3 py-1 text-xs font-semibold transition-colors ${
+                                                    taskFilter === 'completed' ? 'bg-white text-gray-900 shadow-xs' : 'text-gray-500 hover:text-gray-700'
+                                                }`}
+                                            >
+                                                Done
+                                            </button>
                                         </div>
                                     </div>
                                     <PermissionGuard permission="can_create_tasks">
-                                        <button onClick={() => setShowTaskModal(true)} className="px-4 py-2 text-sm font-semibold text-white bg-blue-600 rounded-lg shadow-xs hover:bg-blue-700">+ New Task</button>
+                                        <button onClick={() => setShowTaskModal(true)} className="px-4 py-2 text-sm font-semibold text-white bg-blue-600 rounded-full shadow-xs hover:bg-blue-700">+ New Task</button>
                                     </PermissionGuard>
                                 </div>
                                 <TaskBulkActions
@@ -1132,20 +1303,66 @@ function ProjectDetailsView({ routeTab = 'tasks', onTabChange = null }) {
                                     onClearSelection={() => setSelectedTasks([])}
                                 />
                                 {tasks.length > 0 ? (
-                                    <ul className={`space-y-2 ${tasks.length > 7 ? 'max-h-[500px] overflow-y-auto pr-2' : ''}`}>
-                                        {tasks.map((task) => (
-                                            <TaskItem 
-                                                key={task.id} 
-                                                task={task}
-                                                onToggle={handleToggleTask} 
-                                                onEdit={handleEditTask} 
-                                                onDelete={handleDeleteTask}
-                                                isSelected={selectedTasks.includes(task.id)}
-                                                onSelect={handleTaskSelect}
-                                                onOpenPhotos={handleOpenTaskPhotos}
-                                            />
-                                        ))}
-                                    </ul>
+                                    <div className={`space-y-3 ${tasks.length > 7 ? 'max-h-[min(70vh,560px)] overflow-y-auto pr-1' : ''}`}>
+                                        {projectPhases.map((phase) => {
+                                            const phaseTasks = tasks.filter((task) => task.project_phase_id === phase.id);
+                                            return (
+                                                <PhaseTaskSection
+                                                    key={phase.id}
+                                                    projectId={project.id}
+                                                    phaseKey={phase.id}
+                                                    phaseId={phase.id}
+                                                    title={phase.name}
+                                                    progressPercent={progressPercentForTasks(phaseTasks)}
+                                                    onTaskDrop={handleTaskDrop}
+                                                >
+                                                    {phaseTasks.length > 0 ? (
+                                                        <ul className="bg-white">
+                                                            {phaseTasks.map((task) => (
+                                                                <TaskItem
+                                                                    key={task.id}
+                                                                    task={task}
+                                                                    onToggle={handleToggleTask}
+                                                                    onEdit={handleEditTask}
+                                                                    onDelete={handleDeleteTask}
+                                                                    isSelected={selectedTasks.includes(task.id)}
+                                                                    onSelect={handleTaskSelect}
+                                                                    onOpenPhotos={handleOpenTaskPhotos}
+                                                                />
+                                                            ))}
+                                                        </ul>
+                                                    ) : (
+                                                        <p className="text-sm text-gray-400 px-3 py-2 bg-white">No tasks in this phase.</p>
+                                                    )}
+                                                </PhaseTaskSection>
+                                            );
+                                        })}
+                                        {taskPhaseGroups.unassigned.length > 0 && (
+                                            <PhaseTaskSection
+                                                projectId={project.id}
+                                                phaseKey="unassigned"
+                                                phaseId={null}
+                                                title="Unassigned"
+                                                progressPercent={progressPercentForTasks(taskPhaseGroups.unassigned)}
+                                                onTaskDrop={handleTaskDrop}
+                                            >
+                                                <ul className="bg-white">
+                                                    {taskPhaseGroups.unassigned.map((task) => (
+                                                        <TaskItem
+                                                            key={task.id}
+                                                            task={task}
+                                                            onToggle={handleToggleTask}
+                                                            onEdit={handleEditTask}
+                                                            onDelete={handleDeleteTask}
+                                                            isSelected={selectedTasks.includes(task.id)}
+                                                            onSelect={handleTaskSelect}
+                                                            onOpenPhotos={handleOpenTaskPhotos}
+                                                        />
+                                                    ))}
+                                                </ul>
+                                            </PhaseTaskSection>
+                                        )}
+                                    </div>
                                 ) : (
                                     <div className="text-center py-12">
                                         <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
@@ -1170,7 +1387,7 @@ function ProjectDetailsView({ routeTab = 'tasks', onTabChange = null }) {
                             <FieldIssues projectId={project.id} />
                         )}
 
-                        {activeTab === 'activity' && (
+                        {activeTab === 'activity' && canViewActivityHistory && (
                             <div className="p-6 app-card">
                                 <ActivityHistoryPanel
                                     mode="project"
@@ -1185,8 +1402,8 @@ function ProjectDetailsView({ routeTab = 'tasks', onTabChange = null }) {
                     </div>
                 </div>
 
-                {/* Sidebar hidden on Gantt for full-width chart (phases + recent activity on other tabs) */}
-                <div className={activeTab === 'gantt' ? 'hidden' : 'lg:col-span-2'}>
+                {/* Sidebar hidden on Gantt and Tasks, like desktop layout */}
+                <div className={activeTab === 'gantt' || activeTab === 'tasks' ? 'hidden' : 'lg:col-span-2'}>
                     <ProjectSidebar project={project} showProjectPhases={activeTab !== 'gantt'} />
                 </div>
             </div>
