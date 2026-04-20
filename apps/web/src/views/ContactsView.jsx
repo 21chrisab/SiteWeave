@@ -410,7 +410,7 @@ function ContactsView() {
                 </div>
             </div>
 
-            <div className="flex border-b border-gray-200 mb-6">
+            <div className="flex border-b border-slate-200 mb-6">
                 <button 
                     onClick={() => setActiveTab('Team')} 
                     className={`px-4 py-2 text-sm font-semibold ${activeTab === 'Team' ? 'text-blue-600 border-b-2 border-blue-600' : 'text-gray-500'}`}
@@ -426,7 +426,7 @@ function ContactsView() {
             </div>
             
             {activeTab === 'Team' ? (
-                <div className="p-6 bg-white rounded-xl shadow-xs border border-gray-200" data-onboarding="contacts-list">
+                <div className="p-6 app-card" data-onboarding="contacts-list">
                     <h2 className="text-xl font-bold mb-4">
                         Team Members ({filteredContacts.length})
                     </h2>
@@ -454,7 +454,7 @@ function ContactsView() {
                     )}
                 </div>
             ) : (
-                <div className="p-6 bg-white rounded-xl shadow-xs border border-gray-200" data-onboarding="contacts-list">
+                <div className="p-6 app-card" data-onboarding="contacts-list">
                     <h2 className="text-xl font-bold mb-4">
                         All Trade Partners ({filteredContacts.length})
                     </h2>
@@ -515,22 +515,24 @@ function ContactsView() {
 
             {/* Import Modal */}
             {showImportModal && (
-                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-                    <div className="bg-white rounded-lg shadow-2xl p-8 w-full max-w-md">
-                        <h2 className="text-2xl font-bold mb-6">Import Contacts</h2>
+                <div className="fixed inset-0 backdrop-blur-sm bg-slate-900/30 flex items-center justify-center z-50">
+                    <div className="app-card shadow-2xl p-8 w-full max-w-md">
+                        <h2 className="text-2xl font-bold text-slate-900 mb-6">Import Contacts</h2>
                         <p className="text-gray-600 mb-6">
                             Import contacts from a CSV file. The file should have columns: Name, Role, Type, Company, Trade, Email, Phone, Status
                         </p>
                         <div className="flex justify-end gap-4">
                             <button 
+                                type="button"
                                 onClick={() => setShowImportModal(false)}
-                                className="px-6 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors"
+                                className="px-6 py-2 app-action-secondary rounded-lg transition-colors"
                             >
                                 Cancel
                             </button>
                             <button 
+                                type="button"
                                 onClick={handleImportContacts}
-                                className="px-6 py-2 text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors"
+                                className="px-6 py-2 app-action-primary rounded-lg transition-colors"
                             >
                                 Choose File
                             </button>
@@ -541,22 +543,24 @@ function ContactsView() {
 
             {/* Export Modal */}
             {showExportModal && (
-                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-                    <div className="bg-white rounded-lg shadow-2xl p-8 w-full max-w-md">
-                        <h2 className="text-2xl font-bold mb-6">Export Contacts</h2>
+                <div className="fixed inset-0 backdrop-blur-sm bg-slate-900/30 flex items-center justify-center z-50">
+                    <div className="app-card shadow-2xl p-8 w-full max-w-md">
+                        <h2 className="text-2xl font-bold text-slate-900 mb-6">Export Contacts</h2>
                         <p className="text-gray-600 mb-6">
                             Export {activeTab.toLowerCase()} contacts as a CSV file.
                         </p>
                         <div className="flex justify-end gap-4">
                             <button 
+                                type="button"
                                 onClick={() => setShowExportModal(false)}
-                                className="px-6 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors"
+                                className="px-6 py-2 app-action-secondary rounded-lg transition-colors"
                             >
                                 Cancel
                             </button>
                             <button 
+                                type="button"
                                 onClick={handleExportContacts}
-                                className="px-6 py-2 text-white bg-green-600 rounded-lg hover:bg-green-700 transition-colors"
+                                className="px-6 py-2 rounded-lg bg-emerald-600 text-white border border-emerald-700 hover:bg-emerald-700 transition-colors"
                             >
                                 Export
                             </button>
@@ -573,8 +577,8 @@ function ContactsView() {
                 const unassignedProjects = state.projects.filter(p => !assignedProjectIds.includes(String(p.id)));
                 
                 return (
-                    <div className="fixed inset-0 backdrop-blur-[2px] bg-white/20 flex items-center justify-center z-50 p-4">
-                        <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-6 max-h-[90vh] overflow-y-auto">
+                    <div className="fixed inset-0 backdrop-blur-sm bg-slate-900/30 flex items-center justify-center z-50 p-4">
+                        <div className="app-card shadow-2xl w-full max-w-md p-6 max-h-[90vh] overflow-y-auto">
                             <h2 className="text-2xl font-bold mb-2">Assign to Project</h2>
                             <p className="text-gray-600 text-sm mb-4">
                                 Manage project assignments for <span className="font-semibold">{assignContact.name}</span>.

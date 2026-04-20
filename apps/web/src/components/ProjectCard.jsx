@@ -100,8 +100,7 @@ const ProjectCard = memo(function ProjectCard({ project, onEdit, onDelete }) {
             onClick={handleCardClick} 
             onMouseEnter={() => setShowActions(true)}
             onMouseLeave={() => setShowActions(false)}
-            className="bg-white p-4 rounded-xl space-y-3 cursor-pointer transition-all hover-lift animate-slide-in relative group"
-            style={{ boxShadow: '0px 4px 12px rgba(0,0,0,0.05)' }}
+            className="app-card p-4 space-y-3 cursor-pointer transition-all hover-lift animate-slide-in relative group hover:shadow-md"
             role="button"
             tabIndex={0}
             aria-label={`Project: ${project.name}, Status: ${project.status}, Due: ${formatDate(project.due_date)}`}
@@ -114,8 +113,8 @@ const ProjectCard = memo(function ProjectCard({ project, onEdit, onDelete }) {
         >
             <div className="flex justify-between items-start">
                 <div className="flex-1 pr-2">
-                    <h3 className="text-xl font-bold">{project.name}</h3>
-                    <p className="text-xs text-gray-500">{project.project_type}</p>
+                    <h3 className="text-xl font-bold text-slate-900">{project.name}</h3>
+                    <p className="text-xs text-slate-500">{project.project_type}</p>
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
                     <span className={`px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(project.status)}`}>
@@ -136,7 +135,7 @@ const ProjectCard = memo(function ProjectCard({ project, onEdit, onDelete }) {
             {/* Progress Status */}
             <ProjectProgressCard project={project} />
             
-            <div className="flex items-center justify-between pt-2 border-t border-gray-100">
+            <div className="flex items-center justify-between pt-2 border-t border-slate-100">
                 <div>
                     <p className="text-xs text-gray-400 font-semibold">DUE DATE</p>
                     <p className="text-sm font-medium">{formatDate(project.due_date)}</p>

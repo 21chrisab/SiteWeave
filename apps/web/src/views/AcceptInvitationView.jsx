@@ -175,15 +175,16 @@ function AcceptInvitationView() {
     if (error) {
         return (
             <div className="min-h-screen flex items-center justify-center bg-linear-to-br from-blue-50 to-purple-50 p-4">
-                <div className="max-w-md w-full bg-white rounded-xl shadow-lg p-8 text-center">
+                <div className="max-w-md w-full app-card shadow-lg p-8 text-center">
                     <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
                         <Icon path="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z" className="w-8 h-8 text-red-600" />
                     </div>
                     <h1 className="text-2xl font-bold text-gray-900 mb-2">Invalid Invitation</h1>
                     <p className="text-gray-600 mb-6">{error}</p>
                     <button
+                        type="button"
                         onClick={() => navigate('/login')}
-                        className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                        className="px-6 py-2 app-action-primary rounded-lg transition-colors"
                     >
                         Go to Login
                     </button>
@@ -194,7 +195,7 @@ function AcceptInvitationView() {
 
     return (
         <div className="min-h-screen flex items-center justify-center bg-linear-to-br from-blue-50 to-purple-50 p-4">
-            <div className="max-w-4xl w-full grid md:grid-cols-2 gap-8 bg-white rounded-xl shadow-xl overflow-hidden">
+            <div className="max-w-4xl w-full grid md:grid-cols-2 gap-0 app-card shadow-xl overflow-hidden">
                 {/* Left Side - Invitation Details */}
                 <div className="bg-linear-to-br from-blue-600 to-purple-600 p-8 text-white flex flex-col justify-center">
                     <div className="mb-6">
@@ -323,7 +324,7 @@ function AcceptInvitationView() {
                         <button
                             type="submit"
                             disabled={isAccepting}
-                            className="w-full py-3 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                            className="w-full py-3 app-action-primary rounded-lg font-semibold disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                         >
                             {isAccepting ? (
                                 <>

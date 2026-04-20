@@ -162,8 +162,8 @@ function ProjectBoardView({ projects, onEdit, onDelete, onProjectClick }) {
 
     if (activeProjects.length === 0) {
         return (
-            <div className="bg-white rounded-xl shadow-xs border border-gray-200 p-12 text-center">
-                <p className="text-gray-500">No active projects found.</p>
+            <div className="app-card p-12 text-center">
+                <p className="text-slate-500">No active projects found.</p>
             </div>
         );
     }
@@ -216,7 +216,7 @@ function ProjectBoardView({ projects, onEdit, onDelete, onProjectClick }) {
                                             onDragStart={(e) => handleDragStart(e, project)}
                                             onDragEnd={handleDragEnd}
                                             onClick={() => onProjectClick && onProjectClick(project)}
-                                            className={`bg-white rounded-lg p-3 shadow-xs border border-gray-200 cursor-move hover:shadow-md transition-all duration-200 ${
+                                            className={`app-card rounded-xl p-3 cursor-move hover:shadow-md transition-all duration-200 ${
                                                 isBeingDragged ? 'opacity-40 scale-95' : 'opacity-100'
                                             }`}
                                         >

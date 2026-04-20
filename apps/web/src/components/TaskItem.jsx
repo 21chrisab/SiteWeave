@@ -43,7 +43,7 @@ const TaskItem = memo(function TaskItem({ task, onToggle, onEdit, onDelete, isSe
 
     if (isEditing) {
         return (
-            <li className="p-3 rounded-lg bg-blue-50 border border-blue-200">
+            <li className="p-3 rounded-xl bg-blue-50/90 border border-blue-200">
                 <div className="space-y-3">
                     <input
                         type="text"
@@ -98,9 +98,9 @@ const TaskItem = memo(function TaskItem({ task, onToggle, onEdit, onDelete, isSe
 
     return (
         <li 
-            className={`flex items-center justify-between p-3 rounded-lg group transition-all animate-slide-in ${
-                isSelected ? 'bg-blue-50 border border-blue-200' : ''
-            } ${task.completed ? 'bg-green-50/30 hover:bg-green-50/50 border-l-4 border-l-green-400' : 'hover:bg-gray-50'}`}
+            className={`flex items-center justify-between p-3 rounded-xl group transition-all animate-slide-in ${
+                isSelected ? 'bg-blue-50 border border-blue-200' : task.completed ? '' : 'border border-slate-100 bg-white/80 hover:bg-slate-50'
+            } ${task.completed ? 'bg-emerald-50/40 hover:bg-emerald-50/60 border-l-4 border-l-emerald-500' : ''}`}
             role="listitem"
             aria-label={`Task: ${task.text}, Priority: ${task.priority}, Start: ${formatDate(task.start_date)}, End: ${formatDate(task.due_date)}`}
         >

@@ -19,7 +19,7 @@
     "@fullcalendar/interaction": "^6.1.20",
     "@fullcalendar/react": "^6.1.20",
     "@fullcalendar/timegrid": "^6.1.20",
-    "@siteweave/core-logic": "file:./packages/core-logic",
+    "@siteweave/core-logic": "file:../../packages/core-logic",
     "@supabase/supabase-js": "^2.103.0",
     "frappe-gantt": "^1.2.1",
     "jspdf": "^4.2.1",

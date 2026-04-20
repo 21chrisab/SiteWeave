@@ -245,12 +245,13 @@ const Workflow = ({ projectId }) => {
     };
 
     return (
-        <div className="p-6 bg-white rounded-xl shadow-xs border border-gray-200">
+        <div className="p-6 app-card">
             <div className="flex justify-between items-center mb-6">
-                <h2 className="text-xl font-bold">Workflows ({workflows.length})</h2>
+                <h2 className="text-xl font-bold text-slate-900">Workflows ({workflows.length})</h2>
                 <button 
+                    type="button"
                     onClick={() => setShowCreateModal(true)}
-                    className="px-4 py-2 text-sm font-semibold text-white bg-blue-600 rounded-lg shadow-xs hover:bg-blue-700"
+                    className="app-action-primary px-4 py-2 text-sm font-semibold rounded-lg"
                 >
                     + Create Workflow
                 </button>
@@ -503,8 +504,9 @@ const Workflow = ({ projectId }) => {
                     <h3 className="text-lg font-semibold text-gray-900 mb-2">No workflows yet</h3>
                     <p className="text-gray-500 mb-4">Create workflows to track multi-step processes and task progress.</p>
                     <button 
+                        type="button"
                         onClick={() => setShowCreateModal(true)}
-                        className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium"
+                        className="app-action-primary px-4 py-2 rounded-lg transition-colors text-sm font-medium"
                     >
                         Create Your First Workflow
                     </button>
@@ -513,8 +515,8 @@ const Workflow = ({ projectId }) => {
 
             {/* Create Workflow Modal */}
             {showCreateModal && (
-                <div className="fixed inset-0 backdrop-blur-[2px] bg-white/20 flex items-center justify-center z-50">
-                    <div className="bg-white rounded-xl shadow-xl max-w-4xl w-full mx-4 max-h-[90vh] overflow-y-auto">
+                <div className="fixed inset-0 backdrop-blur-sm bg-slate-900/20 flex items-center justify-center z-50">
+                    <div className="app-card max-w-4xl w-full mx-4 max-h-[90vh] overflow-y-auto shadow-2xl">
                         <div className="p-6 border-b border-gray-200">
                             <div className="flex justify-between items-center">
                                 <h3 className="text-xl font-bold">Create New Workflow</h3>

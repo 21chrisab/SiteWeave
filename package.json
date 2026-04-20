@@ -12,7 +12,8 @@
     "build:mac": "vite build --config vite.config.mjs && electron-builder --mac --publish never",
     "build:win:appx": "vite build --config vite.config.mjs && electron-builder --win --config.win.target=appx --publish never",
     "build:win:msix": "npm run build:win:appx",
-    "sync:progress-report-templates": "node scripts/sync-progress-report-templates.mjs"
+    "sync:progress-report-templates": "node scripts/sync-progress-report-templates.mjs",
+    "regen:win-update-meta": "node scripts/regen-win-update-metadata.mjs"
   },
   "dependencies": {
     "@fullcalendar/core": "^6.1.20",

@@ -56,8 +56,8 @@ function ProjectSidebar({ project, showProjectPhases = true }) {
     return (
         <div className="space-y-6">
             {hasMilestones && (
-                <div className="p-6 bg-white rounded-xl shadow-xs border border-gray-200">
-                    <h3 className="font-bold mb-3">Overview</h3>
+                <div className="p-6 app-card">
+                    <h3 className="font-bold text-slate-900 mb-3">Overview</h3>
                     <ul className="space-y-3">
                         {project.milestones.map((m, index) => (
                             <li key={index} className="flex justify-between items-center text-sm">
@@ -70,14 +70,14 @@ function ProjectSidebar({ project, showProjectPhases = true }) {
             )}
 
             {showProjectPhases && (
-            <div className="bg-white rounded-xl shadow-xs border border-gray-200 p-6 h-[600px] overflow-hidden">
+            <div className="app-card p-6 h-[600px] overflow-hidden">
                 <BuildPath project={project} />
             </div>
             )}
 
             <PermissionGuard permission="can_view_activity_history">
-            <div className="p-6 bg-white rounded-xl shadow-xs border border-gray-200">
-                <h3 className="font-bold mb-3">Recent Activity</h3>
+            <div className="p-6 app-card">
+                <h3 className="font-bold text-slate-900 mb-3">Recent Activity</h3>
                  <div className="space-y-3">
                     {projectActivity.length > 0 ? projectActivity.map(activity => (
                         <div key={activity.id} className="flex items-start gap-3 text-sm">

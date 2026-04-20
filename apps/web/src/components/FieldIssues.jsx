@@ -29,12 +29,6 @@ const FieldIssues = ({ projectId }) => {
         return hasProjectAccess && contact.type === 'Team';
     });
 
-    // Debug logging
-    console.log('Current projectId:', projectId);
-    console.log('All contacts:', state.contacts);
-    console.log('Project team members:', projectTeamMembers);
-    console.log('Contact IDs:', projectTeamMembers.map(c => ({ id: c.id, name: c.name, idType: typeof c.id })));
-
     // Form state for creating new issues
     const [newIssue, setNewIssue] = useState({
         title: '',
@@ -285,10 +279,10 @@ const FieldIssues = ({ projectId }) => {
     const closedCount = fieldIssues.filter((i) => getFieldIssueDisplayStatus(i) === 'closed').length;
 
     return (
-        <div className="p-6 bg-white rounded-xl shadow-xs border border-gray-200">
+        <div className="p-6 app-card">
             <div className="flex justify-between items-center mb-6">
                 <div className="flex items-center gap-4">
-                    <h2 className="text-xl font-bold">Field Issues ({fieldIssues.length})</h2>
+                    <h2 className="text-xl font-bold text-slate-900">Field Issues ({fieldIssues.length})</h2>
                     <div className="flex items-center gap-2">
                         <label className="text-sm font-medium text-gray-700">Filter:</label>
                         <select 
@@ -304,7 +298,8 @@ const FieldIssues = ({ projectId }) => {
                 </div>
                 <button 
                     onClick={() => setShowCreateModal(true)}
-                    className="px-4 py-2 text-sm font-semibold text-white bg-blue-600 rounded-lg shadow-xs hover:bg-blue-700"
+                    type="button"
+                    className="app-action-primary px-4 py-2 text-sm font-semibold rounded-lg"
                 >
                     + Create Issue
                 </button>
@@ -320,10 +315,10 @@ const FieldIssues = ({ projectId }) => {
                     {filteredIssues.map((issue) => {
                         const displayStatus = getFieldIssueDisplayStatus(issue);
                         return (
-                        <div key={issue.id} className={`border rounded-lg p-4 transition-colors ${
+                        <div key={issue.id} className={`border rounded-xl p-4 transition-colors ${
                             displayStatus === 'closed' 
-                                ? 'bg-gray-50 border-gray-300 opacity-75' 
-                                : 'border-gray-200 bg-white'
+                                ? 'bg-slate-50 border-slate-200 opacity-80' 
+                                : 'border-slate-200 bg-white/90'
                         }`}>
                             <div className="flex items-start justify-between">
                                 <div className="flex-1">
@@ -406,8 +401,8 @@ const FieldIssues = ({ projectId }) => {
 
             {/* Create Issue Modal */}
             {showCreateModal && (
-                <div className="fixed inset-0 backdrop-blur-[2px] bg-white/20 flex items-center justify-center z-50">
-                    <div className="bg-white rounded-xl shadow-xl max-w-4xl w-full mx-4 max-h-[90vh] overflow-y-auto">
+                <div className="fixed inset-0 backdrop-blur-sm bg-slate-900/20 flex items-center justify-center z-50">
+                    <div className="app-card max-w-4xl w-full mx-4 max-h-[90vh] overflow-y-auto shadow-2xl">
                         <div className="p-6 border-b border-gray-200">
                             <div className="flex justify-between items-center">
                                 <h3 className="text-xl font-bold">{isEditing ? 'Edit Issue' : 'Create New Issue'}</h3>
@@ -511,8 +506,8 @@ const FieldIssues = ({ projectId }) => {
 
             {/* Delete Confirmation Modal */}
             {issueToDelete && (
-                <div className="fixed inset-0 backdrop-blur-[2px] bg-white/20 flex items-center justify-center z-50">
-                    <div className="bg-white rounded-xl shadow-xl max-w-md w-full mx-4 p-6">
+                <div className="fixed inset-0 backdrop-blur-sm bg-slate-900/20 flex items-center justify-center z-50">
+                    <div className="app-card max-w-md w-full mx-4 p-6 shadow-2xl">
                         <h3 className="text-lg font-bold text-gray-900 mb-4">Delete Issue</h3>
                         <p className="text-gray-600 mb-6">
                             Are you sure you want to delete this issue? This action cannot be undone.

@@ -25,8 +25,8 @@ function NoOrganizationView() {
   // If user is a project collaborator, show different message
   if (state.isProjectCollaborator && state.collaborationProjects.length > 0) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4">
-        <div className="max-w-md w-full bg-white rounded-lg shadow-lg p-8 text-center">
+      <div className="min-h-screen flex items-center justify-center px-4">
+        <div className="max-w-md w-full app-card p-8 text-center shadow-lg">
           <div className="mb-6">
             <div className="mx-auto w-16 h-16 bg-purple-100 rounded-full flex items-center justify-center mb-4">
               <Icon 
@@ -34,8 +34,8 @@ function NoOrganizationView() {
                 className="w-8 h-8 text-purple-600"
               />
             </div>
-            <h1 className="text-2xl font-bold text-gray-900 mb-2">Guest Access</h1>
-            <p className="text-gray-600">
+            <h1 className="text-2xl font-bold text-slate-900 mb-2">Guest Access</h1>
+            <p className="text-slate-600">
               You have access to {state.collaborationProjects.length} project{state.collaborationProjects.length !== 1 ? 's' : ''} as a collaborator.
             </p>
           </div>
@@ -44,14 +44,16 @@ function NoOrganizationView() {
               You can access your assigned projects from the dashboard. If you need to join an organization, please contact your administrator.
             </p>
             <button
+              type="button"
               onClick={() => dispatch({ type: 'SET_VIEW', payload: 'Dashboard' })}
-              className="w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+              className="w-full px-4 py-2 app-action-primary rounded-lg transition-colors"
             >
               Go to Dashboard
             </button>
             <button
+              type="button"
               onClick={handleSignOut}
-              className="w-full px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+              className="w-full px-4 py-2 app-action-secondary rounded-lg transition-colors"
             >
               Sign Out
             </button>
@@ -63,8 +65,8 @@ function NoOrganizationView() {
 
   // User has no organization and no project access
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4">
-      <div className="max-w-md w-full bg-white rounded-lg shadow-lg p-8 text-center">
+    <div className="min-h-screen flex items-center justify-center px-4">
+      <div className="max-w-md w-full app-card p-8 text-center shadow-lg">
         <div className="mb-6">
           <div className="mx-auto w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mb-4">
             <Icon 
@@ -72,8 +74,8 @@ function NoOrganizationView() {
               className="w-8 h-8 text-red-600"
             />
           </div>
-          <h1 className="text-2xl font-bold text-gray-900 mb-2">No Organization Found</h1>
-          <p className="text-gray-600">
+          <h1 className="text-2xl font-bold text-slate-900 mb-2">No Organization Found</h1>
+          <p className="text-slate-600">
             Your account is not associated with an organization or any projects.
           </p>
         </div>
@@ -95,8 +97,9 @@ function NoOrganizationView() {
             Please contact your administrator to be added to an organization or invited to a project.
           </p>
           <button
+            type="button"
             onClick={handleSignOut}
-            className="w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+            className="w-full px-4 py-2 app-action-primary rounded-lg transition-colors"
           >
             Sign Out
           </button>
