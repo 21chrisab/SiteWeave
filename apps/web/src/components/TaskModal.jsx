@@ -5,7 +5,7 @@ import DateDropdown from './DateDropdown';
 import { parseRecurrence, validateRecurrence } from '../utils/recurrenceService';
 import PermissionGuard from './PermissionGuard';
 
-function TaskModal({ project, onClose, onSave, isLoading = false }) {
+function TaskModal({ project, onClose, onSave, isLoading = false, allTasks = [] }) {
     const { state } = useAppContext();
     const [text, setText] = useState('');
     const [startDate, setStartDate] = useState('');
@@ -21,6 +21,7 @@ function TaskModal({ project, onClose, onSave, isLoading = false }) {
     const [recurrenceEndType, setRecurrenceEndType] = useState('never');
     const [recurrenceEndDate, setRecurrenceEndDate] = useState('');
     const [recurrenceOccurrences, setRecurrenceOccurrences] = useState(10);
+    const [selectedPredecessorTaskIds, setSelectedPredecessorTaskIds] = useState([]);
     
 
     // Get contacts assigned to this project
@@ -93,6 +94,7 @@ function TaskModal({ project, onClose, onSave, isLoading = false }) {
             assignee_id: validAssigneeId,
             recurrence: recurrenceJson,
             completed: false,
+            predecessor_task_ids: selectedPredecessorTaskIds,
         });
     };
 
@@ -125,6 +127,27 @@ function TaskModal({ project, onClose, onSave, isLoading = false }) {
                             <option>Medium</option>
                             <option>High</option>
                         </select>
+                    </div>
+                    <div className="mb-4">
+                        <label className="block text-sm font-semibold mb-1 text-gray-600">Dependencies (Finish-to-Start)</label>
+                        <select
+                            multiple
+                            value={selectedPredecessorTaskIds}
+                            onChange={(e) => {
+                                const values = Array.from(e.target.selectedOptions).map((option) => option.value);
+                                setSelectedPredecessorTaskIds(values);
+                            }}
+                            className="w-full p-2 border rounded-lg bg-white min-h-[96px]"
+                        >
+                            {allTasks.map((task) => (
+                                <option key={task.id} value={task.id}>
+                                    {task.text}
+                                </option>
+                            ))}
+                        </select>
+                        <p className="text-xs text-gray-500 mt-1">
+                            Selected tasks must finish before this task can start.
+                        </p>
                     </div>
                     <PermissionGuard permission="can_assign_tasks">
                         <div className="mb-6">

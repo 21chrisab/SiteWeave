@@ -18,7 +18,6 @@ import SaveAsTemplateModal from '../components/SaveAsTemplateModal';
 import ConfirmDialog from '../components/ConfirmDialog';
 import TaskBulkActions from '../components/TaskBulkActions';
 import FieldIssues from '../components/FieldIssues';
-import Workflow from '../components/Workflow';
 import Avatar from '../components/Avatar';
 import PermissionGuard from '../components/PermissionGuard';
 import ActivityHistoryPanel from '../components/ActivityHistoryPanel';
@@ -265,44 +264,65 @@ function ProjectDetailsView({ routeTab = 'tasks', onTabChange = null }) {
         setIsCreatingTask(true);
         
         try {
+            const predecessorTaskIds = Array.isArray(taskData.predecessor_task_ids)
+                ? [...new Set(taskData.predecessor_task_ids.filter(Boolean))]
+                : [];
+            const payload = { ...taskData };
+            delete payload.predecessor_task_ids;
+
             // Ensure assignee_id is valid before inserting
-            if (taskData.assignee_id) {
+            if (payload.assignee_id) {
                 // Verify the contact exists
                 const { data: contact, error: contactError } = await supabaseClient
                     .from('contacts')
                     .select('id')
-                    .eq('id', taskData.assignee_id)
+                    .eq('id', payload.assignee_id)
                     .single();
                 
                 if (contactError || !contact) {
                     console.warn('Assignee contact not found, setting to null');
-                    taskData.assignee_id = null;
+                    payload.assignee_id = null;
                 }
             }
             
             // Parse workflow_steps if it's a string (for JSONB storage)
-            if (taskData.workflow_steps && typeof taskData.workflow_steps === 'string') {
+            if (payload.workflow_steps && typeof payload.workflow_steps === 'string') {
                 try {
-                    taskData.workflow_steps = JSON.parse(taskData.workflow_steps);
+                    payload.workflow_steps = JSON.parse(payload.workflow_steps);
                 } catch (e) {
                     console.error('Error parsing workflow_steps:', e);
-                    taskData.workflow_steps = null;
+                    payload.workflow_steps = null;
                 }
             }
             
-            const { data, error } = await supabaseClient.from('tasks').insert(taskData).select().single();
+            const { data, error } = await supabaseClient.from('tasks').insert(payload).select().single();
             if (error) {
                 // Provide more specific error message for foreign key violations
                 if (error.message?.includes('foreign key constraint')) {
                     addToast('Cannot assign task: Selected assignee is not valid. Task created without assignee.', 'warning');
                     // Retry without assignee
-                    const taskDataWithoutAssignee = { ...taskData, assignee_id: null };
+                    const taskDataWithoutAssignee = { ...payload, assignee_id: null };
                     const { data: retryData, error: retryError } = await supabaseClient
                         .from('tasks')
                         .insert(taskDataWithoutAssignee)
                         .select()
                         .single();
                     if (!retryError && retryData) {
+                        if (predecessorTaskIds.length > 0) {
+                            const depRows = predecessorTaskIds.map((predecessorId) => ({
+                                task_id: predecessorId,
+                                successor_task_id: retryData.id,
+                                dependency_type: 'finish_to_start',
+                                lag_days: 0,
+                            }));
+                            const { data: insertedDeps } = await supabaseClient
+                                .from('task_dependencies')
+                                .insert(depRows)
+                                .select('id, task_id, successor_task_id, dependency_type, lag_days');
+                            if (insertedDeps?.length) {
+                                setGanttDependencies((prev) => [...prev, ...insertedDeps]);
+                            }
+                        }
                         dispatch({ type: 'ADD_TASK', payload: retryData });
                         setProjectTasksList(prev => [...prev, retryData]);
                         addToast('Task added successfully (without assignee)', 'success');
@@ -312,6 +332,22 @@ function ProjectDetailsView({ routeTab = 'tasks', onTabChange = null }) {
                     }
                 }
                 throw error;
+            }
+
+            if (predecessorTaskIds.length > 0) {
+                const depRows = predecessorTaskIds.map((predecessorId) => ({
+                    task_id: predecessorId,
+                    successor_task_id: data.id,
+                    dependency_type: 'finish_to_start',
+                    lag_days: 0,
+                }));
+                const { data: insertedDeps } = await supabaseClient
+                    .from('task_dependencies')
+                    .insert(depRows)
+                    .select('id, task_id, successor_task_id, dependency_type, lag_days');
+                if (insertedDeps?.length) {
+                    setGanttDependencies((prev) => [...prev, ...insertedDeps]);
+                }
             }
             
             dispatch({ type: 'ADD_TASK', payload: data });
@@ -1145,12 +1181,7 @@ function ProjectDetailsView({ routeTab = 'tasks', onTabChange = null }) {
                             </div>
                         )}
 
-                        {/* Workflow Section - Always visible under Tasks */}
-                        {activeTab === 'tasks' && (
-                            <div className="mt-6">
-                                <Workflow projectId={project.id} />
-                            </div>
-                        )}
+                        {/* Desktop parity: workflow block intentionally removed from tasks tab */}
                     </div>
                 </div>
 
@@ -1159,7 +1190,15 @@ function ProjectDetailsView({ routeTab = 'tasks', onTabChange = null }) {
                     <ProjectSidebar project={project} showProjectPhases={activeTab !== 'gantt'} />
                 </div>
             </div>
-            {showTaskModal && <TaskModal project={project} onClose={() => setShowTaskModal(false)} onSave={handleAddTask} isLoading={isCreatingTask} />}
+            {showTaskModal && (
+                <TaskModal
+                    project={project}
+                    allTasks={allTasks}
+                    onClose={() => setShowTaskModal(false)}
+                    onSave={handleAddTask}
+                    isLoading={isCreatingTask}
+                />
+            )}
             <ConfirmDialog
                 isOpen={showDeleteConfirm}
                 onClose={() => setShowDeleteConfirm(false)}
