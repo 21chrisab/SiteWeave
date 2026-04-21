@@ -1,7 +1,7 @@
 {
   "name": "siteweave",
   "private": true,
-  "version": "1.0.62",
+  "version": "1.0.64",
   "main": "dist-electron/main.cjs",
   "scripts": {
     "dev": "vite",
@@ -13,6 +13,8 @@
     "build:win:appx": "vite build --config vite.config.mjs && electron-builder --win --config.win.target=appx --publish never",
     "build:win:msix": "npm run build:win:appx",
     "sync:progress-report-templates": "node scripts/sync-progress-report-templates.mjs",
+    "verify:progress-report-sync": "node scripts/verify-progress-report-sync.mjs",
+    "test:progress-report-stability": "node scripts/test-progress-report-stability.mjs",
     "regen:win-update-meta": "node scripts/regen-win-update-metadata.mjs"
   },
   "dependencies": {
