@@ -14,7 +14,15 @@ function messageFromFunctionsError(error) {
   if (!body) return base;
   try {
     const parsed = typeof body === 'string' ? JSON.parse(body) : body;
-    if (parsed && typeof parsed.error === 'string') return parsed.error;
+    if (parsed && typeof parsed.error === 'string') {
+      let msg = parsed.error;
+      if (parsed.details != null) {
+        const detailStr =
+          typeof parsed.details === 'string' ? parsed.details : JSON.stringify(parsed.details);
+        if (detailStr && detailStr !== '{}') msg += ` (${detailStr})`;
+      }
+      return msg;
+    }
     if (parsed && typeof parsed.message === 'string') return parsed.message;
   } catch {
     /* ignore */
@@ -419,14 +427,11 @@ export async function sendManualReport(supabase, scheduleId) {
       is_manual: true
     }
   });
-  
-  if (error) throw new Error(messageFromFunctionsError(error));
-  
-  // Update last_sent_at
-  await updateProgressReportSchedule(supabase, scheduleId, {
-    last_sent_at: new Date().toISOString()
-  });
-  
+
+  if (error) {
+    throw new Error(messageFromFunctionsError(error));
+  }
+
   return data;
 }
 

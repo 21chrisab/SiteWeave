@@ -6,9 +6,11 @@ import {
     attachTaskPhotoUrls,
     deleteTaskPhoto,
     fetchTaskPhotos,
+    listWeatherImpactsForProject,
     reorderTaskPhotos,
     updateTaskPhoto,
     uploadTaskPhotoSet,
+    normalizeAssigneePhone,
 } from '@siteweave/core-logic';
 import TaskItem from '../components/TaskItem';
 import TaskModal from '../components/TaskModal';
@@ -22,13 +24,14 @@ import SaveAsTemplateModal from '../components/SaveAsTemplateModal';
 import MsProjectImportModal from '../components/MsProjectImportModal';
 import ProgressReportModal from '../components/ProgressReportModal';
 import WeatherImpactModal from '../components/WeatherImpactModal';
+import WeatherDelayMarker from '../components/WeatherDelayMarker';
 import PermissionGuard from '../components/PermissionGuard';
 import ConfirmDialog from '../components/ConfirmDialog';
 import TaskBulkActions from '../components/TaskBulkActions';
 import FieldIssues from '../components/FieldIssues';
 import Avatar from '../components/Avatar';
 import { useTaskShortcuts } from '../hooks/useKeyboardShortcuts';
-import { handleApiError, createOptimisticUpdate } from '../utils/errorHandling';
+import { handleApiError } from '../utils/errorHandling';
 import { parseRecurrence } from '../utils/recurrenceService';
 import { buildTaskPhotoDraft, buildTaskCompletionPhotoDetails, revokeTaskPhotoDraftUrls, sortTaskPhotos, canManageTaskPhotos } from '../utils/taskPhotoUtils';
 import { logTaskCreated, logTaskCompleted, logTaskUncompleted, logTaskUpdated, logTaskDeleted } from '../utils/activityLogger';
@@ -40,6 +43,7 @@ import {
     getEarliestAllowedStartDate,
     wouldCreateDependencyCycle,
 } from '../utils/taskDependencyService';
+import { mergeWeatherIntoPhaseTasks } from '../utils/weatherTaskTimeline';
 import GanttChart from '../components/GanttChart';
 import ActivityHistoryPanel from '../components/ActivityHistoryPanel';
 import Icon from '../components/Icon';
@@ -65,7 +69,9 @@ function ProjectDetailsView() {
     const [showShare, setShowShare] = useState(false);
     const [showProgressReportModal, setShowProgressReportModal] = useState(false);
     const [showWeatherImpactModal, setShowWeatherImpactModal] = useState(false);
+    const [selectedWeatherImpact, setSelectedWeatherImpact] = useState(null);
     const [projectRefreshNonce, setProjectRefreshNonce] = useState(0);
+    const [weatherImpacts, setWeatherImpacts] = useState([]);
     const [showSaveAsTemplateModal, setShowSaveAsTemplateModal] = useState(false);
     const [showMsProjectImportModal, setShowMsProjectImportModal] = useState(false);
     const [showProjectModal, setShowProjectModal] = useState(false);
@@ -113,6 +119,30 @@ function ProjectDetailsView() {
         })();
         return () => ac.abort();
     }, [state.selectedProjectId, projectRefreshNonce]);
+
+    useEffect(() => {
+        if (!state.selectedProjectId) {
+            setWeatherImpacts([]);
+            return;
+        }
+        const ac = new AbortController();
+        (async () => {
+            try {
+                const rows = await listWeatherImpactsForProject(
+                    supabaseClient,
+                    state.selectedProjectId,
+                    state.currentOrganization?.id || null,
+                );
+                if (!ac.signal.aborted) setWeatherImpacts(rows || []);
+            } catch (e) {
+                if (!ac.signal.aborted) {
+                    console.error('Error loading weather impacts:', e);
+                    setWeatherImpacts([]);
+                }
+            }
+        })();
+        return () => ac.abort();
+    }, [state.selectedProjectId, state.currentOrganization?.id, projectRefreshNonce]);
 
     useEffect(() => {
         if (!canViewActivityHistory && activeTab === 'activity') {
@@ -256,7 +286,9 @@ function ProjectDetailsView() {
                 }
                 const list = await hydrateTaskRows(tasks || []);
                 if (!ac.signal.aborted) setProjectTasksList(list);
-                const otherTasks = (state.tasks || []).filter(t => t.project_id !== state.selectedProjectId);
+                const otherTasks = (state.tasks || []).filter(
+                  (t) => String(t.project_id) !== String(state.selectedProjectId),
+                );
                 dispatch({ type: 'SET_TASKS_LOADED', payload: [...otherTasks, ...list] });
             } catch (e) {
                 if (!ac.signal.aborted) console.error('Error loading project tasks:', e);
@@ -393,7 +425,7 @@ function ProjectDetailsView() {
             }
         })();
         return () => ac.abort();
-    }, [activeTab, state.selectedProjectId, projectTasksSlice]);
+    }, [activeTab, state.selectedProjectId, projectTasksSlice, projectRefreshNonce]);
     
     // Get all project crew members (any contact linked to this project)
     const crewMembers = contacts.filter(contact => 
@@ -418,23 +450,23 @@ function ProjectDetailsView() {
         ];
     }, [contacts, project?.id, project?.organization_id]);
 
-    /** Binary completion only: percent_complete is always 0 or 100. */
+    /** Keep completion and percent_complete synchronized while allowing 0-100 progress. */
     const normalizeTaskProgressUpdate = (baseTask, updates) => {
         const next = { ...updates };
 
-        if (next.completed !== undefined) {
-            next.percent_complete = next.completed ? 100 : 0;
-        } else if (
+        // When both percent and completed are sent (e.g. TaskItem), percent must win — otherwise
+        // `completed: false` runs first and forces percent_complete to 0.
+        if (
             next.percent_complete !== undefined &&
             next.percent_complete !== null &&
             next.percent_complete !== ''
         ) {
             const parsed = Number(next.percent_complete);
             const bounded = Number.isFinite(parsed) ? Math.max(0, Math.min(100, Math.round(parsed))) : 0;
-            next.percent_complete = bounded >= 100 ? 100 : 0;
-            if (next.completed === undefined) {
-                next.completed = next.percent_complete >= 100;
-            }
+            next.percent_complete = bounded;
+            next.completed = bounded >= 100;
+        } else if (next.completed !== undefined) {
+            next.percent_complete = next.completed ? 100 : 0;
         }
 
         return next;
@@ -642,12 +674,120 @@ function ProjectDetailsView() {
                 predecessor_task_ids: predecessorTaskIds = [],
                 ...taskPayload
             } = taskData;
+            const assigneeEmailInput = String(taskPayload.assignee_email || '').trim().toLowerCase();
+            delete taskPayload.assignee_email;
+            const assigneePhoneRaw = String(taskPayload.assignee_phone || '').trim();
+            delete taskPayload.assignee_phone;
             taskPayload.organization_id = project.organization_id;
             Object.assign(taskPayload, normalizeTaskProgressUpdate(null, {
                 percent_complete: taskPayload.percent_complete ?? 0,
                 completed: taskPayload.completed ?? false,
             }));
             setCreateTaskPhotoUploadProgress(null);
+
+            if (!taskPayload.assignee_id && assigneeEmailInput) {
+                let resolvedContactId = null;
+                const { data: existingContact, error: existingContactError } = await supabaseClient
+                    .from('contacts')
+                    .select('id')
+                    .eq('organization_id', project.organization_id)
+                    .ilike('email', assigneeEmailInput)
+                    .maybeSingle();
+                if (existingContactError) {
+                    throw existingContactError;
+                }
+
+                if (existingContact?.id) {
+                    resolvedContactId = existingContact.id;
+                } else {
+                    const { data: createdContact, error: createdContactError } = await supabaseClient
+                        .from('contacts')
+                        .insert({
+                            organization_id: project.organization_id,
+                            name: assigneeEmailInput.split('@')[0] || assigneeEmailInput,
+                            email: assigneeEmailInput,
+                            type: 'Team',
+                            role: 'External Assignee',
+                            status: 'Available',
+                        })
+                        .select('id')
+                        .single();
+                    if (createdContactError) {
+                        throw createdContactError;
+                    }
+                    resolvedContactId = createdContact?.id || null;
+                }
+
+                if (resolvedContactId) {
+                    const { error: linkError } = await supabaseClient
+                        .from('project_contacts')
+                        .upsert({
+                            project_id: project.id,
+                            contact_id: resolvedContactId,
+                            organization_id: project.organization_id,
+                        }, {
+                            onConflict: 'project_id,contact_id',
+                            ignoreDuplicates: true,
+                        });
+                    if (linkError && linkError.code !== '23505') {
+                        throw linkError;
+                    }
+                    taskPayload.assignee_id = resolvedContactId;
+                }
+            }
+
+            if (!taskPayload.assignee_id && assigneePhoneRaw) {
+                const { e164, isValid } = normalizeAssigneePhone(assigneePhoneRaw, { defaultRegion: 'US' });
+                if (!isValid || !e164) {
+                    addToast(t('toast.invalid_assignee_phone'), 'warning');
+                } else {
+                    const last4 = e164.replace(/\D/g, '').slice(-4);
+                    const { data: phoneRows, error: existingPhoneError } = await supabaseClient
+                        .from('contacts')
+                        .select('id')
+                        .eq('organization_id', project.organization_id)
+                        .eq('phone', e164)
+                        .limit(1);
+                    if (existingPhoneError) {
+                        throw existingPhoneError;
+                    }
+                    let resolvedPhoneContactId = phoneRows?.[0]?.id ?? null;
+                    if (!resolvedPhoneContactId) {
+                        const { data: createdPhoneContact, error: createdPhoneContactError } = await supabaseClient
+                            .from('contacts')
+                            .insert({
+                                organization_id: project.organization_id,
+                                name: t('toast.external_assignee_phone_name', { last4 }),
+                                phone: e164,
+                                type: 'Team',
+                                role: 'External Assignee',
+                                status: 'Available',
+                            })
+                            .select('id')
+                            .single();
+                        if (createdPhoneContactError) {
+                            throw createdPhoneContactError;
+                        }
+                        resolvedPhoneContactId = createdPhoneContact?.id || null;
+                    }
+                    if (resolvedPhoneContactId) {
+                        const { error: phoneLinkError } = await supabaseClient
+                            .from('project_contacts')
+                            .upsert({
+                                project_id: project.id,
+                                contact_id: resolvedPhoneContactId,
+                                organization_id: project.organization_id,
+                            }, {
+                                onConflict: 'project_id,contact_id',
+                                ignoreDuplicates: true,
+                            });
+                        if (phoneLinkError && phoneLinkError.code !== '23505') {
+                            throw phoneLinkError;
+                        }
+                        taskPayload.assignee_id = resolvedPhoneContactId;
+                    }
+                }
+            }
 
             // Ensure assignee_id is valid before inserting
             if (taskPayload.assignee_id) {
@@ -980,114 +1120,6 @@ function ProjectDetailsView() {
         await Promise.all(sendPromises);
     }, [addToast, allTasks, project, state.user, taskDependencies]);
     
-    const handleToggleTask = async (taskId, currentStatus) => {
-        const task = allTasks.find(t => t.id === taskId) || tasksState.find(t => t.id === taskId);
-        if (!task) return;
-        const taskWarning = dependencyWarnings[taskId];
-        if (!currentStatus && taskWarning?.unmetPredecessors?.length) {
-            addToast(`Dependency warning: waiting on ${taskWarning.unmetPredecessors.map((row) => row.text).join(', ')}.`, 'warning');
-        }
-
-        // If completing a task and it's recurring (not an instance), generate next instance
-        const isCompleting = !currentStatus;
-        const isRecurringParent = isCompleting && task.recurrence && !task.is_recurring_instance;
-        
-        // Optimistic update
-        const optimisticUpdate = createOptimisticUpdate(
-            () => {
-                const updatedTask = {
-                    ...task,
-                    ...normalizeTaskProgressUpdate(task, { completed: !currentStatus }),
-                };
-                dispatch({ type: 'UPDATE_TASK', payload: updatedTask });
-                setProjectTasksList(prev => prev.map((row) => row.id === taskId ? updatedTask : row));
-                addToast(t('toast.task_updated_successfully'), 'success');
-            },
-            () => {
-                // Rollback
-                dispatch({ type: 'UPDATE_TASK', payload: task });
-                setProjectTasksList(prev => prev.map((row) => row.id === taskId ? task : row));
-                addToast(t('toast.failed_to_update_task'), 'error');
-            }
-        );
-
-        // Apply optimistic update
-        optimisticUpdate.optimistic();
-
-        try {
-            const progressUpdate = normalizeTaskProgressUpdate(task, { completed: !currentStatus });
-            const { error } = await supabaseClient.from('tasks').update(progressUpdate).eq('id', taskId);
-            if (error) {
-                throw error;
-            }
-
-            // Log activity
-            if (!currentStatus) {
-                // Task was completed
-                logTaskCompleted(
-                    { ...task, completed: true, percent_complete: 100 },
-                    state.user,
-                    task.project_id,
-                    buildTaskCompletionPhotoDetails(task)
-                );
-                await notifySuccessorAssignees({ ...task, completed: true, percent_complete: 100 });
-            } else {
-                // Task was uncompleted
-                logTaskUncompleted(task, state.user, task.project_id);
-                const { error: clearHistoryError } = await supabaseClient
-                    .from('task_dependency_notification_history')
-                    .delete()
-                    .eq('trigger_task_id', task.id);
-                if (clearHistoryError) {
-                    console.error('Failed to clear dependency notification history:', clearHistoryError);
-                }
-            }
-
-            // Generate next instance if this is a recurring parent task being completed (not uncompleted)
-            if (isRecurringParent && !currentStatus) {
-                try {
-                    const recurrence = parseRecurrence(task.recurrence);
-                    if (recurrence) {
-                        // Calculate next due date based on pattern
-                        const currentDueDate = task.due_date ? new Date(task.due_date) : new Date();
-                        const nextDueDate = calculateNextTaskDueDate(currentDueDate, recurrence);
-                        
-                        // Create next instance
-                        const nextInstance = {
-                            project_id: task.project_id,
-                            text: task.text,
-                            due_date: nextDueDate.toISOString().split('T')[0],
-                            priority: task.priority,
-                            assignee_id: task.assignee_id,
-                            recurrence: task.recurrence,
-                            parent_task_id: task.id,
-                            is_recurring_instance: true,
-                            completed: false,
-                            percent_complete: 0,
-                        };
-
-                        const { data: newInstance, error: instanceError } = await supabaseClient
-                            .from('tasks')
-                            .insert(nextInstance)
-                            .select()
-                            .single();
-
-                        if (!instanceError && newInstance) {
-                            dispatch({ type: 'ADD_TASK', payload: newInstance });
-                            addToast(t('toast.next_task_instance_created'), 'success');
-                        }
-                    }
-                } catch (recurError) {
-                    console.error('Error generating next task instance:', recurError);
-                    // Don't fail the task completion if instance generation fails
-                }
-            }
-        } catch (error) {
-            optimisticUpdate.rollback();
-            addToast(handleApiError(error, t('toast.error_updating_task', { message: error?.message || '' })), 'error');
-        }
-    };
-    
     // Helper function to calculate next due date for recurring tasks
     const calculateNextTaskDueDate = (currentDate, recurrence) => {
         const nextDate = new Date(currentDate);
@@ -1181,11 +1213,31 @@ function ProjectDetailsView() {
                 }
             }
             addToast(t('toast.task_updated_successfully'), 'success');
+
+            const wasPrevComplete = prev
+                ? Boolean(prev.completed) || (Number(prev.percent_complete ?? 0) || 0) >= 100
+                : false;
+            const nowComplete =
+                Boolean(updatedTask.completed) || (Number(updatedTask.percent_complete ?? 0) || 0) >= 100;
+            const transitionToComplete = Boolean(prev) && nowComplete && !wasPrevComplete;
+            const transitionFromComplete = Boolean(prev) && !nowComplete && wasPrevComplete;
+
+            if (transitionToComplete) {
+                const taskWarning = dependencyWarnings[taskId];
+                if (taskWarning?.unmetPredecessors?.length) {
+                    addToast(`Dependency warning: waiting on ${taskWarning.unmetPredecessors.map((row) => row.text).join(', ')}.`, 'warning');
+                }
+            }
+
             if (prev && project && state.user) {
                 const changes = {};
                 Object.keys(normalizedUpdates).forEach((key) => {
                     if (prev[key] !== normalizedUpdates[key]) changes[key] = normalizedUpdates[key];
                 });
+                if (transitionToComplete || transitionFromComplete) {
+                    delete changes.completed;
+                    delete changes.percent_complete;
+                }
                 if (Object.keys(changes).length > 0) {
                     logTaskUpdated(
                         { ...prev, ...normalizedUpdates, organization_id: prev.organization_id ?? project.organization_id },
@@ -1193,6 +1245,59 @@ function ProjectDetailsView() {
                         project.id,
                         changes
                     );
+                }
+            }
+
+            if (transitionToComplete && state.user && prev) {
+                const completedTask = { ...prev, ...normalizedUpdates, completed: true, percent_complete: 100 };
+                logTaskCompleted(
+                    completedTask,
+                    state.user,
+                    project.id,
+                    buildTaskCompletionPhotoDetails(completedTask)
+                );
+                await notifySuccessorAssignees(completedTask);
+            } else if (transitionFromComplete && state.user && prev) {
+                logTaskUncompleted(prev, state.user, prev.project_id);
+                const { error: clearHistoryError } = await supabaseClient
+                    .from('task_dependency_notification_history')
+                    .delete()
+                    .eq('trigger_task_id', prev.id);
+                if (clearHistoryError) {
+                    console.error('Failed to clear dependency notification history:', clearHistoryError);
+                }
+            }
+
+            if (transitionToComplete && prev && prev.recurrence && !prev.is_recurring_instance) {
+                try {
+                    const recurrence = parseRecurrence(prev.recurrence);
+                    if (recurrence) {
+                        const currentDueDate = prev.due_date ? new Date(prev.due_date) : new Date();
+                        const nextDueDate = calculateNextTaskDueDate(currentDueDate, recurrence);
+                        const nextInstance = {
+                            project_id: prev.project_id,
+                            text: prev.text,
+                            due_date: nextDueDate.toISOString().split('T')[0],
+                            priority: prev.priority,
+                            assignee_id: prev.assignee_id,
+                            recurrence: prev.recurrence,
+                            parent_task_id: prev.id,
+                            is_recurring_instance: true,
+                            completed: false,
+                            percent_complete: 0,
+                        };
+                        const { data: newInstance, error: instanceError } = await supabaseClient
+                            .from('tasks')
+                            .insert(nextInstance)
+                            .select()
+                            .single();
+                        if (!instanceError && newInstance) {
+                            dispatch({ type: 'ADD_TASK', payload: newInstance });
+                            addToast(t('toast.next_task_instance_created'), 'success');
+                        }
+                    }
+                } catch (recurError) {
+                    console.error('Error generating next task instance:', recurError);
                 }
             }
         }
@@ -1714,7 +1819,11 @@ function ProjectDetailsView() {
                     projectPhases={projectPhases}
                     taskDependencies={taskDependencies}
                     projectDependencyMode={projectDependencyMode}
-                    onClose={() => setShowWeatherImpactModal(false)}
+                    initialImpact={selectedWeatherImpact}
+                    onClose={() => {
+                        setShowWeatherImpactModal(false);
+                        setSelectedWeatherImpact(null);
+                    }}
                     onApplied={() => setProjectRefreshNonce((n) => n + 1)}
                 />
             )}
@@ -1940,6 +2049,7 @@ function ProjectDetailsView() {
                                                         <button
                                                             type="button"
                                                             onClick={() => {
+                                                                setSelectedWeatherImpact(null);
                                                                 setShowWeatherImpactModal(true);
                                                                 setToolbarMenu(null);
                                                             }}
@@ -1966,76 +2076,118 @@ function ProjectDetailsView() {
                                     <div
                                         className={`space-y-3 ${tasks.length > 7 ? 'max-h-[min(70vh,560px)] overflow-y-auto pr-1' : ''}`}
                                     >
-                                        {projectPhases.map((phase) => {
-                                            const phaseTasks = tasks.filter((t) => t.project_phase_id === phase.id);
+                                        {(() => {
                                             return (
-                                                <PhaseTaskSection
-                                                    key={phase.id}
-                                                    projectId={project.id}
-                                                    phaseKey={phase.id}
-                                                    phaseId={phase.id}
-                                                    title={phase.name}
-                                                    progressPercent={progressPercentForTasks(phaseTasks)}
-                                                    onTaskDrop={handleTaskDrop}
-                                                >
-                                                    {phaseTasks.length > 0 ? (
-                                                        <ul className="bg-white">
-                                                            {phaseTasks.map((task) => (
-                                                                <TaskItem
-                                                                    key={task.id}
-                                                                    task={task}
-                                                                    onToggle={handleToggleTask}
-                                                                    onEdit={handleEditTask}
-                                                                    onDelete={handleDeleteTask}
-                                                                    isSelected={selectedTasks.includes(task.id)}
-                                                                    onSelect={handleTaskSelect}
-                                                                    onOpenPhotos={setPhotoModalTaskId}
-                                                                    projectPhases={projectPhases}
-                                                                    assignableContacts={assignableContactsForTasks}
-                                                                    dependencyMeta={dependencyMetaByTaskId[task.id] || null}
-                                                                    allTasks={allTasks}
-                                                                    onOpenDependencyDrawer={setDependencyDrawerTaskId}
-                                                                />
-                                                            ))}
-                                                        </ul>
-                                                    ) : (
-                                                        <p className="text-sm text-gray-400 px-3 py-2 bg-white">
-                                                            No tasks in this phase.
-                                                        </p>
+                                                <>
+                                                    {projectPhases.map((phase) => {
+                                                        const phaseTasks = tasks.filter((t) => t.project_phase_id === phase.id);
+                                                        const rows = mergeWeatherIntoPhaseTasks(phaseTasks, weatherImpacts);
+                                                        return (
+                                                            <PhaseTaskSection
+                                                                key={phase.id}
+                                                                projectId={project.id}
+                                                                phaseKey={phase.id}
+                                                                phaseId={phase.id}
+                                                                title={phase.name}
+                                                                progressPercent={progressPercentForTasks(phaseTasks)}
+                                                                onTaskDrop={handleTaskDrop}
+                                                            >
+                                                                {phaseTasks.length > 0 || rows.some((r) => r.kind === 'weather') ? (
+                                                                    <ul className="bg-white">
+                                                                        {rows.map((row) =>
+                                                                            row.kind === 'weather' ? (
+                                                                                <WeatherDelayMarker
+                                                                                    key={`weather-${row.impact.id}-${phase.id}`}
+                                                                                    impact={row.impact}
+                                                                                    onClick={() => {
+                                                                                        const targetImpact =
+                                                                                            row.impact?.is_grouped && Array.isArray(row.impact?.source_impacts)
+                                                                                                ? row.impact.source_impacts[0]
+                                                                                                : row.impact;
+                                                                                        setSelectedWeatherImpact(targetImpact);
+                                                                                        setShowWeatherImpactModal(true);
+                                                                                    }}
+                                                                                />
+                                                                            ) : (
+                                                                                <TaskItem
+                                                                                    key={row.task.id}
+                                                                                    task={row.task}
+                                                                                    onEdit={handleEditTask}
+                                                                                    onDelete={handleDeleteTask}
+                                                                                    isSelected={selectedTasks.includes(row.task.id)}
+                                                                                    onSelect={handleTaskSelect}
+                                                                                    onOpenPhotos={setPhotoModalTaskId}
+                                                                                    projectPhases={projectPhases}
+                                                                                    assignableContacts={assignableContactsForTasks}
+                                                                                    dependencyMeta={
+                                                                                        dependencyMetaByTaskId[row.task.id] || null
+                                                                                    }
+                                                                                    allTasks={allTasks}
+                                                                                    onOpenDependencyDrawer={setDependencyDrawerTaskId}
+                                                                                />
+                                                                            )
+                                                                        )}
+                                                                    </ul>
+                                                                ) : (
+                                                                    <p className="text-sm text-gray-400 px-3 py-2 bg-white">
+                                                                        No tasks in this phase.
+                                                                    </p>
+                                                                )}
+                                                            </PhaseTaskSection>
+                                                        );
+                                                    })}
+                                                    {taskPhaseGroups.unassigned.length > 0 && (
+                                                        <PhaseTaskSection
+                                                            projectId={project.id}
+                                                            phaseKey="unassigned"
+                                                            phaseId={null}
+                                                            title="Unassigned"
+                                                            progressPercent={progressPercentForTasks(taskPhaseGroups.unassigned)}
+                                                            onTaskDrop={handleTaskDrop}
+                                                        >
+                                                            <ul className="bg-white">
+                                                                {mergeWeatherIntoPhaseTasks(
+                                                                    taskPhaseGroups.unassigned,
+                                                                    weatherImpacts
+                                                                ).map((row) =>
+                                                                    row.kind === 'weather' ? (
+                                                                        <WeatherDelayMarker
+                                                                            key={`weather-${row.impact.id}-unassigned`}
+                                                                            impact={row.impact}
+                                                                            onClick={() => {
+                                                                                const targetImpact =
+                                                                                    row.impact?.is_grouped && Array.isArray(row.impact?.source_impacts)
+                                                                                        ? row.impact.source_impacts[0]
+                                                                                        : row.impact;
+                                                                                setSelectedWeatherImpact(targetImpact);
+                                                                                setShowWeatherImpactModal(true);
+                                                                            }}
+                                                                        />
+                                                                    ) : (
+                                                                        <TaskItem
+                                                                            key={row.task.id}
+                                                                            task={row.task}
+                                                                            onEdit={handleEditTask}
+                                                                            onDelete={handleDeleteTask}
+                                                                            isSelected={selectedTasks.includes(row.task.id)}
+                                                                            onSelect={handleTaskSelect}
+                                                                            onOpenPhotos={setPhotoModalTaskId}
+                                                                            projectPhases={projectPhases}
+                                                                            assignableContacts={assignableContactsForTasks}
+                                                                            dependencyMeta={
+                                                                                dependencyMetaByTaskId[row.task.id] || null
+                                                                            }
+                                                                            allTasks={allTasks}
+                                                                            onOpenDependencyDrawer={setDependencyDrawerTaskId}
+                                                                        />
+                                                                    )
+                                                                )}
+                                                            </ul>
+                                                        </PhaseTaskSection>
                                                     )}
-                                                </PhaseTaskSection>
+                                                </>
                                             );
-                                        })}
-                                        {taskPhaseGroups.unassigned.length > 0 && (
-                                            <PhaseTaskSection
-                                                projectId={project.id}
-                                                phaseKey="unassigned"
-                                                phaseId={null}
-                                                title="Unassigned"
-                                                progressPercent={progressPercentForTasks(taskPhaseGroups.unassigned)}
-                                                onTaskDrop={handleTaskDrop}
-                                            >
-                                                <ul className="bg-white">
-                                                    {taskPhaseGroups.unassigned.map((task) => (
-                                                        <TaskItem
-                                                            key={task.id}
-                                                            task={task}
-                                                            onToggle={handleToggleTask}
-                                                            onEdit={handleEditTask}
-                                                            onDelete={handleDeleteTask}
-                                                            isSelected={selectedTasks.includes(task.id)}
-                                                            onSelect={handleTaskSelect}
-                                                            onOpenPhotos={setPhotoModalTaskId}
-                                                            projectPhases={projectPhases}
-                                                            assignableContacts={assignableContactsForTasks}
-                                                            dependencyMeta={dependencyMetaByTaskId[task.id] || null}
-                                                            allTasks={allTasks}
-                                                            onOpenDependencyDrawer={setDependencyDrawerTaskId}
-                                                        />
-                                                    ))}
-                                                </ul>
-                                            </PhaseTaskSection>
-                                        )}
+                                        })()}
                                     </div>
                                 ) : (
                                     <div className="text-center py-12">

@@ -3,6 +3,8 @@
  * Prefer stored phase.progress (DB task rollup or schedule); use schedule-derived % only when progress is null/undefined.
  */
 
+import { buildFederalHolidayMap, businessDaysBetween } from './usBusinessCalendar.js';
+
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
 const toUtcDate = (dateString) => {
@@ -88,16 +90,115 @@ export function computeWeightedProjectProgressPercent(phases, projectDueDate) {
   return Math.round(weighted);
 }
 
+function taskEffectiveEndDateIso(task) {
+  if (!task) return null;
+  if (task.due_date) return task.due_date;
+  if (!task.start_date) return null;
+  const start = toUtcDate(task.start_date);
+  if (!start) return null;
+  const durationRaw = Number(task.duration_days);
+  const n = Number.isFinite(durationRaw) ? Math.max(1, Math.trunc(durationRaw)) : 1;
+  const end = new Date(start.getTime() + (n - 1) * MS_PER_DAY);
+  return end.toISOString().slice(0, 10);
+}
+
+function collectTaskScheduleIsoDates(task) {
+  const out = [];
+  if (task?.start_date) out.push(task.start_date);
+  if (task?.due_date) out.push(task.due_date);
+  const eff = taskEffectiveEndDateIso(task);
+  if (eff) out.push(eff);
+  return out;
+}
+
 /**
- * Calendar span from earliest phase start to latest phase end (after {@link attachFallbackPhaseDates}),
- * with day counts and a linear % through that window. Returns null if the window cannot be determined.
+ * When `projects.start_date` is missing, infer schedule window from task dates:
+ * start = earliest date among task start/due/effective end; end = project due_date if set and valid, else latest task date.
+ * @param {Array<{ start_date?: string|null, due_date?: string|null, duration_days?: number|null }>} tasks
+ * @param {string|null|undefined} projectDueDate
+ * @returns {{ start: string, end: string } | null}
+ */
+export function inferScheduleBoundsFromTasks(tasks, projectDueDate) {
+  if (!tasks || tasks.length === 0) return null;
+  const all = [];
+  for (const t of tasks) {
+    for (const d of collectTaskScheduleIsoDates(t)) {
+      all.push(d);
+    }
+  }
+  if (all.length === 0) return null;
+  all.sort();
+  const inferredStart = all[0];
+  const latestAmongTasks = all[all.length - 1];
+  const inferredEnd =
+    typeof projectDueDate === 'string' &&
+    projectDueDate.length > 0 &&
+    projectDueDate >= inferredStart
+      ? projectDueDate
+      : latestAmongTasks;
+  if (!inferredEnd || inferredEnd < inferredStart) return null;
+  return { start: inferredStart, end: inferredEnd };
+}
+
+/**
+ * Shared elapsed/total math for a [minStart, maxEnd] window (inclusive day indexing like phase timeline).
+ */
+function scheduleTimelineFromBounds(minStart, maxEnd, now) {
+  const endExclusive = new Date(maxEnd.getTime() + MS_PER_DAY);
+  const holidayMap = buildFederalHolidayMap(minStart, endExclusive);
+  const totalDays = Math.max(1, businessDaysBetween(minStart, endExclusive, holidayMap));
+  const today = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  let elapsedDays = businessDaysBetween(minStart, today, holidayMap);
+  elapsedDays = Math.max(0, Math.min(totalDays, elapsedDays));
+
+  const schedule_progress_pct = Math.max(0, Math.min(100, Math.round((elapsedDays / totalDays) * 100)));
+
+  return {
+    schedule_day_current: elapsedDays,
+    schedule_day_total: totalDays,
+    schedule_progress_pct,
+  };
+}
+
+/**
+ * Calendar span for "day X of Y" in progress reports (pure time model).
+ *
+ * **Precedence:**
+ * 1. **Project baseline:** `projects.start_date` → `projects.due_date` when both are set and valid (end ≥ start).
+ * 2. **Task-inferred window:** when baseline is unavailable, earliest task schedule date → project due (if valid) or latest task date — see {@link inferScheduleBoundsFromTasks}.
+ * 3. **Phases:** earliest phase start → latest phase end after {@link attachFallbackPhaseDates} (only if task inference unavailable).
+ *
+ * Position is always **today** (`now`) within that window — not task completion or work volume.
  *
  * @param {Array<{ progress?: number|null, start_date?: string|null, end_date?: string|null, order?: number }>} phases
  * @param {string|null|undefined} projectDueDate
  * @param {Date} [now]
+ * @param {string|null|undefined} [projectStartDate] - `projects.start_date`; used with `projectDueDate` for the baseline window
+ * @param {Array<{ start_date?: string|null, due_date?: string|null, duration_days?: number|null }>|null} [tasks] - project tasks for inferred window when project start is missing
  * @returns {{ schedule_day_current: number, schedule_day_total: number, schedule_progress_pct: number } | null}
  */
-export function computeProjectScheduleTimeline(phases, projectDueDate, now = new Date()) {
+export function computeProjectScheduleTimeline(
+  phases,
+  projectDueDate,
+  now = new Date(),
+  projectStartDate = null,
+  tasks = null,
+) {
+  const windowStart = toUtcDate(projectStartDate);
+  const windowEnd = toUtcDate(projectDueDate);
+  if (windowStart && windowEnd && windowEnd >= windowStart) {
+    return scheduleTimelineFromBounds(windowStart, windowEnd, now);
+  }
+
+  const inferred = inferScheduleBoundsFromTasks(tasks, projectDueDate);
+  if (inferred) {
+    const s = toUtcDate(inferred.start);
+    const e = toUtcDate(inferred.end);
+    if (s && e && e >= s) {
+      return scheduleTimelineFromBounds(s, e, now);
+    }
+  }
+
   if (!phases || phases.length === 0) return null;
 
   const sorted = [...phases].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
@@ -115,21 +216,7 @@ export function computeProjectScheduleTimeline(phases, projectDueDate, now = new
   }
   if (!minStart || !maxEnd) return null;
 
-  const totalMs = maxEnd.getTime() - minStart.getTime();
-  const totalDays = Math.max(1, Math.floor(totalMs / MS_PER_DAY));
-
-  const today = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
-
-  let elapsedDays = Math.floor((today.getTime() - minStart.getTime()) / MS_PER_DAY);
-  elapsedDays = Math.max(0, Math.min(totalDays, elapsedDays));
-
-  const schedule_progress_pct = Math.max(0, Math.min(100, Math.round((elapsedDays / totalDays) * 100)));
-
-  return {
-    schedule_day_current: elapsedDays,
-    schedule_day_total: totalDays,
-    schedule_progress_pct,
-  };
+  return scheduleTimelineFromBounds(minStart, maxEnd, now);
 }
 
 /**

@@ -14,6 +14,7 @@ import {
   formatFrequencyLabel,
 } from '@siteweave/core-logic';
 import { saveProgressReportPdf } from '../utils/saveProgressReportPdf';
+import { defaultProgressReportPdfFilename } from '../utils/progressReportPdfFilename';
 
 /**
  * Progress Report Modal Component
@@ -99,8 +100,13 @@ function ProgressReportModal({ projectId, onClose }) {
 
   const handleSendNow = async (scheduleId) => {
     try {
-      await sendManualReport(supabaseClient, scheduleId);
+      const result = await sendManualReport(supabaseClient, scheduleId);
       addToast('Report sent successfully!', 'success');
+      if (result?.report_export_error) {
+        addToast(`Export link warning: ${result.report_export_error}`, 'warning');
+      } else if (result?.report_export_url) {
+        addToast('Email included a print-ready export link.', 'success');
+      }
       loadSchedules();
     } catch (error) {
       addToast('Error sending report: ' + error.message, 'error');
@@ -114,11 +120,11 @@ function ProgressReportModal({ projectId, onClose }) {
         addToast('Export did not return a document.', 'error');
         return;
       }
-      const baseTitle =
-        (result.subject || 'progress-report').replace(/[^\w\s-]/g, '').trim().slice(0, 80) ||
-        'progress-report';
       const saveResult = await saveProgressReportPdf(result.html, {
-        defaultFilename: `${baseTitle}.pdf`,
+        defaultFilename: defaultProgressReportPdfFilename(
+          result.report_name ?? '',
+          result.subject ?? '',
+        ),
       });
       if (!saveResult.ok) {
         addToast(saveResult.error || 'Could not save PDF.', 'error');
@@ -228,7 +234,7 @@ function ProgressReportModal({ projectId, onClose }) {
           ) : (
             <div className="space-y-3">
               {schedules.map((schedule) => {
-                const audienceLabel = { client: 'Client', internal: 'Internal', executive: 'Executive' }[schedule.report_audience_type] || schedule.report_audience_type;
+                const audienceLabel = { client: 'Client', internal: 'Internal', executive: 'Brief' }[schedule.report_audience_type] || schedule.report_audience_type;
                 return (
                   <div key={schedule.id} className="border border-gray-200 rounded-lg p-4 bg-white">
                     <div className="flex items-start justify-between gap-3">

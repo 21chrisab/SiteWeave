@@ -5,16 +5,37 @@ import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { PDFDocument, StandardFonts, rgb } from 'https://esm.sh/pdf-lib@1.17.1'
 import { buildProgressReportEmail } from '../_shared/progressReportEmailTemplates.ts'
+import { defaultProgressReportPdfFilename } from '../_shared/progressReportPdf.ts'
+import {
+  callGenerateProgressReport,
+  GenerateProgressReportError,
+} from '../_shared/generateProgressReportClient.ts'
+import { deepSanitizeForJson } from '../_shared/jsonSafe.ts'
 
 // RESEND_API_KEY required to send. RESEND_FROM optional (verified domain in Resend). See docs/email-deliverability-resend.md (SPF/DKIM/DMARC).
 const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY')
 const RESEND_FROM =
   Deno.env.get('RESEND_FROM') ?? 'SiteWeave Notifications <notifications@siteweave.org>'
 const RESEND_VERIFIED_DOMAIN = (Deno.env.get('RESEND_VERIFIED_DOMAIN') || '').trim().toLowerCase()
+const DEFAULT_REPORT_EXPORT_BUCKET = 'progress_report_exports'
+const REPORT_EXPORT_BUCKET = (Deno.env.get('PROGRESS_REPORT_EXPORT_BUCKET') || DEFAULT_REPORT_EXPORT_BUCKET).trim()
+const REPORT_EXPORT_FALLBACK_BUCKET = (Deno.env.get('PROGRESS_REPORT_EXPORT_FALLBACK_BUCKET') || '').trim()
+const REPORT_EXPORT_LINK_TTL_DEFAULT_SECONDS = 60 * 60 * 24 * 90
+const REPORT_EXPORT_LINK_TTL_MIN_SECONDS = 60
+const REPORT_EXPORT_LINK_TTL_MAX_SECONDS = 60 * 60 * 24 * 365
+const REPORT_EXPORT_LINK_TTL_SECONDS = resolveReportExportLinkTtlSeconds(
+  Deno.env.get('PROGRESS_REPORT_EXPORT_LINK_TTL_SECONDS'),
+)
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
+}
+
+function resolveReportExportLinkTtlSeconds(rawValue: string | undefined): number {
+  const parsed = Number(rawValue)
+  const finite = Number.isFinite(parsed) ? Math.trunc(parsed) : REPORT_EXPORT_LINK_TTL_DEFAULT_SECONDS
+  return Math.max(REPORT_EXPORT_LINK_TTL_MIN_SECONDS, Math.min(REPORT_EXPORT_LINK_TTL_MAX_SECONDS, finite))
 }
 
 serve(async (req) => {
@@ -154,7 +175,18 @@ serve(async (req) => {
           .maybeSingle()
 
         const perms = roleRow?.permissions as Record<string, unknown> | undefined
-        if (perms?.can_manage_progress_reports !== true) {
+        const canProjectReports = perms?.can_manage_progress_reports === true
+        const canOrgReports = perms?.can_manage_org_progress_reports === true
+        if (schedule.project_id == null) {
+          if (!canOrgReports) {
+            return new Response(
+              JSON.stringify({
+                error: 'Missing permission to send organization-wide progress reports (admins only)',
+              }),
+              { status: 403, headers: { 'Content-Type': 'application/json', ...corsHeaders } },
+            )
+          }
+        } else if (!canProjectReports) {
           return new Response(
             JSON.stringify({ error: 'Missing permission to send progress reports' }),
             { status: 403, headers: { 'Content-Type': 'application/json', ...corsHeaders } },
@@ -178,54 +210,25 @@ serve(async (req) => {
       )
     }
 
-    // Call generate-progress-report via fetch (edge-to-edge functions.invoke is unreliable:
-    // inner calls often miss apikey / auth and return non-2xx without a clear body on the client).
-    const baseUrl = supabaseUrl.replace(/\/$/, '')
-    const genResponse = await fetch(`${baseUrl}/functions/v1/generate-progress-report`, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${supabaseServiceKey}`,
-        apikey: supabaseServiceKey,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ schedule_id }),
-    })
-
-    let generateResult: Record<string, unknown> | null = null
+    let generateResult: Record<string, unknown>
     try {
-      generateResult = await genResponse.json() as Record<string, unknown>
-    } catch {
-      return new Response(
-        JSON.stringify({ error: 'Generate report returned invalid JSON' }),
-        {
-          status: 502,
-          headers: { 'Content-Type': 'application/json', ...corsHeaders },
-        },
-      )
-    }
-
-    if (!genResponse.ok) {
-      const errMsg =
-        typeof generateResult?.error === 'string'
-          ? generateResult.error
-          : `Generate report failed (${genResponse.status})`
-      return new Response(JSON.stringify({ error: errMsg, details: generateResult }), {
-        status: genResponse.status >= 400 && genResponse.status < 600 ? genResponse.status : 502,
-        headers: { 'Content-Type': 'application/json', ...corsHeaders },
+      generateResult = await callGenerateProgressReport({
+        supabaseUrl,
+        supabaseServiceKey,
+        scheduleId: schedule_id,
       })
+    } catch (err) {
+      if (err instanceof GenerateProgressReportError) {
+        return new Response(JSON.stringify({ error: err.message, details: err.details }), {
+          status: err.status,
+          headers: { 'Content-Type': 'application/json', ...corsHeaders },
+        })
+      }
+      throw err
     }
 
     const report_data = generateResult?.report_data
     const filtered_data = generateResult?.filtered_data
-    if (!report_data || !filtered_data) {
-      return new Response(
-        JSON.stringify({ error: 'Report generation returned invalid data (missing report_data or filtered_data)' }),
-        {
-          status: 502,
-          headers: { 'Content-Type': 'application/json', ...corsHeaders }
-        }
-      )
-    }
 
     // Fetch organization branding
     const { data: branding } = await supabase
@@ -256,10 +259,26 @@ serve(async (req) => {
       schedule,
       brandingData,
     )
-    const pdfAttachment = await generateProgressReportPdf(
-      filtered_data as Record<string, unknown>,
-      schedule.name || 'Progress Report',
-    )
+    let reportExportUrl: string | null = null
+    let reportExportError: string | null = null
+    try {
+      reportExportUrl = await createReportExportUrl({
+        supabase,
+        schedule,
+        subject: emailContent.subject,
+        text: emailTextToPdfText(emailContent.text),
+      })
+    } catch (exportError) {
+      reportExportError = exportError instanceof Error ? exportError.message : String(exportError)
+      console.error('Progress report PDF export link generation failed (email will still send):', exportError)
+    }
+
+    const emailHtml = reportExportUrl
+      ? injectProgressReportExportButton(emailContent.html, reportExportUrl)
+      : emailContent.html
+    const emailText = reportExportUrl
+      ? `${emailContent.text}\n\nOpen print-ready report: ${reportExportUrl}`
+      : emailContent.text
 
     // Determine recipients (null-safe: relation may be missing or empty)
     const rawRecipients = schedule.progress_report_recipients || []
@@ -299,18 +318,20 @@ serve(async (req) => {
           from: RESEND_FROM,
           to: recipients,
           subject: emailContent.subject,
-          html: emailContent.html,
-          text: emailContent.text,
-          attachments: [
-            {
-              filename: pdfAttachment.filename,
-              content: pdfAttachment.contentBase64,
-            },
-          ],
+          html: emailHtml,
+          text: emailText,
         })
       })
 
-      const resendData = await resendResponse.json()
+      const resendRaw = await resendResponse.text()
+      let resendData: Record<string, unknown> = {}
+      if (resendRaw) {
+        try {
+          resendData = JSON.parse(resendRaw) as Record<string, unknown>
+        } catch {
+          resendData = { raw: resendRaw.slice(0, 500) }
+        }
+      }
 
       if (!resendResponse.ok) {
         console.error('Resend error:', resendData)
@@ -330,9 +351,10 @@ serve(async (req) => {
     } else {
       console.log('Email would be sent to:', recipients)
       console.log('Subject:', emailContent.subject)
+      if (reportExportUrl) console.log('Report export URL:', reportExportUrl)
     }
 
-    // Record in history (skip for test sends)
+    // Record in history (skip for test sends). Payloads omit all_tasks/all_phases from generate-progress-report.
     if (!is_test) {
       await supabase
         .from('progress_report_history')
@@ -343,8 +365,8 @@ serve(async (req) => {
           project_id: schedule.project_id,
           organization_id: schedule.organization_id,
           recipient_emails: recipients,
-          report_data: report_data,
-          filtered_data: filtered_data,
+          report_data: deepSanitizeForJson(report_data),
+          filtered_data: deepSanitizeForJson(filtered_data),
           sent_by_user_id: schedule.created_by_user_id,
           email_id: emailId,
           was_manual_send: is_manual || false
@@ -377,7 +399,9 @@ serve(async (req) => {
         success: true, 
         email_id: emailId,
         recipients_count: recipients.length,
-        is_test: is_test || false
+        is_test: is_test || false,
+        report_export_url: reportExportUrl,
+        report_export_error: reportExportError,
       }),
       { 
         status: 200, 
@@ -390,8 +414,9 @@ serve(async (req) => {
 
   } catch (error) {
     console.error('Error in send-progress-report:', error)
+    const msg = error instanceof Error ? error.message : String(error)
     return new Response(
-      JSON.stringify({ error: error.message }),
+      JSON.stringify({ error: msg }),
       { 
         status: 500, 
         headers: { 
@@ -533,38 +558,266 @@ function zonedDateTimeToUtc(
   return new Date(utcGuess)
 }
 
-async function generateProgressReportPdf(reportData: Record<string, unknown>, scheduleName: string) {
-  const title = String(reportData?.project_name || reportData?.organization_name || scheduleName || 'Progress Report')
-  const period = String(reportData?.start_date || '')
-    ? `${String(reportData?.start_date || '')} to ${String(reportData?.end_date || '') || 'now'}`
-    : 'Current reporting period'
-  const completed = Number((reportData as Record<string, unknown>)?.completed_tasks_count || 0)
-  const open = Number((reportData as Record<string, unknown>)?.open_tasks_count || 0)
-
-  const pdf = await PDFDocument.create()
-  const page = pdf.addPage([612, 792])
-  const regular = await pdf.embedFont(StandardFonts.Helvetica)
-  const bold = await pdf.embedFont(StandardFonts.HelveticaBold)
-
-  page.drawText('SiteWeave Progress Report', { x: 48, y: 744, size: 20, font: bold, color: rgb(0.1, 0.14, 0.2) })
-  page.drawText(title, { x: 48, y: 716, size: 16, font: bold, color: rgb(0.12, 0.24, 0.54) })
-  page.drawText(`Period: ${period}`, { x: 48, y: 690, size: 11, font: regular, color: rgb(0.35, 0.39, 0.47) })
-  page.drawText(`Completed tasks: ${completed}`, { x: 48, y: 660, size: 12, font: regular, color: rgb(0.1, 0.14, 0.2) })
-  page.drawText(`Open tasks: ${open}`, { x: 48, y: 640, size: 12, font: regular, color: rgb(0.1, 0.14, 0.2) })
-  page.drawText('For full report details, open SiteWeave and view Progress Report History.', {
-    x: 48,
-    y: 600,
-    size: 10,
-    font: regular,
-    color: rgb(0.35, 0.39, 0.47),
-  })
-
-  const pdfBytes = await pdf.save()
-  let binary = ''
-  for (const byte of pdfBytes) binary += String.fromCharCode(byte)
-  const contentBase64 = btoa(binary)
-  return {
-    filename: `${title.replace(/[^a-z0-9]+/gi, '-').replace(/^-+|-+$/g, '').toLowerCase() || 'progress-report'}.pdf`,
-    contentBase64,
+function injectPrintStyles(html: string): string {
+  const extra = `<style>
+@media print {
+  @page { size: A4; margin: 12mm; }
+  html, body {
+    height: auto !important;
+    min-height: 0 !important;
+    margin: 0;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
   }
+}
+</style>`
+  if (html.includes('<head>')) {
+    return html.replace('<head>', `<head>${extra}`)
+  }
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"/>${extra}</head><body>${html}</body></html>`
+}
+
+function injectProgressReportExportButton(html: string, reportExportUrl: string): string {
+  const safeUrl = reportExportUrl.replace(/"/g, '&quot;')
+  const cta = `
+<div style="margin:0 0 22px;padding:16px;border:1px solid #dbeafe;border-radius:8px;background:#eff6ff;">
+  <p style="margin:0 0 10px;font-size:13px;color:#1e3a8a;font-weight:600;">Need the PDF version?</p>
+  <a href="${safeUrl}" target="_blank" rel="noreferrer" style="display:inline-block;background:#2563eb;color:#ffffff;text-decoration:none;font-size:13px;font-weight:600;padding:10px 14px;border-radius:6px;">Open PDF report</a>
+  <p style="margin:10px 0 0;font-size:11px;color:#6b7280;">Opens a signed PDF file hosted in secure report storage.</p>
+</div>`
+  const anchor = '<div style="padding:8px 0 20px;">'
+  if (html.includes(anchor)) return html.replace(anchor, `${anchor}${cta}`)
+  return html.replace('</body>', `${cta}</body>`)
+}
+
+async function ensureReportExportBucket(supabase: ReturnType<typeof createClient>, bucketName: string) {
+  const { data: bucketsBefore } = await supabase.storage.listBuckets()
+  if ((bucketsBefore || []).some((b: { id?: string }) => b?.id === bucketName)) return
+
+  const { error } = await supabase.storage.createBucket(bucketName, {
+    public: false,
+  })
+  if (!error) return
+
+  const { data: bucketsAfter } = await supabase.storage.listBuckets()
+  if ((bucketsAfter || []).some((b: { id?: string }) => b?.id === bucketName)) return
+
+  const msg = String(error.message || '').toLowerCase()
+  if (msg.includes('exists') || msg.includes('duplicate')) return
+  throw new Error(`Could not create storage bucket "${bucketName}": ${error.message}`)
+}
+
+function defaultProgressReportExportFilename(
+  schedule: { name?: string | null },
+  subject: string,
+): string {
+  return defaultProgressReportPdfFilename(String(schedule?.name ?? ''), subject)
+}
+
+async function createReportExportUrl(opts: {
+  supabase: ReturnType<typeof createClient>
+  schedule: { organization_id?: string | null; id?: string | null; name?: string | null }
+  subject: string
+  text: string
+}) {
+  const disallowedExportBuckets = new Set(['task_photos'])
+  const candidateBuckets = Array.from(
+    new Set([REPORT_EXPORT_BUCKET, REPORT_EXPORT_FALLBACK_BUCKET, DEFAULT_REPORT_EXPORT_BUCKET].filter(Boolean)),
+  ).filter((bucketName) => !disallowedExportBuckets.has(bucketName))
+  const org = String(opts.schedule.organization_id || 'org')
+  const scheduleId = String(opts.schedule.id || 'schedule')
+  const pdfBytes = await buildProgressReportPdfBytes({
+    subject: opts.subject,
+    text: opts.text,
+  })
+  let lastError: string | null = null
+
+  for (const bucketName of candidateBuckets) {
+    try {
+      await ensureReportExportBucket(opts.supabase, bucketName)
+      const objectPath = `${org}/${scheduleId}/${Date.now()}-${crypto.randomUUID()}-${defaultProgressReportExportFilename(opts.schedule, opts.subject)}`
+      const { error: uploadError } = await opts.supabase.storage
+        .from(bucketName)
+        .upload(objectPath, pdfBytes, {
+          contentType: 'application/pdf',
+          cacheControl: '86400',
+          upsert: false,
+        })
+      if (uploadError) {
+        lastError = `upload failed in bucket "${bucketName}": ${uploadError.message}`
+        console.error('Report PDF export upload failed', { bucketName, scheduleId, org, error: uploadError.message })
+        continue
+      }
+
+      const { data: signed, error: signedError } = await opts.supabase.storage
+        .from(bucketName)
+        .createSignedUrl(objectPath, REPORT_EXPORT_LINK_TTL_SECONDS)
+      if (signedError || !signed?.signedUrl) {
+        lastError = `signed URL failed in bucket "${bucketName}": ${signedError?.message || 'Unknown storage error'}`
+        console.error('Report PDF export signed URL failed', {
+          bucketName,
+          scheduleId,
+          org,
+          objectPath,
+          ttlSeconds: REPORT_EXPORT_LINK_TTL_SECONDS,
+          error: signedError?.message || 'Unknown storage error',
+        })
+        continue
+      }
+      return signed.signedUrl
+    } catch (err) {
+      lastError = err instanceof Error ? err.message : String(err)
+      console.error('Report export bucket attempt failed', {
+        bucketName,
+        scheduleId,
+        org,
+        error: lastError,
+      })
+    }
+  }
+  throw new Error(lastError || 'Failed to create report export link')
+}
+
+/** pdf-lib StandardFonts (WinAnsi) cannot encode many Unicode glyphs; strip/replace before measureText/drawText. */
+function sanitizePdfLibText(text: string): string {
+  const replaced = String(text || '')
+    .replace(/\u2192/g, '->')
+    .replace(/\u27f6/g, '->')
+    .replace(/\u2713|\u2714|\u2611/g, '[x]')
+    .replace(/\u2610/g, '[ ]')
+    .replace(/[\u2013\u2014]/g, '-')
+    .replace(/[\u2018\u2019]/g, "'")
+    .replace(/[\u201c\u201d]/g, '"')
+    .replace(/\u2026/g, '...')
+    .replace(/\u00a0|\u202f|\u2007/g, ' ')
+  let decomposed: string
+  try {
+    decomposed = replaced.normalize('NFKD').replace(/[\u0300-\u036f]/g, '')
+  } catch {
+    decomposed = replaced
+  }
+  let out = ''
+  for (const ch of decomposed) {
+    const c = ch.charCodeAt(0)
+    if (ch === '\n' || ch === '\r' || ch === '\t') {
+      out += ch
+      continue
+    }
+    if (c >= 32 && c <= 126) {
+      out += ch
+      continue
+    }
+    out += ' '
+  }
+  return out.replace(/ +(\n|$)/g, '$1').replace(/[ \t]+/g, ' ').trim()
+}
+
+function emailTextToPdfText(text: string): string {
+  const body = String(text || '')
+    .replace(/\r\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
+  return sanitizePdfLibText(`${body}\n\nGenerated by SiteWeave`.trim())
+}
+
+async function buildProgressReportPdfBytes(opts: { subject: string; text: string }) {
+  const pdfDoc = await PDFDocument.create()
+  const regularFont = await pdfDoc.embedFont(StandardFonts.Helvetica)
+  const boldFont = await pdfDoc.embedFont(StandardFonts.HelveticaBold)
+
+  const pageWidth = 612
+  const pageHeight = 792
+  const margin = 54
+  const bodyFontSize = 11
+  const lineHeight = 16
+  const sectionGap = 8
+  const maxTextWidth = pageWidth - margin * 2
+
+  let page = pdfDoc.addPage([pageWidth, pageHeight])
+  let cursorY = pageHeight - margin
+
+  const startNewPage = () => {
+    page = pdfDoc.addPage([pageWidth, pageHeight])
+    cursorY = pageHeight - margin
+  }
+
+  const ensureRoom = (heightNeeded: number) => {
+    if (cursorY - heightNeeded < margin) startNewPage()
+  }
+
+  const drawWrappedLine = (text: string, font: typeof regularFont, size: number, color: ReturnType<typeof rgb>) => {
+    const wrapped = wrapText(sanitizePdfLibText(text), font, size, maxTextWidth)
+    for (const line of wrapped) {
+      if (!line.trim()) {
+        cursorY -= lineHeight / 2
+        continue
+      }
+      ensureRoom(lineHeight)
+      page.drawText(line, {
+        x: margin,
+        y: cursorY,
+        size,
+        font,
+        color,
+      })
+      cursorY -= lineHeight
+    }
+  }
+
+  drawWrappedLine(sanitizePdfLibText(opts.subject || 'Progress Report'), boldFont, 18, rgb(0.12, 0.23, 0.54))
+  cursorY -= 6
+
+  const blocks = String(opts.text || '').split(/\n\s*\n/g).map((block) => block.trim()).filter(Boolean)
+  for (const block of blocks) {
+    const isSection = /^[A-Za-z][A-Za-z\s&'/-]+:$/.test(block)
+    if (isSection) {
+      const heading = sanitizePdfLibText(block.replace(/:$/, ''))
+      if (heading.trim()) {
+        ensureRoom(lineHeight + sectionGap)
+        page.drawText(heading, {
+          x: margin,
+          y: cursorY,
+          size: 13,
+          font: boldFont,
+          color: rgb(0.11, 0.17, 0.26),
+        })
+        cursorY -= lineHeight
+        cursorY -= 2
+      }
+      continue
+    }
+
+    for (const rawLine of block.split('\n')) {
+      const line = rawLine.trimEnd()
+      if (!line) {
+        cursorY -= lineHeight / 2
+        continue
+      }
+      drawWrappedLine(line, regularFont, bodyFontSize, rgb(0.2, 0.23, 0.27))
+    }
+    cursorY -= sectionGap
+  }
+
+  return await pdfDoc.save()
+}
+
+function wrapText(text: string, font: typeof PDFDocument.prototype['embedFont'] extends (...args: never[]) => Promise<infer T> ? T : never, fontSize: number, maxWidth: number) {
+  const words = String(text || '').split(/\s+/).filter(Boolean)
+  if (words.length === 0) return ['']
+
+  const lines: string[] = []
+  let current = words[0]
+
+  for (let i = 1; i < words.length; i += 1) {
+    const candidate = `${current} ${words[i]}`
+    if (font.widthOfTextAtSize(candidate, fontSize) <= maxWidth) {
+      current = candidate
+    } else {
+      lines.push(current)
+      current = words[i]
+    }
+  }
+
+  lines.push(current)
+  return lines
 }

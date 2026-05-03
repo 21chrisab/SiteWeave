@@ -86,12 +86,12 @@ BEGIN
     -- Role (canonical org admin)
     UPDATE roles
     SET name = 'Org Admin',
-        permissions = '{"can_manage_team":true,"can_manage_users":true,"can_manage_roles":true,"can_create_projects":true,"can_edit_projects":true,"can_delete_projects":true,"can_view_financials":true,"can_assign_tasks":true,"can_manage_contacts":true,"can_create_tasks":true,"can_edit_tasks":true,"can_delete_tasks":true,"can_send_messages":true,"can_manage_progress_reports":true}'::jsonb,
+        permissions = '{"can_manage_team":true,"can_manage_users":true,"can_manage_roles":true,"can_create_projects":true,"can_edit_projects":true,"can_delete_projects":true,"can_assign_tasks":true,"can_manage_contacts":true,"can_create_tasks":true,"can_edit_tasks":true,"can_delete_tasks":true,"can_send_messages":true,"can_manage_progress_reports":true,"can_manage_org_progress_reports":true}'::jsonb,
         updated_at = now()
     WHERE organization_id = v_org_id AND name = 'OrganizationAdmin';
 
     INSERT INTO roles (organization_id, name, permissions, is_system_role, updated_at)
-    VALUES (v_org_id, 'Org Admin', '{"can_manage_team":true,"can_manage_users":true,"can_manage_roles":true,"can_create_projects":true,"can_edit_projects":true,"can_delete_projects":true,"can_view_financials":true,"can_assign_tasks":true,"can_manage_contacts":true,"can_create_tasks":true,"can_edit_tasks":true,"can_delete_tasks":true,"can_send_messages":true,"can_manage_progress_reports":true}'::jsonb, true, now())
+    VALUES (v_org_id, 'Org Admin', '{"can_manage_team":true,"can_manage_users":true,"can_manage_roles":true,"can_create_projects":true,"can_edit_projects":true,"can_delete_projects":true,"can_assign_tasks":true,"can_manage_contacts":true,"can_create_tasks":true,"can_edit_tasks":true,"can_delete_tasks":true,"can_send_messages":true,"can_manage_progress_reports":true,"can_manage_org_progress_reports":true}'::jsonb, true, now())
     ON CONFLICT (organization_id, name) DO UPDATE SET permissions = EXCLUDED.permissions, updated_at = now()
     RETURNING id INTO v_role_id;
     IF v_role_id IS NULL THEN

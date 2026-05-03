@@ -4,9 +4,10 @@ import { useAppContext, supabaseClient } from '../context/AppContext';
 import LoadingSpinner from './LoadingSpinner';
 import Icon from './Icon';
 import DateDropdown from './DateDropdown';
+import DateRangePicker from './DateRangePicker';
 import { parseRecurrence, validateRecurrence } from '../utils/recurrenceService';
 import { getStoredCalendarToken } from '../utils/calendarIntegration';
-import { localDateIso } from '../utils/dateHelpers';
+import { addDaysIso, localDateIso } from '../utils/dateHelpers';
 
 const DEFAULT_CATEGORIES = [
     { id: 'meeting', name: 'Meeting', color: '#3B82F6' },
@@ -305,6 +306,44 @@ function EventModal({ onClose, onSave, onDelete, event = null, date, isLoading =
         }
     };
 
+    const datePresets = (
+        <>
+            <button
+                type="button"
+                onClick={() => {
+                    const t = localDateIso();
+                    setStartDate(t);
+                    setEndDate(t);
+                }}
+                className="rounded-full border border-gray-200 bg-gray-50 px-2.5 py-0.5 text-xs font-medium text-gray-700 hover:bg-gray-100"
+            >
+                Today
+            </button>
+            <button
+                type="button"
+                onClick={() => {
+                    const t = localDateIso();
+                    setStartDate((s) => s || t);
+                    setEndDate(addDaysIso(t, 7) || t);
+                }}
+                className="rounded-full border border-gray-200 bg-gray-50 px-2.5 py-0.5 text-xs font-medium text-gray-700 hover:bg-gray-100"
+            >
+                +1 week
+            </button>
+            <button
+                type="button"
+                onClick={() => {
+                    const t = localDateIso();
+                    setStartDate((s) => s || t);
+                    setEndDate(addDaysIso(t, 14) || t);
+                }}
+                className="rounded-full border border-gray-200 bg-gray-50 px-2.5 py-0.5 text-xs font-medium text-gray-700 hover:bg-gray-100"
+            >
+                +2 weeks
+            </button>
+        </>
+    );
+
     return (
         <div className="fixed inset-0 backdrop-blur-[2px] bg-white/20 flex items-center justify-center z-50">
             <div className="bg-white rounded-lg shadow-2xl p-5 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
@@ -404,25 +443,16 @@ function EventModal({ onClose, onSave, onDelete, event = null, date, isLoading =
                     {/* Date and Time - Horizontal Layout */}
                     <div className="pt-3 border-t">
                         <div className="flex items-center gap-3 flex-wrap">
-                            <div className="flex flex-col gap-1.5 min-w-[200px] flex-1">
-                                <div className="flex flex-wrap items-center gap-2">
-                                    <button
-                                        type="button"
-                                        onClick={() => {
-                                            const t = localDateIso();
-                                            setStartDate(t);
-                                            setEndDate(t);
-                                        }}
-                                        className="rounded-full border border-gray-200 bg-gray-50 px-2.5 py-0.5 text-xs font-medium text-gray-700 hover:bg-gray-100"
-                                    >
-                                        Today
-                                    </button>
-                                </div>
-                                <DateDropdown
-                                    compact
-                                    value={startDate}
-                                    onChange={(v) => setStartDate(v)}
-                                    label="Date"
+                            <div className="flex min-w-[260px] flex-1 flex-col gap-1.5">
+                                <DateRangePicker
+                                    label="Schedule"
+                                    startValue={startDate}
+                                    endValue={endDate}
+                                    onChange={({ start, end }) => {
+                                        setStartDate(start);
+                                        setEndDate(end || start);
+                                    }}
+                                    presets={datePresets}
                                 />
                             </div>
                             

@@ -1,7 +1,7 @@
 {
   "name": "siteweave",
   "private": true,
-  "version": "1.0.64",
+  "version": "1.0.65",
   "main": "dist-electron/main.cjs",
   "scripts": {
     "dev": "vite",
@@ -31,6 +31,7 @@
     "i18next": "^23.16.8",
     "i18next-browser-languagedetector": "^7.2.2",
     "jspdf": "^4.2.1",
+    "libphonenumber-js": "^1.12.42",
     "qrcode": "^1.5.4",
     "react": "^19.2.3",
     "react-day-picker": "^9.14.0",

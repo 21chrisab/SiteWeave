@@ -146,6 +146,8 @@
     "project_status_updated_successfully": "¡Estado del proyecto actualizado correctamente!",
     "error_updating_project_status": "Error al actualizar el estado del proyecto: {{message}}",
     "cannot_assign_task": "No se puede asignar: el asignado no es válido. Tarea creada sin asignar.",
+    "invalid_assignee_phone": "Ese número de teléfono no es válido. La tarea se creó sin ese asignado.",
+    "external_assignee_phone_name": "Asignado ({{last4}})",
     "phase_updated_successfully": "¡Fase actualizada correctamente!",
     "error_updating_phase": "Error al actualizar la fase: {{message}}",
     "phase_added_successfully": "¡Fase agregada correctamente!",

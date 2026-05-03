@@ -954,6 +954,26 @@ RETURNS SETOF UUID AS $$
   );
 $$ LANGUAGE sql SECURITY DEFINER STABLE;
 
+-- True when the user's role grants View Activity History (used by activity_log SELECT RLS).
+CREATE OR REPLACE FUNCTION public.user_can_view_activity_history()
+RETURNS BOOLEAN
+LANGUAGE sql
+SECURITY DEFINER
+SET search_path = public
+STABLE
+AS $$
+  SELECT COALESCE(
+    (
+      SELECT COALESCE((r.permissions->>'can_view_activity_history')::boolean, false)
+      FROM public.profiles p
+      LEFT JOIN public.roles r ON r.id = p.role_id
+      WHERE p.id = auth.uid()
+      LIMIT 1
+    ),
+    false
+  );
+$$;
+
 -- Gets the email of the currently logged-in user
 CREATE OR REPLACE FUNCTION get_user_email()
 RETURNS TEXT AS $$
@@ -1284,7 +1304,9 @@ DROP POLICY IF EXISTS "Users can update their own preferences" ON public.user_pr
 DROP POLICY IF EXISTS "Users can delete their own preferences" ON public.user_preferences;
 
 DROP POLICY IF EXISTS "Users can see activity for projects they have access to" ON public.activity_log;
+DROP POLICY IF EXISTS "Users can see activity with permission and scope" ON public.activity_log;
 DROP POLICY IF EXISTS "Users can create activity logs for accessible projects" ON public.activity_log;
+DROP POLICY IF EXISTS "Users can create activity logs for accessible scope" ON public.activity_log;
 DROP POLICY IF EXISTS "Users can update their own activity logs" ON public.activity_log;
 DROP POLICY IF EXISTS "Users can delete their own activity logs" ON public.activity_log;
 
@@ -2521,20 +2543,42 @@ USING (user_id = auth.uid());
 -- ACTIVITY LOG TABLE POLICIES
 -- ============================================================================
 
--- Activity log SELECT policy
-CREATE POLICY "Users can see activity for projects they have access to"
+-- Activity log SELECT policy (requires role permission or org admin; supports NULL project_id org rows)
+CREATE POLICY "Users can see activity with permission and scope"
 ON public.activity_log
 FOR SELECT
+TO authenticated
 USING (
-  project_id IN (SELECT get_accessible_project_ids())
+  (
+    user_can_view_activity_history()
+    OR is_user_admin()
+  )
+  AND (
+    (
+      project_id IS NOT NULL
+      AND project_id IN (SELECT get_accessible_project_ids())
+    )
+    OR (
+      project_id IS NULL
+      AND organization_id = get_user_organization_id()
+    )
+  )
 );
 
--- Activity log INSERT policy
-CREATE POLICY "Users can create activity logs for accessible projects"
+-- Activity log INSERT policy (project rows or org-only rows in user's org)
+CREATE POLICY "Users can create activity logs for accessible scope"
 ON public.activity_log
 FOR INSERT
+TO authenticated
 WITH CHECK (
-  project_id IN (SELECT get_accessible_project_ids())
+  (
+    project_id IS NOT NULL
+    AND project_id IN (SELECT get_accessible_project_ids())
+  )
+  OR (
+    project_id IS NULL
+    AND organization_id = get_user_organization_id()
+  )
 );
 
 -- Activity log UPDATE policy (rarely used, but allow users to update their own logs)

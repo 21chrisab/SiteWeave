@@ -225,11 +225,12 @@ function Login() {
   )
 }
 
-function TaskItem({ task, onToggle }) {
-  const handleCheckboxChange = (e) => {
-    e.stopPropagation()
-    onToggle(task.id, task.completed)
-  }
+function TaskItem({ task, onEditProgress }) {
+  const progressPercent = Math.max(
+    0,
+    Math.min(100, Number(task.percent_complete ?? (task.completed ? 100 : 0)) || 0)
+  )
+  const isComplete = task.completed || progressPercent >= 100
 
   const formatTaskDate = (dateString) => {
     if (!dateString) return 'No due date'
@@ -252,22 +253,34 @@ function TaskItem({ task, onToggle }) {
     <div className="bg-white p-4 rounded-xl shadow-xs border border-gray-200 hover:border-blue-500 transition-all hover:shadow-md">
       <div className="flex items-start gap-3">
         <div className="relative shrink-0 pt-0.5">
-          <input
-            type="checkbox"
-            checked={task.completed || false}
-            onChange={handleCheckboxChange}
-            className="h-5 w-5 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer transition-all hover:scale-110"
-            aria-label={`Mark task as ${task.completed ? 'incomplete' : 'complete'}: ${task.text || 'Task'}`}
-          />
+          <label className="flex flex-col gap-0.5 text-xs text-gray-500">
+            <span className="sr-only">Progress percent</span>
+            <input
+              type="number"
+              min={0}
+              max={100}
+              value={progressPercent}
+              onChange={(e) => {
+                const raw = Math.round(Number(e.target.value) || 0)
+                const v = Math.max(0, Math.min(100, raw))
+                onEditProgress(task.id, v)
+              }}
+              className="w-14 rounded border border-gray-300 px-1 py-0.5 text-sm text-gray-800 tabular-nums"
+              aria-label={`Task progress percent: ${task.text || 'Task'}`}
+            />
+            <span className="text-[10px] text-gray-400" aria-hidden>
+              %
+            </span>
+          </label>
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-start justify-between gap-4">
             <div className="flex-1 min-w-0">
-              <h4 className={`font-bold text-gray-800 ${task.completed ? 'line-through text-gray-400' : ''}`}>
+              <h4 className={`font-bold text-gray-800 ${isComplete ? 'line-through text-gray-400' : ''}`}>
                 {task.text || 'Untitled Task'}
               </h4>
               {task.description && (
-                <p className={`mt-1 text-sm ${task.completed ? 'text-gray-400 line-through' : 'text-gray-600'} line-clamp-1`}>
+                <p className={`mt-1 text-sm ${isComplete ? 'text-gray-400 line-through' : 'text-gray-600'} line-clamp-1`}>
                   {task.description}
                 </p>
               )}
@@ -287,7 +300,7 @@ function TaskItem({ task, onToggle }) {
             {task.due_date && (
               <div className="text-right shrink-0">
                 <p className="text-xs text-gray-400 font-semibold">DUE DATE</p>
-                <p className={`text-sm font-medium ${task.completed ? 'text-gray-400' : 'text-gray-800'}`}>
+                <p className={`text-sm font-medium ${isComplete ? 'text-gray-400' : 'text-gray-800'}`}>
                   {formatTaskDate(task.due_date)}
                 </p>
               </div>
@@ -614,19 +627,25 @@ function Home() {
               <TaskItem
                 key={task.id}
                 task={task}
-                onToggle={async (taskId, currentStatus) => {
+                onEditProgress={async (taskId, percent) => {
                   try {
+                    const completed = percent >= 100
                     const { error } = await supabase
                       .from('tasks')
-                      .update({ completed: !currentStatus })
+                      .update({ percent_complete: percent, completed })
                       .eq('id', taskId)
-                    
+
                     if (error) throw error
-                    
-                    // Remove from list if completed
-                    if (!currentStatus) {
-                      setTasks(prev => prev.filter(t => t.id !== taskId))
-                    }
+
+                    setTasks((prev) => {
+                      const next = prev.map((t) =>
+                        t.id === taskId ? { ...t, percent_complete: percent, completed } : t
+                      )
+                      if (completed) {
+                        return next.filter((t) => t.id !== taskId)
+                      }
+                      return next
+                    })
                   } catch (e) {
                     console.error('Error updating task:', e)
                     alert('Error updating task: ' + e.message)

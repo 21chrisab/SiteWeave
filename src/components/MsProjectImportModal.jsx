@@ -219,7 +219,7 @@ export default function MsProjectImportModal({ onClose, context, projectId: exis
                     .select('*, contacts(name, avatar_url), task_photos(*)')
                     .eq('project_id', pid)
                     .order('due_date', { ascending: true, nullsFirst: false });
-                const other = tasksState.filter((t) => t.project_id !== pid);
+                const other = tasksState.filter((t) => String(t.project_id) !== String(pid));
                 dispatch({ type: 'SET_TASKS_LOADED', payload: [...other, ...(taskList || [])] });
                 onSuccess?.(pid);
             }

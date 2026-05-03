@@ -185,3 +185,48 @@ export function logContactUpdated(contact, user, changes) {
         details: changes && typeof changes === 'object' ? changes : {}
     });
 }
+
+/**
+ * Log a weather / schedule impact record (project-level).
+ */
+export function logWeatherImpactRecorded(impact, user, projectId, organizationId) {
+    return logActivity({
+        action: 'created',
+        entityType: 'weather_impact',
+        entityId: impact.id,
+        entityName: impact.title || 'Weather impact',
+        projectId,
+        organizationId,
+        user,
+        details: {
+            impact_type: impact.impact_type,
+            days_lost: impact.days_lost,
+            start_date: impact.start_date,
+            end_date: impact.end_date,
+            apply_cascade: impact.apply_cascade,
+            schedule_shift_applied: impact.schedule_shift_applied,
+            affected_task_ids: impact.affected_task_ids,
+            affected_phase_ids: impact.affected_phase_ids,
+        },
+    });
+}
+
+/**
+ * Log when a weather impact's schedule shift was applied to tasks/phases.
+ */
+export function logWeatherImpactScheduleApplied(impact, user, projectId, organizationId, extra = {}) {
+    return logActivity({
+        action: 'updated',
+        entityType: 'weather_impact',
+        entityId: impact.id,
+        entityName: impact.title || 'Weather impact',
+        projectId,
+        organizationId,
+        user,
+        details: {
+            event: 'schedule_shift_applied',
+            days_lost: impact.days_lost,
+            ...extra,
+        },
+    });
+}

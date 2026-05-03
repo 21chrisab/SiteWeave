@@ -11,7 +11,6 @@ import Icon from './Icon';
 // Default permission structure
 const DEFAULT_PERMISSIONS = {
   can_create_tasks: false,
-  can_view_financials: false,
   can_manage_users: false,
   can_delete_projects: false,
   can_assign_tasks: false,
@@ -29,12 +28,13 @@ const PERMISSION_LABELS = {
   can_edit_tasks: 'Edit Tasks',
   can_delete_tasks: 'Delete Tasks',
   can_assign_tasks: 'Assign Tasks',
-  can_view_financials: 'View Financials',
   can_manage_team: 'Manage Organization Directory',
   can_manage_roles: 'Manage Roles',
   can_manage_contacts: 'Manage Contacts',
   can_manage_users: 'Manage Users',
   can_view_activity_history: 'View Activity History',
+  can_manage_progress_reports: 'Project Progress Reports',
+  can_manage_org_progress_reports: 'Organization Progress Reports',
 };
 
 // Helper function to get permission label

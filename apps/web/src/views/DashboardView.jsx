@@ -419,13 +419,13 @@ function DashboardView() {
                                     Import MS Project XML
                                 </button>
                             </PermissionGuard>
-                            <PermissionGuard permission="can_manage_progress_reports">
+                            <PermissionGuard permission="can_manage_org_progress_reports">
                                 <button
                                     type="button"
                                     onClick={() => setShowProgressReportModal(true)}
                                     className="px-4 py-2 text-sm font-semibold rounded-lg shadow-xs btn-smooth bg-emerald-600 text-white hover:bg-emerald-700"
                                 >
-                                    Progress reports
+                                    Organization progress reports
                                 </button>
                             </PermissionGuard>
                         </div>

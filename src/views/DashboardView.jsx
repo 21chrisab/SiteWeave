@@ -480,7 +480,7 @@ function DashboardView() {
                                 </button>
                                 {dashboardMenu === 'actions' && (
                                     <div className="absolute right-0 top-12 z-20 w-56 rounded-xl border border-gray-200 bg-white p-1 shadow-lg">
-                                        <PermissionGuard permission="can_manage_progress_reports">
+                                        <PermissionGuard permission="can_manage_org_progress_reports">
                                             <button
                                                 type="button"
                                                 onClick={() => {
@@ -489,7 +489,7 @@ function DashboardView() {
                                                 }}
                                                 className="flex w-full items-center rounded-lg px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
                                             >
-                                                Progress reports
+                                                Organization progress reports
                                             </button>
                                         </PermissionGuard>
                                         <PermissionGuard permission="can_create_projects">

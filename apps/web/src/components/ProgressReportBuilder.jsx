@@ -32,7 +32,7 @@ const REPORT_TYPES = [
   },
   {
     value: 'executive',
-    label: 'Executive Brief',
+    label: 'Brief',
     description: 'Health metrics and headlines only. No task-level detail.',
   },
 ];
@@ -46,14 +46,14 @@ const SECTION_OPTIONS = [
 ];
 
 const DETAIL_TOGGLES = [
-  { key: 'show_siteweave_logo',    label: 'Show SiteWeave logo in report header',                  default: true },
+  { key: 'show_siteweave_logo',    label: 'Show SiteWeave logo in report footer',                  default: true },
   { key: 'show_assignees',         label: 'Show who is assigned to each task',                   default: false },
   { key: 'show_dates',             label: 'Show task completion dates',                           default: false },
   { key: 'show_who_changed',       label: 'Show who changed a status and when',                   default: false },
   { key: 'show_phase_delta',       label: 'Show previous progress on phases (e.g. 41% → 51%)',   default: false },
   { key: 'show_task_phase',        label: 'Show a small phase tag on each task (helps tell same-named tasks apart)', default: false },
   { key: 'show_blockers',          label: 'Include blockers & issues section',                    default: false },
-  { key: 'show_weather_impacts',   label: 'Include weather / schedule impacts (logged this period)', default: false },
+  { key: 'show_weather_impacts',   label: 'Include weather / schedule impacts (logged this period)', default: true },
   { key: 'include_task_photos',    label: 'Include task photos on completed work (uses signed image links)', default: false },
   { key: 'client_friendly_labels', label: 'Use friendly status labels (e.g. "Active" not "In Progress")', default: true },
 ];
@@ -71,7 +71,7 @@ const DEFAULT_SECTIONS = {
   show_phase_delta: false,
   show_task_phase: false,
   show_blockers: false,
-  show_weather_impacts: false,
+  show_weather_impacts: true,
   include_task_photos: false,
   client_friendly_labels: true,
 };
@@ -93,7 +93,7 @@ function parseEmailsText(text) {
 
 /**
  * Progress Report Builder — single-page form with live preview.
- * Two report types: Standard (customisable detail level) and Executive Brief.
+ * Two report types: Standard (customisable detail level) and Brief.
  */
 function ProgressReportBuilder({
   scheduleId = null,
@@ -122,6 +122,8 @@ function ProgressReportBuilder({
     custom_message: '',
     /** Needed so the live preview can load phases and show phase tags on tasks */
     project_id: projectId || null,
+    /** Organization report: which projects to include (stored; null on server = all projects) */
+    included_project_ids: [],
     report_sections: { ...DEFAULT_SECTIONS },
     requires_approval: false,
     include_branding: true,
@@ -141,6 +143,20 @@ function ProgressReportBuilder({
     if (!projectId || !projects.length) return null;
     return projects.find((p) => p.id === projectId)?.name || 'Project';
   }, [projectId, projects]);
+
+  const sortedProjectsForOrg = useMemo(
+    () => [...projects].sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''))),
+    [projects]
+  );
+
+  useEffect(() => {
+    if (scheduleId || projectId) return;
+    if (!projects.length) return;
+    setFormData((prev) => {
+      if (prev.included_project_ids?.length) return prev;
+      return { ...prev, included_project_ids: projects.map((p) => p.id) };
+    });
+  }, [scheduleId, projectId, projects]);
 
   useEffect(() => {
     if (!scheduleId) return;
@@ -220,6 +236,13 @@ function ProgressReportBuilder({
             weekly_plan: legacyWeeklyPlanValue !== false,
           };
 
+      const allProjIds = projects.map((p) => p.id);
+      const rawIncluded = data.included_project_ids;
+      let includedProjIds =
+        Array.isArray(rawIncluded) && rawIncluded.length > 0
+          ? rawIncluded.filter((id) => allProjIds.includes(id))
+          : allProjIds;
+
       setFormData({
         name: data.name,
         report_audience_type: mappedAudience,
@@ -229,6 +252,7 @@ function ProgressReportBuilder({
         custom_subject: data.custom_subject || '',
         custom_message: data.custom_message || '',
         project_id: data.project_id ?? projectId ?? null,
+        included_project_ids: data.project_id ? [] : includedProjIds,
         report_sections: sections,
         requires_approval: false,
         include_branding: data.include_branding !== false,
@@ -258,6 +282,10 @@ function ProgressReportBuilder({
       addToast('Set your organization report hour in Organization Settings before activating automated reports.', 'warning');
       return;
     }
+    if (!projectId && (!formData.included_project_ids || formData.included_project_ids.length === 0)) {
+      addToast('Select at least one project to include in this report', 'error');
+      return;
+    }
 
     setIsSaving(true);
     try {
@@ -268,12 +296,21 @@ function ProgressReportBuilder({
       const dbAudience = formData.report_audience_type === 'executive' ? 'executive' : 'client';
       const templateType = formData.report_audience_type === 'executive' ? 'executive_summary' : 'client_standard';
 
+      const allProjIds = projects.map((p) => p.id);
+      const sel = formData.included_project_ids || [];
+      const included_project_ids = !projectId
+        ? sel.length === allProjIds.length && allProjIds.every((id) => sel.includes(id))
+          ? null
+          : sel
+        : null;
+
       const scheduleData = {
         ...formData,
         report_audience_type: dbAudience,
         template_type: templateType,
         organization_id: orgId,
         project_id: projectId,
+        included_project_ids,
         is_active: activate,
         created_by_user_id: state.user.id,
         requires_approval: false,
@@ -364,6 +401,66 @@ function ProgressReportBuilder({
               })}
             </div>
           </div>
+
+          {!projectId && projects.length > 0 && (
+            <div className="rounded-lg border border-gray-200 bg-gray-50 p-4 space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <p className="text-sm font-medium text-gray-900">Projects in this report</p>
+                  <p className="text-xs text-gray-500 mt-0.5">
+                    Only selected projects are included. Weekly sections show tasks scheduled in each window, not all open work.
+                  </p>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-xs text-gray-600">
+                    {(formData.included_project_ids || []).length} of {projects.length} selected
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setFormData((prev) => ({
+                        ...prev,
+                        included_project_ids: projects.map((p) => p.id),
+                      }))
+                    }
+                    className="text-xs px-2 py-1 rounded border border-gray-300 bg-white hover:bg-gray-100"
+                  >
+                    Select all
+                  </button>
+                </div>
+              </div>
+              <div className="max-h-48 overflow-y-auto space-y-2 pr-1">
+                {sortedProjectsForOrg.map((p) => {
+                  const checked = (formData.included_project_ids || []).includes(p.id);
+                  return (
+                    <label
+                      key={p.id}
+                      className="flex items-center gap-2 cursor-pointer text-sm text-gray-800"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={() => {
+                          setFormData((prev) => {
+                            const cur = prev.included_project_ids || [];
+                            if (checked && cur.length <= 1) {
+                              return prev;
+                            }
+                            const next = checked
+                              ? cur.filter((id) => id !== p.id)
+                              : [...cur, p.id];
+                            return { ...prev, included_project_ids: next };
+                          });
+                        }}
+                        className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                      />
+                      <span className="truncate">{p.name || 'Untitled project'}</span>
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+          )}
 
           {/* Recipients */}
           <div>
@@ -598,7 +695,6 @@ function ProgressReportBuilder({
       {/* ── Right column: preview ── */}
       <div className="w-full lg:w-[min(480px,40vw)] flex-shrink-0">
         <div className="bg-gray-50 rounded-lg border border-gray-200 p-4 sticky top-4">
-          <h3 className="text-sm font-semibold text-gray-700 mb-2">Preview</h3>
           <ProgressReportPreview
             formData={formData}
             projectId={projectId}

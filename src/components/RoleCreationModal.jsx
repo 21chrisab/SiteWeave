@@ -21,13 +21,8 @@ const PERMISSION_GROUPS = [
       { key: 'can_delete_tasks', label: 'Delete Tasks', description: 'Remove tasks' },
       { key: 'can_assign_tasks', label: 'Assign Tasks', description: 'Assign tasks to team members' },
       { key: 'can_view_activity_history', label: 'View Activity History', description: 'See recent activity, toasts, and full activity logs for projects you can access' },
-    ]
-  },
-  {
-    category: 'Financial',
-    icon: 'M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z',
-    permissions: [
-      { key: 'can_view_financials', label: 'View Financials', description: 'View financial information and reports' },
+      { key: 'can_manage_progress_reports', label: 'Project progress reports', description: 'Schedule and send progress reports for individual projects' },
+      { key: 'can_manage_org_progress_reports', label: 'Organization progress reports', description: 'Organization-wide reports across multiple projects (typically admins only)' },
     ]
   },
   {
@@ -51,12 +46,13 @@ const DEFAULT_PERMISSIONS = {
   can_edit_tasks: false,
   can_delete_tasks: false,
   can_assign_tasks: false,
-  can_view_financials: false,
   can_manage_team: false,
   can_manage_roles: false,
   can_manage_contacts: false,
   can_manage_users: false,
   can_view_activity_history: false,
+  can_manage_progress_reports: false,
+  can_manage_org_progress_reports: false,
 };
 
 function RoleCreationModal({ show, onClose, onSave, existingRole = null, isLoading = false }) {

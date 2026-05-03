@@ -1,3 +1,5 @@
+import { addBusinessDays } from '../../packages/core-logic/src/utils/usBusinessCalendar.js';
+
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 function parseDate(dateValue) {
@@ -21,7 +23,7 @@ export function addDays(dateString, days) {
 }
 
 /**
- * Shift task start/due dates by N calendar days (for weather / manual schedule impacts).
+ * Shift task start/due dates by N calendar days (non-weather / legacy).
  * @param {object} task
  * @param {number} daysLost positive integer
  */
@@ -30,6 +32,27 @@ export function shiftTaskDatesByDays(task, daysLost) {
     const next = { ...task };
     if (next.start_date) next.start_date = addDays(next.start_date, daysLost);
     if (next.due_date) next.due_date = addDays(next.due_date, daysLost);
+    if (!next.due_date && next.start_date) {
+        const durationRaw = Number(next.duration_days);
+        const durationDays = Number.isFinite(durationRaw) ? Math.max(1, Math.trunc(durationRaw)) : 1;
+        next.due_date = addDays(next.start_date, durationDays - 1);
+    }
+    return next;
+}
+
+/**
+ * Shift task start/due by N US business days (Mon–Fri, federal holidays excluded).
+ */
+export function shiftTaskDatesByBusinessDays(task, daysLost) {
+    if (!task || !Number.isFinite(daysLost) || daysLost === 0) return { ...task };
+    const next = { ...task };
+    if (next.start_date) next.start_date = addBusinessDays(next.start_date, daysLost);
+    if (next.due_date) next.due_date = addBusinessDays(next.due_date, daysLost);
+    if (!next.due_date && next.start_date) {
+        const durationRaw = Number(next.duration_days);
+        const durationDays = Number.isFinite(durationRaw) ? Math.max(1, Math.trunc(durationRaw)) : 1;
+        next.due_date = addBusinessDays(next.start_date, durationDays - 1);
+    }
     return next;
 }
 
@@ -41,6 +64,14 @@ export function shiftPhaseDatesByDays(phase, daysLost) {
     const next = { ...phase };
     if (next.start_date) next.start_date = addDays(next.start_date, daysLost);
     if (next.end_date) next.end_date = addDays(next.end_date, daysLost);
+    return next;
+}
+
+export function shiftPhaseDatesByBusinessDays(phase, daysLost) {
+    if (!phase || !Number.isFinite(daysLost) || daysLost === 0) return { ...phase };
+    const next = { ...phase };
+    if (next.start_date) next.start_date = addBusinessDays(next.start_date, daysLost);
+    if (next.end_date) next.end_date = addBusinessDays(next.end_date, daysLost);
     return next;
 }
 
@@ -79,7 +110,7 @@ export function applyScheduleImpact({
     taskIdSet.forEach((id) => {
         const t = taskMap.get(id);
         if (!t) return;
-        const shifted = shiftTaskDatesByDays(t, daysLost);
+        const shifted = shiftTaskDatesByBusinessDays(t, daysLost);
         const payload = {};
         if (shifted.start_date !== t.start_date) payload.start_date = shifted.start_date;
         if (shifted.due_date !== t.due_date) payload.due_date = shifted.due_date;
@@ -92,7 +123,7 @@ export function applyScheduleImpact({
     phaseIdSet.forEach((id) => {
         const p = phaseMap.get(id);
         if (!p) return;
-        const shifted = shiftPhaseDatesByDays(p, daysLost);
+        const shifted = shiftPhaseDatesByBusinessDays(p, daysLost);
         const payload = {};
         if (shifted.start_date !== p.start_date) payload.start_date = shifted.start_date;
         if (shifted.end_date !== p.end_date) payload.end_date = shifted.end_date;
@@ -175,6 +206,81 @@ function diffDays(startDate, endDate) {
     const end = parseDate(endDate);
     if (!start || !end) return 0;
     return Math.round((end.getTime() - start.getTime()) / DAY_MS);
+}
+
+/**
+ * Inclusive calendar days between two dates (same day = 1). Used for weather impact span.
+ * @param {string} startDate YYYY-MM-DD
+ * @param {string} endDate YYYY-MM-DD
+ * @returns {number} at least 1 when both parse; 0 if invalid
+ */
+export function inclusiveCalendarDaysLost(startDate, endDate) {
+    if (!startDate || !endDate) return 0;
+    const lo = startDate <= endDate ? startDate : endDate;
+    const hi = startDate <= endDate ? endDate : startDate;
+    const d = diffDays(lo, hi);
+    return Math.max(1, d + 1);
+}
+
+function compareDateStrings(a, b) {
+    if (!a || !b) return 0;
+    return a < b ? -1 : a > b ? 1 : 0;
+}
+
+/**
+ * Tasks to shift: incomplete work whose schedule ends on or after the impact start (downstream push).
+ * @param {string} impactStartDate YYYY-MM-DD first day of impact
+ */
+export function selectTasksForDownstreamShift(tasks, impactStartDate) {
+    const start = impactStartDate;
+    if (!start) return [];
+    return (tasks || [])
+        .filter((task) => {
+            if (!task || task.completed) return false;
+            const end = getTaskEndDate(task);
+            if (!end) return false;
+            return compareDateStrings(end, start) >= 0;
+        })
+        .map((task) => task.id);
+}
+
+function getPhaseEndDate(phase) {
+    if (!phase) return null;
+    if (phase.end_date) return phase.end_date;
+    if (phase.start_date) return phase.start_date;
+    return null;
+}
+
+/**
+ * Phases to shift: calendar range ends on or after impact start.
+ */
+export function selectPhasesForDownstreamShift(phases, impactStartDate) {
+    const start = impactStartDate;
+    if (!start) return [];
+    return (phases || [])
+        .filter((phase) => {
+            const end = getPhaseEndDate(phase);
+            if (!end) return false;
+            return compareDateStrings(end, start) >= 0;
+        })
+        .map((phase) => phase.id);
+}
+
+/**
+ * Downstream schedule impact: all incomplete tasks/phases from impact start forward (not overlap-only).
+ * Requires both start and end dates to define the window; impact anchor is the window start.
+ */
+export function suggestDownstreamScheduleImpactSelection({ tasks = [], phases = [], startDate, endDate }) {
+    const { start } = clampImpactWindow(startDate, endDate);
+    if (!start || !startDate || !endDate) {
+        return { selectedTaskIds: [], selectedPhaseIds: [], impactStartDate: null };
+    }
+    const impactStartDate = toDateString(start);
+    return {
+        selectedTaskIds: selectTasksForDownstreamShift(tasks, impactStartDate),
+        selectedPhaseIds: selectPhasesForDownstreamShift(phases, impactStartDate),
+        impactStartDate,
+    };
 }
 
 export function getTaskEndDate(task) {

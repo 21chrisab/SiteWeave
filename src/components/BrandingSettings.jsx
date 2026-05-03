@@ -77,6 +77,7 @@ function BrandingSettings({ compact = false }) {
       addToast('Error uploading logo: ' + error.message, 'error');
     } finally {
       setIsUploadingLogo(false);
+      event.target.value = '';
     }
   };
 
@@ -128,6 +129,7 @@ function BrandingSettings({ compact = false }) {
         <div className="flex items-center gap-4">
           {branding.logo_url && (
             <img
+              key={branding.logo_url}
               src={branding.logo_url}
               alt="Organization logo"
               className="h-14 w-auto rounded"
@@ -237,7 +239,7 @@ function BrandingSettings({ compact = false }) {
         <div className="rounded-lg overflow-hidden border border-gray-200">
           <div style={{ backgroundColor: branding.primary_color, padding: '12px 16px' }}>
             {branding.logo_url
-              ? <img src={branding.logo_url} alt="Logo preview" style={{ maxHeight: '40px' }} />
+              ? <img key={branding.logo_url} src={branding.logo_url} alt="Logo preview" style={{ maxHeight: '40px' }} />
               : <span style={{ color: '#fff', fontSize: '13px', opacity: 0.8 }}>Your logo here</span>}
           </div>
           <div style={{ padding: '16px', backgroundColor: '#fff' }}>

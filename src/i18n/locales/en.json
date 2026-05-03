@@ -146,6 +146,8 @@
     "project_status_updated_successfully": "Project status updated successfully!",
     "error_updating_project_status": "Error updating project status: {{message}}",
     "cannot_assign_task": "Cannot assign task: Selected assignee is not valid. Task created without assignee.",
+    "invalid_assignee_phone": "That phone number is not valid. Task was created without that assignee.",
+    "external_assignee_phone_name": "Assignee ({{last4}})",
     "phase_updated_successfully": "Phase updated successfully!",
     "error_updating_phase": "Error updating phase: {{message}}",
     "phase_added_successfully": "Phase added successfully!",

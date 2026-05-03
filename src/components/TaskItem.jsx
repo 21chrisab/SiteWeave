@@ -2,7 +2,7 @@ import React, { useState, memo, useEffect, useRef, useCallback, useMemo } from '
 import { useTranslation } from 'react-i18next';
 import Icon from './Icon';
 import PermissionGuard from './PermissionGuard';
-import DateDropdown from './DateDropdown';
+import DateRangePicker from './DateRangePicker';
 import { addDaysIso, localDateIso } from '../utils/dateHelpers';
 
 /** @typedef {null | 'dates' | 'assign' | 'title'} TaskPanel */
@@ -10,7 +10,6 @@ import { addDaysIso, localDateIso } from '../utils/dateHelpers';
 
 const TaskItem = memo(function TaskItem({
     task,
-    onToggle,
     onEdit,
     onDelete,
     isSelected,
@@ -89,6 +88,8 @@ const TaskItem = memo(function TaskItem({
         if (task.start_date) return formatDateShort(task.start_date);
         return 'No dates';
     };
+    const progressPercent = Math.max(0, Math.min(100, Number(task.percent_complete ?? (task.completed ? 100 : 0)) || 0));
+    const isComplete = task.completed || progressPercent >= 100;
 
     const daysSelected = () => {
         if (!draftStart || !draftDue) return null;
@@ -97,6 +98,47 @@ const TaskItem = memo(function TaskItem({
         );
         return diff >= 0 ? diff + 1 : null;
     };
+
+    const dateRangePresets = useMemo(
+        () => (
+            <>
+                <button
+                    type="button"
+                    onClick={() => {
+                        const t = localDateIso();
+                        setDraftStart(t);
+                        setDraftDue(t);
+                    }}
+                    className="rounded-full border border-gray-200 bg-gray-50 px-2 py-0.5 text-[10px] font-medium text-gray-700 hover:bg-gray-100"
+                >
+                    Today
+                </button>
+                <button
+                    type="button"
+                    onClick={() => {
+                        const t = localDateIso();
+                        setDraftStart((s) => s || t);
+                        setDraftDue(addDaysIso(t, 7) || t);
+                    }}
+                    className="rounded-full border border-gray-200 bg-gray-50 px-2 py-0.5 text-[10px] font-medium text-gray-700 hover:bg-gray-100"
+                >
+                    +1 week
+                </button>
+                <button
+                    type="button"
+                    onClick={() => {
+                        const t = localDateIso();
+                        setDraftStart((s) => s || t);
+                        setDraftDue(addDaysIso(t, 14) || t);
+                    }}
+                    className="rounded-full border border-gray-200 bg-gray-50 px-2 py-0.5 text-[10px] font-medium text-gray-700 hover:bg-gray-100"
+                >
+                    +2 weeks
+                </button>
+            </>
+        ),
+        []
+    );
 
     const photoCount = task.task_photos?.length || 0;
 
@@ -209,7 +251,7 @@ const TaskItem = memo(function TaskItem({
             }}
             className={`group relative transition-colors animate-slide-in border-b border-gray-100 last:border-b-0 ${
                 isSelected ? 'bg-blue-50/80' : ''
-            } ${task.completed ? 'bg-green-50/40' : 'bg-white hover:bg-gray-50/80'}`}
+            } ${isComplete ? 'bg-green-50/40' : 'bg-white hover:bg-gray-50/80'}`}
             role="listitem"
             aria-label={`Task: ${task.text}, Priority: ${task.priority}, ${dateLine()}`}
             onClick={(e) => {
@@ -226,28 +268,46 @@ const TaskItem = memo(function TaskItem({
                     {/* Left: checkbox + task name */}
                     <div className="flex min-w-0 flex-1 items-start gap-2.5">
                         <div className="mt-0.5 flex items-center gap-1">
-                            {unmetCount > 0 && !task.completed && (
+                            {unmetCount > 0 && !isComplete && (
                                 <Icon
                                     path="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 0h10.5A1.5 1.5 0 0118.75 12v7.5A1.5 1.5 0 0117.25 21h-10.5A1.5 1.5 0 015.25 19.5V12a1.5 1.5 0 011.5-1.5z"
                                     className="h-3.5 w-3.5 shrink-0 text-amber-600"
                                 />
                             )}
-                            <input
-                                type="checkbox"
-                                checked={task.completed}
-                                onChange={() => onToggle(task.id, task.completed)}
-                                onClick={stop}
-                                className="h-5 w-5 shrink-0 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
-                                title={task.completed ? 'Mark incomplete' : 'Mark complete'}
-                                aria-label={task.completed ? `Mark task incomplete: ${task.text}` : `Mark task complete: ${task.text}`}
-                            />
+                            <PermissionGuard
+                                permission="can_edit_tasks"
+                                fallback={
+                                    <span className="shrink-0 tabular-nums text-xs font-semibold text-gray-600 w-12 text-right" title="Percent complete">
+                                        {progressPercent}%
+                                    </span>
+                                }
+                            >
+                                <label className="flex shrink-0 items-center gap-0.5" title="Percent complete (100% marks done)" onClick={stop}>
+                                    <input
+                                        type="number"
+                                        min="0"
+                                        max="100"
+                                        value={progressPercent}
+                                        onChange={(e) => {
+                                            const bounded = Math.max(0, Math.min(100, Number(e.target.value) || 0));
+                                            onEdit(task.id, {
+                                                percent_complete: bounded,
+                                                completed: bounded >= 100,
+                                            });
+                                        }}
+                                        className="h-7 w-14 shrink-0 rounded border border-gray-300 px-1 text-xs text-gray-800"
+                                        aria-label={`Percent complete for ${task.text}`}
+                                    />
+                                    <span className="text-[11px] text-gray-500">%</span>
+                                </label>
+                            </PermissionGuard>
                         </div>
                         <PermissionGuard
                             permission="can_edit_tasks"
                             fallback={
                                 <span
                                     className={`ui-clamp-2 font-semibold text-sm sm:text-base leading-snug ${
-                                        task.completed ? 'line-through text-gray-400' : 'text-gray-900'
+                                        isComplete ? 'line-through text-gray-400' : 'text-gray-900'
                                     }`}
                                 >
                                     {task.text}
@@ -258,7 +318,7 @@ const TaskItem = memo(function TaskItem({
                                 type="button"
                                 onClick={openPanel('title')}
                                 className={`ui-clamp-2 text-left font-semibold text-sm sm:text-base leading-snug hover:text-blue-700 focus:outline-none ${
-                                    task.completed ? 'line-through text-gray-400' : 'text-gray-900'
+                                    isComplete ? 'line-through text-gray-400' : 'text-gray-900'
                                 }`}
                                 title="Click to rename"
                             >
@@ -268,23 +328,25 @@ const TaskItem = memo(function TaskItem({
                     </div>
 
                     {/* Right: priority badge */}
-                    <span
-                        className={`mt-0.5 shrink-0 px-2 py-0.5 text-xs font-semibold rounded-full ${
-                            priorityClasses[task.priority] || priorityClasses.Medium
-                        }`}
-                    >
-                        {task.priority}
-                    </span>
+                    <div className="mt-0.5 shrink-0 flex items-center gap-1.5">
+                        <span
+                            className={`px-2 py-0.5 text-xs font-semibold rounded-full ${
+                                priorityClasses[task.priority] || priorityClasses.Medium
+                            }`}
+                        >
+                            {task.priority}
+                        </span>
+                    </div>
                 </div>
 
                 {/* ── Row 2: When & Actions ── */}
-                <div className="mt-1.5 ml-[29px] flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
+                <div className="mt-1.5 ml-1 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between sm:gap-4 sm:ml-2">
                     <div className="min-w-0 flex-1">
                         <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 text-xs">
                         <PermissionGuard
                             permission="can_edit_tasks"
                             fallback={
-                                <span className={`tabular-nums ${task.completed ? 'text-gray-400' : 'text-gray-500'}`}>
+                                <span className={`tabular-nums ${isComplete ? 'text-gray-400' : 'text-gray-500'}`}>
                                     {dateLine()}
                                 </span>
                             }
@@ -293,7 +355,7 @@ const TaskItem = memo(function TaskItem({
                                 type="button"
                                 onClick={openPanel('dates')}
                                 className={`tabular-nums rounded px-0.5 focus:outline-none focus:ring-2 focus:ring-blue-400 ${
-                                    task.completed ? 'text-gray-400' : 'text-gray-500 hover:text-blue-600 hover:underline underline-offset-2'
+                                    isComplete ? 'text-gray-400' : 'text-gray-500 hover:text-blue-600 hover:underline underline-offset-2'
                                 }`}
                                 title="Set dates"
                             >
@@ -474,73 +536,34 @@ const TaskItem = memo(function TaskItem({
                 {panel === 'dates' && (
                     <PermissionGuard permission="can_edit_tasks">
                         <div
-                            className="mt-2 rounded-xl border border-gray-200 bg-white shadow-md px-4 py-3 space-y-3"
+                            className="mt-2 overflow-visible rounded-xl border border-gray-200 bg-white px-3 py-3 shadow-md space-y-2"
                             onClick={stop}
                         >
-                            {/* Header row */}
-                            <div className="flex items-center justify-between">
+                            <div className="flex items-center justify-between gap-2">
                                 <span className="text-xs font-semibold text-gray-700">Set dates</span>
                                 {daysSelected() !== null && (
-                                    <span className="text-xs text-gray-400">
-                                        {daysSelected()} day{daysSelected() === 1 ? '' : 's'} selected
+                                    <span className="shrink-0 text-[10px] text-gray-400">
+                                        {daysSelected()} day{daysSelected() === 1 ? '' : 's'}
                                     </span>
                                 )}
                             </div>
-                            <div className="flex flex-wrap gap-1.5">
-                                <button
-                                    type="button"
-                                    onClick={() => {
-                                        const t = localDateIso();
-                                        setDraftStart(t);
-                                        setDraftDue(t);
-                                    }}
-                                    className="rounded-full border border-gray-200 bg-gray-50 px-2.5 py-0.5 text-xs font-medium text-gray-700 hover:bg-gray-100"
-                                >
-                                    Today
-                                </button>
-                                <button
-                                    type="button"
-                                    onClick={() => {
-                                        const t = localDateIso();
-                                        setDraftStart((s) => s || t);
-                                        setDraftDue(addDaysIso(t, 7) || t);
-                                    }}
-                                    className="rounded-full border border-gray-200 bg-gray-50 px-2.5 py-0.5 text-xs font-medium text-gray-700 hover:bg-gray-100"
-                                >
-                                    +1 week
-                                </button>
-                                <button
-                                    type="button"
-                                    onClick={() => {
-                                        const t = localDateIso();
-                                        setDraftStart((s) => s || t);
-                                        setDraftDue(addDaysIso(t, 14) || t);
-                                    }}
-                                    className="rounded-full border border-gray-200 bg-gray-50 px-2.5 py-0.5 text-xs font-medium text-gray-700 hover:bg-gray-100"
-                                >
-                                    +2 weeks
-                                </button>
-                            </div>
-                            <div className="space-y-2">
-                                <DateDropdown
-                                    compact
-                                    label="Start"
-                                    value={draftStart}
-                                    onChange={setDraftStart}
-                                />
-                                <DateDropdown
-                                    compact
-                                    label="Due"
-                                    value={draftDue}
-                                    onChange={setDraftDue}
-                                />
-                            </div>
-                            {/* Action row */}
-                            <div className="flex items-center justify-between gap-2">
+                            <DateRangePicker
+                                size="sm"
+                                compact
+                                label="Schedule"
+                                startValue={draftStart}
+                                endValue={draftDue}
+                                onChange={({ start, end }) => {
+                                    setDraftStart(start);
+                                    setDraftDue(end);
+                                }}
+                                presets={dateRangePresets}
+                            />
+                            <div className="flex items-center justify-between gap-2 pt-1">
                                 <button
                                     type="button"
                                     onClick={clearDates}
-                                    className="text-xs text-gray-400 hover:text-red-600 underline underline-offset-2"
+                                    className="text-[10px] text-gray-400 hover:text-red-600 underline underline-offset-2"
                                 >
                                     Clear dates
                                 </button>
@@ -548,14 +571,14 @@ const TaskItem = memo(function TaskItem({
                                     <button
                                         type="button"
                                         onClick={saveDates}
-                                        className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700"
+                                        className="rounded-md bg-blue-600 px-2.5 py-1 text-[11px] font-medium text-white hover:bg-blue-700"
                                     >
                                         Apply
                                     </button>
                                     <button
                                         type="button"
                                         onClick={() => setPanel(null)}
-                                        className="rounded-lg bg-gray-100 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-200"
+                                        className="rounded-md bg-gray-100 px-2.5 py-1 text-[11px] font-medium text-gray-700 hover:bg-gray-200"
                                     >
                                         Cancel
                                     </button>

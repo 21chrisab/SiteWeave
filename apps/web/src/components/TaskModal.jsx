@@ -21,7 +21,10 @@ function TaskModal({ project, onClose, onSave, isLoading = false, allTasks = [] 
     const [startDate, setStartDate] = useState('');
     const [dueDate, setDueDate] = useState('');
     const [priority, setPriority] = useState('Medium');
+    const [percentComplete, setPercentComplete] = useState(0);
     const [assigneeId, setAssigneeId] = useState('');
+    const [assigneeEmail, setAssigneeEmail] = useState('');
+    const [assigneePhone, setAssigneePhone] = useState('');
     
     const [isRecurring, setIsRecurring] = useState(false);
     const [recurrencePattern, setRecurrencePattern] = useState('weekly');
@@ -84,15 +87,24 @@ function TaskModal({ project, onClose, onSave, isLoading = false, allTasks = [] 
             }
         }
         
+        const normalizedAssigneeEmail = assigneeEmail.trim().toLowerCase();
+        const hasEmailAssignee = normalizedAssigneeEmail.includes('@');
+        const trimmedAssigneePhone = assigneePhone.trim();
+
+        const boundedPercent = Math.max(0, Math.min(100, Number(percentComplete) || 0));
+
         onSave({
             project_id: project.id,
             text,
             start_date: startDate || null,
             due_date: dueDate || null,
             priority,
+            percent_complete: boundedPercent,
             assignee_id: validAssigneeId,
+            assignee_email: validAssigneeId ? null : (hasEmailAssignee ? normalizedAssigneeEmail : null),
+            assignee_phone: validAssigneeId ? null : (trimmedAssigneePhone || null),
             recurrence: recurrenceJson,
-            completed: false,
+            completed: boundedPercent >= 100,
             predecessor_task_ids: selectedPredecessorTaskIds,
         });
     };
@@ -177,7 +189,13 @@ function TaskModal({ project, onClose, onSave, isLoading = false, allTasks = [] 
                                     <select
                                         id="web-task-assignee"
                                         value={assigneeId}
-                                        onChange={(e) => setAssigneeId(e.target.value)}
+                                        onChange={(e) => {
+                                            setAssigneeId(e.target.value);
+                                            if (e.target.value) {
+                                                setAssigneeEmail('');
+                                                setAssigneePhone('');
+                                            }
+                                        }}
                                         className={selectClass}
                                     >
                                         <option value="">Unassigned</option>
@@ -197,6 +215,44 @@ function TaskModal({ project, onClose, onSave, isLoading = false, allTasks = [] 
                                             Add team members to this project first using the &quot;+ Add Team Member&quot; button
                                         </p>
                                     )}
+                                    <div className="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-3">
+                                        <div className="min-w-0">
+                                            <label className={labelClass} htmlFor="web-task-assignee-email">Or assign by email (no account required)</label>
+                                            <input
+                                                id="web-task-assignee-email"
+                                                type="email"
+                                                value={assigneeEmail}
+                                                onChange={(e) => {
+                                                    setAssigneeEmail(e.target.value);
+                                                    if (e.target.value.trim()) {
+                                                        setAssigneeId('');
+                                                        setAssigneePhone('');
+                                                    }
+                                                }}
+                                                className={fieldClass}
+                                                placeholder="name@example.com"
+                                            />
+                                        </div>
+                                        <div className="min-w-0">
+                                            <label className={labelClass} htmlFor="web-task-assignee-phone">Or assign by phone (no account required)</label>
+                                            <input
+                                                id="web-task-assignee-phone"
+                                                type="tel"
+                                                inputMode="tel"
+                                                autoComplete="tel"
+                                                value={assigneePhone}
+                                                onChange={(e) => {
+                                                    setAssigneePhone(e.target.value);
+                                                    if (e.target.value.trim()) {
+                                                        setAssigneeId('');
+                                                        setAssigneeEmail('');
+                                                    }
+                                                }}
+                                                className={fieldClass}
+                                                placeholder="+1 555 123 4567"
+                                            />
+                                        </div>
+                                    </div>
                                 </div>
                             </PermissionGuard>
 
@@ -214,12 +270,40 @@ function TaskModal({ project, onClose, onSave, isLoading = false, allTasks = [] 
                                 </select>
                             </div>
 
-                            <TaskDependencyCombobox
-                                allTasks={allTasks}
-                                selectedIds={selectedPredecessorTaskIds}
-                                onChange={setSelectedPredecessorTaskIds}
-                                inputClassName={fieldClass}
-                            />
+                            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-3">
+                                <div className="min-w-0">
+                                    <label className={labelClass} htmlFor="web-task-percent-complete">Percent complete</label>
+                                    <div className="flex items-center gap-3">
+                                        <input
+                                            id="web-task-percent-complete"
+                                            type="range"
+                                            min="0"
+                                            max="100"
+                                            step="5"
+                                            value={Math.max(0, Math.min(100, Number(percentComplete) || 0))}
+                                            onChange={(e) => setPercentComplete(Number(e.target.value))}
+                                            className="w-full"
+                                        />
+                                        <input
+                                            type="number"
+                                            min="0"
+                                            max="100"
+                                            value={Math.max(0, Math.min(100, Number(percentComplete) || 0))}
+                                            onChange={(e) => setPercentComplete(Number(e.target.value))}
+                                            className="w-16 shrink-0 rounded-lg border border-gray-200 bg-white px-2 py-1 text-sm"
+                                            aria-label="Task percent complete"
+                                        />
+                                    </div>
+                                </div>
+                                <div className="min-w-0">
+                                    <TaskDependencyCombobox
+                                        allTasks={allTasks}
+                                        selectedIds={selectedPredecessorTaskIds}
+                                        onChange={setSelectedPredecessorTaskIds}
+                                        inputClassName={fieldClass}
+                                    />
+                                </div>
+                            </div>
                         </aside>
                     </div>
                     

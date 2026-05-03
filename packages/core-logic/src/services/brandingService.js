@@ -59,6 +59,15 @@ export async function updateOrganizationBranding(supabase, organizationId, brand
 const BRANDING_LOGO_BUCKET = 'branding';
 
 /**
+ * Same storage path is reused (logo.png / logo.jpg), so the public URL string is stable.
+ * Browsers and CDNs cache by URL — append a version query so previews and emails fetch the new bytes.
+ */
+function publicLogoUrlWithCacheBust(publicUrl) {
+  const base = String(publicUrl || '').replace(/[?#].*$/, '');
+  return `${base}?v=${Date.now()}`;
+}
+
+/**
  * Upload logo to Supabase Storage
  * @param {import('@supabase/supabase-js').SupabaseClient} supabase - Supabase client
  * @param {string} organizationId - Organization ID
@@ -72,8 +81,9 @@ export async function uploadLogo(supabase, organizationId, logoFile) {
   const { error: uploadError } = await supabase.storage
     .from(BRANDING_LOGO_BUCKET)
     .upload(filePath, logoFile, {
-      cacheControl: '3600',
-      upsert: true
+      // Short TTL: path is reused on replace; query `v=` on the stored URL is the real cache-bust.
+      cacheControl: '120',
+      upsert: true,
     });
 
   if (uploadError) {
@@ -89,11 +99,13 @@ export async function uploadLogo(supabase, organizationId, logoFile) {
     .from(BRANDING_LOGO_BUCKET)
     .getPublicUrl(filePath);
 
+  const logoUrl = publicLogoUrlWithCacheBust(urlData.publicUrl);
+
   await updateOrganizationBranding(supabase, organizationId, {
-    logo_url: urlData.publicUrl
+    logo_url: logoUrl,
   });
 
-  return urlData.publicUrl;
+  return logoUrl;
 }
 
 /**

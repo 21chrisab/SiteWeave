@@ -125,7 +125,7 @@ export async function loadProjectTasks(supabaseClient, dispatch, projectId, stat
     console.log(`✅ Project tasks loaded in ${Math.round(endTime - startTime)}ms`);
     
     // Merge with existing tasks (replace tasks for this project)
-    const otherTasks = state.tasks.filter(t => t.project_id !== projectId);
+    const otherTasks = state.tasks.filter((t) => String(t.project_id) !== String(projectId));
     dispatch({ type: 'SET_TASKS_LOADED', payload: [...otherTasks, ...(tasks || [])] });
     
     return tasks || [];

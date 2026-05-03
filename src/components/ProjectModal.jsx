@@ -1,13 +1,15 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useAppContext } from '../context/AppContext';
 import { supabaseClient } from '../context/AppContext';
 import { duplicateProject } from '../utils/projectDuplicationService';
 import { useToast } from '../context/ToastContext';
 import LoadingSpinner from './LoadingSpinner';
 import DateDropdown from './DateDropdown';
+import DateRangePicker from './DateRangePicker';
 import Avatar from './Avatar';
 import PermissionGuard from './PermissionGuard';
 import MsProjectImportModal from './MsProjectImportModal';
+import { addDaysIso, localDateIso } from '../utils/dateHelpers';
 
 function ProjectModal({ onClose, onSave, isLoading = false, project = null }) {
     const { state } = useAppContext();
@@ -18,6 +20,7 @@ function ProjectModal({ onClose, onSave, isLoading = false, project = null }) {
     const [project_type, setProjectType] = useState('Residential');
     const [project_type_custom, setProjectTypeCustom] = useState('');
     const [status, setStatus] = useState('Planning');
+    const [start_date, setStartDate] = useState('');
     const [due_date, setDueDate] = useState('');
     const [next_milestone, setNextMilestone] = useState('');
     const [selectedContacts, setSelectedContacts] = useState([]);
@@ -30,12 +33,15 @@ function ProjectModal({ onClose, onSave, isLoading = false, project = null }) {
     const [duplicateProjectNumber, setDuplicateProjectNumber] = useState('');
     const [isDuplicating, setIsDuplicating] = useState(false);
     const [showMsProjectImportModal, setShowMsProjectImportModal] = useState(false);
-    const [taskNotifUseOrgDefaults, setTaskNotifUseOrgDefaults] = useState(true);
-    const [taskNotifEnabled, setTaskNotifEnabled] = useState(true);
+    const [taskNotifUseOrgDefaults, setTaskNotifUseOrgDefaults] = useState(false);
+    const [taskNotifEnabled, setTaskNotifEnabled] = useState(false);
     const [taskNotifLeadDays, setTaskNotifLeadDays] = useState('14, 7');
     const [projectBatchingEnabled, setProjectBatchingEnabled] = useState(true);
     const [projectBatchWindowMinutes, setProjectBatchWindowMinutes] = useState(5);
     const [dependencyNotifEnabled, setDependencyNotifEnabled] = useState(true);
+    const [actionsMenuOpen, setActionsMenuOpen] = useState(false);
+    const [smartTaskNotifOpen, setSmartTaskNotifOpen] = useState(false);
+    const actionsMenuRef = useRef(null);
 
     const isEditMode = !!project;
 
@@ -60,6 +66,7 @@ function ProjectModal({ onClose, onSave, isLoading = false, project = null }) {
                 setProjectTypeCustom(projectType);
             }
             setStatus(project.status || 'Planning');
+            setStartDate(project.start_date || '');
             setDueDate(project.due_date || '');
             setNextMilestone(project.next_milestone || '');
             setTaskNotifUseOrgDefaults(project.task_notifications_use_org_defaults !== false);
@@ -87,19 +94,31 @@ function ProjectModal({ onClose, onSave, isLoading = false, project = null }) {
             setSelectedContacts(existingContacts);
         } else {
             // Reset when creating new project
+            setStartDate('');
             setProjectNumber('');
             setProjectType('Residential');
             setProjectTypeCustom('');
             setSelectedContacts([]);
             setEmailAddresses([]);
-            setTaskNotifUseOrgDefaults(true);
-            setTaskNotifEnabled(true);
+            setTaskNotifUseOrgDefaults(false);
+            setTaskNotifEnabled(false);
             setTaskNotifLeadDays('14, 7');
             setProjectBatchingEnabled(true);
             setProjectBatchWindowMinutes(5);
             setDependencyNotifEnabled(true);
         }
     }, [project, state.contacts]);
+
+    useEffect(() => {
+        if (!actionsMenuOpen) return;
+        const onDocMouseDown = (e) => {
+            if (actionsMenuRef.current && !actionsMenuRef.current.contains(e.target)) {
+                setActionsMenuOpen(false);
+            }
+        };
+        document.addEventListener('mousedown', onDocMouseDown);
+        return () => document.removeEventListener('mousedown', onDocMouseDown);
+    }, [actionsMenuOpen]);
 
     const parseLeadDays = (raw) => {
         const values = String(raw || '')
@@ -121,6 +140,7 @@ function ProjectModal({ onClose, onSave, isLoading = false, project = null }) {
             project_number: project_number || null,
             project_type: finalProjectType || null,
             status,
+            start_date: start_date || null,
             due_date: due_date || null,
             next_milestone: next_milestone || null,
             task_notifications_use_org_defaults: taskNotifUseOrgDefaults,
@@ -219,6 +239,44 @@ function ProjectModal({ onClose, onSave, isLoading = false, project = null }) {
         }
     };
 
+    const datePresets = (
+        <>
+            <button
+                type="button"
+                onClick={() => {
+                    const t = localDateIso();
+                    setStartDate(t);
+                    setDueDate(t);
+                }}
+                className="rounded-full border border-gray-200 bg-white px-3 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50"
+            >
+                Today
+            </button>
+            <button
+                type="button"
+                onClick={() => {
+                    const t = localDateIso();
+                    setStartDate((s) => s || t);
+                    setDueDate(addDaysIso(t, 7) || t);
+                }}
+                className="rounded-full border border-gray-200 bg-white px-3 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50"
+            >
+                +1 week
+            </button>
+            <button
+                type="button"
+                onClick={() => {
+                    const t = localDateIso();
+                    setStartDate((s) => s || t);
+                    setDueDate(addDaysIso(t, 14) || t);
+                }}
+                className="rounded-full border border-gray-200 bg-white px-3 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50"
+            >
+                +2 weeks
+            </button>
+        </>
+    );
+
     if (showDuplicateDialog) {
         return (
             <div className="fixed inset-0 backdrop-blur-[2px] bg-white/20 flex items-center justify-center z-50">
@@ -280,82 +338,163 @@ function ProjectModal({ onClose, onSave, isLoading = false, project = null }) {
     return (
         <div className="fixed inset-0 backdrop-blur-[2px] bg-white/20 flex items-center justify-center z-50">
             <div className="bg-white rounded-lg shadow-2xl p-8 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
-                <div className="flex items-center justify-between mb-6">
-                    <h2 className="text-2xl font-bold">{isEditMode ? 'Edit Project' : 'Create New Project'}</h2>
-                    {isEditMode && (
-                        <PermissionGuard permission="can_create_projects">
-                            <button
-                                type="button"
-                                onClick={() => {
-                                    setDuplicateName(`${project.name} - Copy`);
-                                    setDuplicateAddress(project.address || '');
-                                    setDuplicateProjectNumber(project.project_number || '');
-                                    setDuplicateStartDate('');
-                                    setShowDuplicateDialog(true);
-                                }}
-                                className="px-4 py-2 text-sm bg-purple-100 text-purple-700 rounded-lg hover:bg-purple-200"
+                <div className="flex flex-wrap items-start justify-between gap-3 mb-6">
+                    <h2 className="text-2xl font-bold min-w-0">{isEditMode ? 'Edit Project' : 'Create New Project'}</h2>
+                    <div className="relative shrink-0" ref={actionsMenuRef}>
+                        <button
+                            type="button"
+                            onClick={() => setActionsMenuOpen((o) => !o)}
+                            className="inline-flex items-center gap-1 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 shadow-xs hover:bg-gray-50"
+                            aria-expanded={actionsMenuOpen}
+                            aria-haspopup="menu"
+                        >
+                            Actions
+                            <span className="text-gray-500" aria-hidden>▾</span>
+                        </button>
+                        {actionsMenuOpen && (
+                            <div
+                                role="menu"
+                                className="absolute right-0 z-30 mt-1 min-w-[14rem] rounded-lg border border-gray-200 bg-white py-1 text-sm shadow-lg"
                             >
-                                Duplicate Project
-                            </button>
-                        </PermissionGuard>
-                    )}
+                                <button
+                                    type="button"
+                                    role="menuitem"
+                                    className="w-full px-3 py-2 text-left text-gray-800 hover:bg-gray-50"
+                                    onClick={() => {
+                                        setSmartTaskNotifOpen(true);
+                                        setActionsMenuOpen(false);
+                                    }}
+                                >
+                                    Smart task notifications
+                                </button>
+                                {isEditMode && (
+                                    <PermissionGuard permission="can_create_projects">
+                                        <button
+                                            type="button"
+                                            role="menuitem"
+                                            className="w-full px-3 py-2 text-left text-gray-800 hover:bg-gray-50"
+                                            onClick={() => {
+                                                setDuplicateName(`${project.name} - Copy`);
+                                                setDuplicateAddress(project.address || '');
+                                                setDuplicateProjectNumber(project.project_number || '');
+                                                setDuplicateStartDate('');
+                                                setShowDuplicateDialog(true);
+                                                setActionsMenuOpen(false);
+                                            }}
+                                        >
+                                            Duplicate project
+                                        </button>
+                                    </PermissionGuard>
+                                )}
+                            </div>
+                        )}
+                    </div>
                 </div>
                 <form onSubmit={handleSubmit}>
-                    <div className="mb-4">
-                        <label className="block text-sm font-semibold mb-1 text-gray-600">Project Name</label>
-                        <input type="text" value={name} onChange={e => setName(e.target.value)} className="w-full p-2 border rounded-lg" required />
+                    <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-[7fr_3fr] lg:grid-cols-1">
+                        <div className="min-w-0 lg:col-span-1">
+                            <label className="block text-sm font-semibold mb-1 text-gray-600">Project Name</label>
+                            <input type="text" value={name} onChange={(e) => setName(e.target.value)} className="w-full p-2 border rounded-lg" required />
+                        </div>
+                        <div className="min-w-0 lg:hidden">
+                            <label className="block text-sm font-semibold mb-1 text-gray-600">Project Number</label>
+                            <input
+                                type="text"
+                                value={project_number}
+                                onChange={(e) => setProjectNumber(e.target.value)}
+                                className="w-full p-2 border rounded-lg"
+                                placeholder="Optional"
+                            />
+                        </div>
                     </div>
                     <div className="mb-4">
                         <label className="block text-sm font-semibold mb-1 text-gray-600">Address</label>
-                        <input type="text" value={address} onChange={e => setAddress(e.target.value)} className="w-full p-2 border rounded-lg" />
+                        <input type="text" value={address} onChange={(e) => setAddress(e.target.value)} className="w-full p-2 border rounded-lg" />
                     </div>
-                    <div className="mb-4">
-                        <label className="block text-sm font-semibold mb-1 text-gray-600">Project Number</label>
-                        <input type="text" value={project_number} onChange={e => setProjectNumber(e.target.value)} className="w-full p-2 border rounded-lg" placeholder="Optional" />
+                    <div className="mb-4 grid grid-cols-1 gap-3 lg:grid-cols-[3fr_7fr]">
+                        <div className="min-w-0">
+                            <label className="block text-sm font-semibold mb-1 text-gray-600">Project Type</label>
+                            <select value={project_type} onChange={(e) => setProjectType(e.target.value)} className="w-full p-2 border rounded-lg bg-white">
+                                <option value="Residential">Residential</option>
+                                <option value="Commercial">Commercial</option>
+                                <option value="Industrial">Industrial</option>
+                                <option value="Infrastructure">Infrastructure</option>
+                                <option value="Multi-family">Multi-family</option>
+                                <option value="Other">Other</option>
+                            </select>
+                        </div>
+                        <div className="min-w-0 hidden lg:block">
+                            <label className="block text-sm font-semibold mb-1 text-gray-600">Project Number</label>
+                            <input
+                                type="text"
+                                value={project_number}
+                                onChange={(e) => setProjectNumber(e.target.value)}
+                                className="w-full p-2 border rounded-lg"
+                                placeholder="Optional"
+                            />
+                        </div>
                     </div>
-                    <div className="mb-4">
-                        <label className="block text-sm font-semibold mb-1 text-gray-600">Project Type</label>
-                        <select value={project_type} onChange={e => setProjectType(e.target.value)} className="w-full p-2 border rounded-lg bg-white">
-                            <option value="Residential">Residential</option>
-                            <option value="Commercial">Commercial</option>
-                            <option value="Industrial">Industrial</option>
-                            <option value="Infrastructure">Infrastructure</option>
-                            <option value="Multi-family">Multi-family</option>
-                            <option value="Other">Other</option>
-                        </select>
-                        {project_type === 'Other' && (
+                    {project_type === 'Other' && (
+                        <div className="mb-4">
+                            <label className="block text-sm font-semibold mb-1 text-gray-600">Custom project type</label>
                             <input
                                 type="text"
                                 value={project_type_custom}
-                                onChange={e => setProjectTypeCustom(e.target.value)}
+                                onChange={(e) => setProjectTypeCustom(e.target.value)}
                                 placeholder="Enter project type"
-                                className="w-full p-2 border rounded-lg mt-2"
+                                className="w-full p-2 border rounded-lg"
                             />
-                        )}
+                        </div>
+                    )}
+                    <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-[3fr_7fr]">
+                        <div className="min-w-0">
+                            <label className="block text-sm font-semibold mb-1 text-gray-600">Status</label>
+                            <select value={status} onChange={(e) => setStatus(e.target.value)} className="w-full p-2 border rounded-lg bg-white">
+                                <option value="Planning">Planning</option>
+                                <option value="In Progress">In Progress</option>
+                                <option value="On Hold">On Hold</option>
+                                <option value="Completed">Completed</option>
+                            </select>
+                        </div>
+                        <div className="min-w-0">
+                            <label className="block text-sm font-semibold mb-1 text-gray-600">Next Milestone</label>
+                            <input
+                                type="text"
+                                value={next_milestone}
+                                onChange={(e) => setNextMilestone(e.target.value)}
+                                className="w-full p-2 border rounded-lg"
+                                placeholder="e.g., Foundation Complete"
+                            />
+                        </div>
                     </div>
-                    <div className="mb-4">
-                        <label className="block text-sm font-semibold mb-1 text-gray-600">Status</label>
-                        <select value={status} onChange={e => setStatus(e.target.value)} className="w-full p-2 border rounded-lg bg-white">
-                            <option value="Planning">Planning</option>
-                            <option value="In Progress">In Progress</option>
-                            <option value="On Hold">On Hold</option>
-                            <option value="Completed">Completed</option>
-                        </select>
-                        <p className="text-xs text-gray-500 mt-1">Status color will be automatically determined</p>
-                    </div>
-                    <DateDropdown 
-                        value={due_date} 
-                        onChange={setDueDate} 
-                        label="Due Date"
+                    <p className="text-xs text-gray-500 -mt-2 mb-4">Status color will be automatically determined</p>
+                    <DateRangePicker
+                        label="Schedule"
+                        startValue={start_date}
+                        endValue={due_date}
+                        onChange={({ start, end }) => {
+                            setStartDate(start);
+                            setDueDate(end);
+                        }}
+                        presets={datePresets}
                         className="mb-4"
                     />
-                    <div className="mb-6">
-                        <label className="block text-sm font-semibold mb-1 text-gray-600">Next Milestone</label>
-                        <input type="text" value={next_milestone} onChange={e => setNextMilestone(e.target.value)} className="w-full p-2 border rounded-lg" placeholder="e.g., Foundation Complete" />
-                    </div>
 
+                    {smartTaskNotifOpen && (
                     <div className="mb-6 p-4 border border-gray-200 rounded-lg bg-gray-50">
-                        <h3 className="text-sm font-semibold text-gray-800 mb-2">Smart Task Notifications</h3>
+                        <div className="mb-3 flex items-start justify-between gap-2">
+                            <h3 className="text-sm font-semibold text-gray-800">Smart Task Notifications</h3>
+                            <button
+                                type="button"
+                                onClick={() => setSmartTaskNotifOpen(false)}
+                                className="shrink-0 rounded px-2 py-0.5 text-xs font-medium text-gray-600 hover:bg-gray-200"
+                            >
+                                Close
+                            </button>
+                        </div>
+                        <p className="text-xs text-gray-500 mb-3">
+                            Smart notifications email assignees before task start dates and when dependencies unlock so crews can prepare in advance.
+                        </p>
                         <label className="flex items-center gap-2 text-sm text-gray-700 mb-2">
                             <input
                                 type="checkbox"
@@ -420,7 +559,8 @@ function ProjectModal({ onClose, onSave, isLoading = false, project = null }) {
                             </label>
                         </div>
                     </div>
-                    
+                    )}
+
                     <div className="mb-6">
                         <label className="block text-sm font-semibold mb-2 text-gray-600">
                             {isEditMode ? 'Team Members' : 'Add Team Members'} (Optional)

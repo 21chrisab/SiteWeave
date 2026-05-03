@@ -5,6 +5,13 @@
 import React, { createContext, useContext, useEffect, useReducer, useState, useRef } from 'react';
 import supabaseElectronAuth from '../utils/supabaseElectronAuth';
 import { supabase as supabaseClient } from '../supabaseClient';
+import { dedupeTasksById } from '../utils/taskDedupe';
+import {
+  analyzeSemanticTaskDuplicates,
+  analyzeTaskDuplicates,
+  logSemanticTaskDuplicateReport,
+  logTaskDuplicateReport,
+} from '../utils/taskDuplicateDiagnostics';
 
 // Single browser client — must match LoginView, useSession, etc.
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
@@ -24,6 +31,17 @@ export const AppContext = createContext();
 // Helper functions for sessionStorage persistence
 const STORAGE_KEY = 'siteweave_app_state';
 const STORAGE_USER_KEY = 'siteweave_user_id';
+
+/** Stable project shape for UI/debug (e.g. start_date always present, not omitted by realtime payloads). */
+function normalizeProjectRecord(p) {
+  if (!p || typeof p !== 'object') return p;
+  return { ...p, start_date: p.start_date ?? null };
+}
+
+function normalizeProjectsArray(list) {
+  if (!Array.isArray(list)) return list;
+  return list.map(normalizeProjectRecord);
+}
 
 const saveStateToStorage = (state) => {
   try {
@@ -69,7 +87,7 @@ const loadStateFromStorage = (currentUserId) => {
     }
     
     return {
-      projects: parsed.projects || [],
+      projects: normalizeProjectsArray(parsed.projects || []),
       contacts: parsed.contacts || [],
       tasks: parsed.tasks || [],
       files: parsed.files || [],
@@ -120,17 +138,20 @@ const initialState = getInitialState();
 function appReducer(state, action) {
   let newState;
   switch (action.type) {
-    case 'SET_DATA': 
-      // Preserve current activeView if not provided in payload (to prevent resetting on data refresh)
-      newState = { 
-        ...state, 
-        ...action.payload, 
+    case 'SET_DATA': {
+      const payload = { ...action.payload };
+      if (payload.projects !== undefined) {
+        payload.projects = normalizeProjectsArray(payload.projects);
+      }
+      newState = {
+        ...state,
+        ...payload,
         activeView: action.payload.activeView !== undefined ? action.payload.activeView : state.activeView,
-        isLoading: false 
+        isLoading: false,
       };
-      // Save to sessionStorage for quick restore on refresh
       saveStateToStorage(newState);
       return newState;
+    }
     case 'SET_VIEW': 
       newState = { ...state, activeView: action.payload };
       saveStateToStorage(newState);
@@ -143,23 +164,40 @@ function appReducer(state, action) {
     case 'SET_USER_CONTACT_ID': return { ...state, userContactId: action.payload };
     case 'SET_AUTH_LOADING': return { ...state, authLoading: action.payload };
     case 'ADD_PROJECT': 
-      newState = { ...state, projects: [...state.projects, action.payload] };
+      newState = { ...state, projects: [...state.projects, normalizeProjectRecord(action.payload)] };
       saveStateToStorage(newState);
       return newState;
     case 'UPDATE_PROJECT': 
-      newState = { ...state, projects: state.projects.map(p => p.id === action.payload.id ? action.payload : p) };
+      newState = {
+        ...state,
+        projects: state.projects.map((p) =>
+          p.id === action.payload.id ? normalizeProjectRecord({ ...p, ...action.payload }) : p,
+        ),
+      };
       saveStateToStorage(newState);
       return newState;
     case 'DELETE_PROJECT': 
       newState = { ...state, projects: state.projects.filter(p => p.id !== action.payload) };
       saveStateToStorage(newState);
       return newState;
-    case 'ADD_TASK': return { ...state, tasks: [...state.tasks, action.payload] };
+    case 'ADD_TASK': {
+      const id = action.payload?.id;
+      if (id != null) {
+        const key = String(id);
+        const idx = state.tasks.findIndex((t) => t?.id != null && String(t.id) === key);
+        if (idx >= 0) {
+          const next = state.tasks.slice();
+          next[idx] = action.payload;
+          return { ...state, tasks: next };
+        }
+      }
+      return { ...state, tasks: [...state.tasks, action.payload] };
+    }
     case 'UPDATE_TASK': return { ...state, tasks: state.tasks.map(task => task.id === action.payload.id ? action.payload : task) };
     case 'DELETE_TASK': return { ...state, tasks: state.tasks.filter(task => task.id !== action.payload) };
     case 'REORDER_TASKS': return { ...state, tasks: action.payload };
     case 'SET_TASKS':
-      newState = { ...state, tasks: action.payload };
+      newState = { ...state, tasks: dedupeTasksById(action.payload) };
       saveStateToStorage(newState);
       return newState;
     case 'ADD_FILE': return { ...state, files: [...state.files, action.payload] };
@@ -275,7 +313,7 @@ function appReducer(state, action) {
     case 'SET_COLLABORATOR_STATUS': return { 
       ...state, 
       isProjectCollaborator: action.payload.isCollaborator,
-      collaborationProjects: action.payload.projects || []
+      collaborationProjects: normalizeProjectsArray(action.payload.projects || []),
     };
     default: return state;
   }
@@ -284,7 +322,8 @@ function appReducer(state, action) {
 export const AppProvider = ({ children }) => {
   const [state, dispatch] = useReducer(appReducer, initialState);
   const currentActiveViewRef = useRef(state.activeView);
-  
+  const taskDupWatchSigRef = useRef('');
+
   // Keep ref in sync with state
   useEffect(() => {
     currentActiveViewRef.current = state.activeView;
@@ -340,10 +379,58 @@ export const AppProvider = ({ children }) => {
         getUser: () => {
           console.log('Current user:', state.user);
           return state.user;
-        }
+        },
+        /** Pass nothing to analyze current `state.tasks`, or pass any task array. */
+        analyzeTaskDuplicates: (tasks) => analyzeTaskDuplicates(tasks ?? state.tasks),
+        /** Log duplicate task ids (array indices, text, project_id). Dev only. */
+        inspectTaskDuplicates: () => logTaskDuplicateReport(state.tasks, 'state.tasks'),
+        /** Log automatically when duplicate ids appear or change. Call with `false` to stop. */
+        enableTaskDuplicateWatch: (on = true) => {
+          window.__SITEWEAVE_TASK_DUP_WATCH__ = !!on;
+          console.log(
+            on
+              ? '[task-dup-watch] ON — logs when duplicate ids appear or change (dev only).'
+              : '[task-dup-watch] OFF.',
+          );
+        },
+        /** Same title + phase + start_date but different task ids. `projectId` optional — defaults to selected project; omit both to scan all tasks. */
+        analyzeSemanticTaskDuplicates: (tasks, projectId) => {
+          const list = tasks ?? state.tasks;
+          let pid = projectId;
+          if (pid === undefined || pid === null || pid === '') {
+            pid = state.selectedProjectId ?? null;
+          }
+          return analyzeSemanticTaskDuplicates(list, pid);
+        },
+        inspectSemanticTaskDuplicates: (projectId) => {
+          const tasks = state.tasks || [];
+          let pid = projectId;
+          if (pid === undefined || pid === null || pid === '') {
+            pid = state.selectedProjectId ?? null;
+          }
+          return logSemanticTaskDuplicateReport(tasks, pid, 'state.tasks');
+        },
       };
     }
   }, [state]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !import.meta.env.DEV) return;
+    if (!window.__SITEWEAVE_TASK_DUP_WATCH__) return;
+    const report = analyzeTaskDuplicates(state.tasks || []);
+    const sig = report.duplicateGroups
+      .map((g) => `${g.id}:${g.count}`)
+      .sort()
+      .join('|');
+    if (report.duplicateGroups.length === 0) {
+      taskDupWatchSigRef.current = '';
+      return;
+    }
+    if (sig === taskDupWatchSigRef.current) return;
+    taskDupWatchSigRef.current = sig;
+    console.warn('[task-dup-watch] Duplicate task ids detected in state.tasks');
+    logTaskDuplicateReport(state.tasks, 'state.tasks (watch)');
+  }, [state.tasks]);
 
   useEffect(() => {
     // Check for existing session
@@ -784,7 +871,7 @@ export const AppProvider = ({ children }) => {
 
           const [{ data: projects }, { data: tasks }, { data: files }, {data: calendarEvents}, {data: messageChannels}, {data: messages}, { data: userPreferences, error: userPrefsError }, activityLog] = await Promise.all([
             supabaseClient.from('projects').select('*'),
-            supabaseClient.from('tasks').select('*'),
+            supabaseClient.from('tasks').select('*, contacts!fk_tasks_assignee_id(name, avatar_url, email)'),
             supabaseClient.from('files').select('*'),
             supabaseClient.from('calendar_events').select('*'),
             supabaseClient.from('message_channels').select('*'),

@@ -7,8 +7,6 @@ import TaskDependencyCombobox from './TaskDependencyCombobox';
 import { validateRecurrence } from '../utils/recurrenceService';
 import { addDaysIso, localDateIso } from '../utils/dateHelpers';
 import PermissionGuard from './PermissionGuard';
-import TaskPhotoManager from './TaskPhotoManager';
-import { buildTaskPhotoDraft, revokeTaskPhotoDraftUrls, canManageTaskPhotos } from '../utils/taskPhotoUtils';
 
 const fieldClass =
     'w-full rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-sm text-gray-900 placeholder:text-gray-400 shadow-xs transition focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20';
@@ -17,14 +15,17 @@ const selectClass = `${fieldClass} cursor-pointer appearance-none bg-white`;
 const chipClass =
     'rounded-full border border-gray-200 bg-white px-3 py-1 text-xs font-medium text-gray-700 shadow-xs transition hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20';
 
-function TaskModal({ project, projectPhases = [], onClose, onSave, isLoading = false, photoUploadProgress = null, allTasks = [] }) {
+function TaskModal({ project, projectPhases = [], onClose, onSave, isLoading = false, allTasks = [] }) {
     const { state } = useAppContext();
     const [text, setText] = useState('');
     const [startDate, setStartDate] = useState('');
     const [dueDate, setDueDate] = useState('');
     const [priority, setPriority] = useState('Medium');
+    const [percentComplete, setPercentComplete] = useState(0);
     const [phaseId, setPhaseId] = useState('');
     const [assigneeId, setAssigneeId] = useState('');
+    const [assigneeEmail, setAssigneeEmail] = useState('');
+    const [assigneePhone, setAssigneePhone] = useState('');
     
     const [isRecurring, setIsRecurring] = useState(false);
     const [recurrencePattern, setRecurrencePattern] = useState('weekly');
@@ -33,21 +34,9 @@ function TaskModal({ project, projectPhases = [], onClose, onSave, isLoading = f
     const [recurrenceEndType, setRecurrenceEndType] = useState('never');
     const [recurrenceEndDate, setRecurrenceEndDate] = useState('');
     const [recurrenceOccurrences, setRecurrenceOccurrences] = useState(10);
-    const [pendingPhotos, setPendingPhotos] = useState([]);
-    const [isPreparingPhotos, setIsPreparingPhotos] = useState(false);
     const [selectedPredecessorTaskIds, setSelectedPredecessorTaskIds] = useState([]);
-    const pendingPhotosRef = useRef([]);
 
     const contacts = state.contacts || [];
-
-    const canManagePhotos = canManageTaskPhotos({
-        project,
-        userId: state.user?.id,
-        userContactId: state.userContactId,
-        userRoleName: state.userRole?.name,
-        canEditTasks: state.userRole?.permissions?.can_edit_tasks === true,
-        assigneeContactId: assigneeId || null,
-    });
 
     const projectContacts = contacts.filter(contact =>
         contact.project_contacts && contact.project_contacts.some(pc => pc.project_id === project.id)
@@ -64,57 +53,6 @@ function TaskModal({ project, projectPhases = [], onClose, onSave, isLoading = f
         ...projectContacts,
         ...orgAdmins.filter(admin => !projectContacts.some(pc => pc.id === admin.id))
     ];
-
-    useEffect(() => {
-        pendingPhotosRef.current = pendingPhotos;
-    }, [pendingPhotos]);
-
-    useEffect(() => () => revokeTaskPhotoDraftUrls(pendingPhotosRef.current), []);
-
-    const handleAddPhotos = async (files) => {
-        setIsPreparingPhotos(true);
-        try {
-            const nextPhotos = await Promise.all(files.map((file, index) =>
-                buildTaskPhotoDraft(file, pendingPhotos.length + index)
-            ));
-            setPendingPhotos((prev) => [...prev, ...nextPhotos]);
-        } catch (error) {
-            alert(error.message || 'Could not prepare one or more task photos.');
-        } finally {
-            setIsPreparingPhotos(false);
-        }
-    };
-
-    const handleUpdatePendingPhoto = (photoId, updates) => {
-        setPendingPhotos((prev) => prev.map((photo) =>
-            photo.local_id === photoId ? { ...photo, ...updates } : photo
-        ));
-    };
-
-    const handleDeletePendingPhoto = (photoId) => {
-        setPendingPhotos((prev) => {
-            const target = prev.find((photo) => photo.local_id === photoId);
-            if (target) {
-                revokeTaskPhotoDraftUrls([target]);
-            }
-            return prev.filter((photo) => photo.local_id !== photoId)
-                .map((photo, index) => ({ ...photo, sort_order: index }));
-        });
-    };
-
-    const handleMovePendingPhoto = (photoId, direction) => {
-        setPendingPhotos((prev) => {
-            const currentIndex = prev.findIndex((photo) => photo.local_id === photoId);
-            const nextIndex = currentIndex + direction;
-            if (currentIndex < 0 || nextIndex < 0 || nextIndex >= prev.length) {
-                return prev;
-            }
-            const nextPhotos = [...prev];
-            const [moved] = nextPhotos.splice(currentIndex, 1);
-            nextPhotos.splice(nextIndex, 0, moved);
-            return nextPhotos.map((photo, index) => ({ ...photo, sort_order: index }));
-        });
-    };
 
     const handleSubmit = (e) => {
         e.preventDefault();
@@ -152,6 +90,12 @@ function TaskModal({ project, projectPhases = [], onClose, onSave, isLoading = f
             }
         }
         
+        const normalizedAssigneeEmail = assigneeEmail.trim().toLowerCase();
+        const hasEmailAssignee = normalizedAssigneeEmail.includes('@');
+        const trimmedAssigneePhone = assigneePhone.trim();
+
+        const boundedPercent = Math.max(0, Math.min(100, Number(percentComplete) || 0));
+
         onSave({
             project_id: project.id,
             text,
@@ -159,14 +103,12 @@ function TaskModal({ project, projectPhases = [], onClose, onSave, isLoading = f
             due_date: dueDate || null,
             priority,
             project_phase_id: phaseId || null,
-            percent_complete: 0,
+            percent_complete: boundedPercent,
             assignee_id: validAssigneeId,
+            assignee_email: validAssigneeId ? null : (hasEmailAssignee ? normalizedAssigneeEmail : null),
+            assignee_phone: validAssigneeId ? null : (trimmedAssigneePhone || null),
             recurrence: recurrenceJson,
-            completed: false,
-            pending_photos: pendingPhotos.map((photo, index) => ({
-                ...photo,
-                sort_order: index,
-            })),
+            completed: boundedPercent >= 100,
             predecessor_task_ids: selectedPredecessorTaskIds,
         });
     };
@@ -241,24 +183,6 @@ function TaskModal({ project, projectPhases = [], onClose, onSave, isLoading = f
                                 presets={datePresets}
                             />
 
-                            <div>
-                                <p className={labelClass}>Task photos</p>
-                                <TaskPhotoManager
-                                    className="!mt-0"
-                                    photos={pendingPhotos}
-                                    editable={canManagePhotos}
-                                    isBusy={isPreparingPhotos || isLoading}
-                                    uploadProgress={photoUploadProgress}
-                                    onAddFiles={handleAddPhotos}
-                                    onUpdatePhoto={handleUpdatePendingPhoto}
-                                    onDeletePhoto={handleDeletePendingPhoto}
-                                    onMovePhoto={handleMovePendingPhoto}
-                                    emptyMessage="Add field photos now or later."
-                                />
-                                <p className="mt-2 text-xs text-gray-500">
-                                    Photos are optimized on upload. Mark any that should count as completion evidence.
-                                </p>
-                            </div>
                         </div>
 
                         <aside className="h-fit space-y-4 rounded-xl border border-gray-200 bg-gray-50/90 p-5 lg:sticky lg:top-0">
@@ -270,7 +194,13 @@ function TaskModal({ project, projectPhases = [], onClose, onSave, isLoading = f
                                     <select
                                         id="task-modal-assignee"
                                         value={assigneeId}
-                                        onChange={(e) => setAssigneeId(e.target.value)}
+                                        onChange={(e) => {
+                                            setAssigneeId(e.target.value);
+                                            if (e.target.value) {
+                                                setAssigneeEmail('');
+                                                setAssigneePhone('');
+                                            }
+                                        }}
                                         className={selectClass}
                                     >
                                         <option value="">Unassigned</option>
@@ -290,48 +220,115 @@ function TaskModal({ project, projectPhases = [], onClose, onSave, isLoading = f
                                             Add team members to this project first using the &quot;+ Add Team Member&quot; button
                                         </p>
                                     )}
+                                    <div className="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-3">
+                                        <div className="min-w-0">
+                                            <label className={labelClass} htmlFor="task-modal-assignee-email">Or assign by email (no account required)</label>
+                                            <input
+                                                id="task-modal-assignee-email"
+                                                type="email"
+                                                value={assigneeEmail}
+                                                onChange={(e) => {
+                                                    setAssigneeEmail(e.target.value);
+                                                    if (e.target.value.trim()) {
+                                                        setAssigneeId('');
+                                                        setAssigneePhone('');
+                                                    }
+                                                }}
+                                                className={fieldClass}
+                                                placeholder="name@example.com"
+                                            />
+                                        </div>
+                                        <div className="min-w-0">
+                                            <label className={labelClass} htmlFor="task-modal-assignee-phone">Or assign by phone (no account required)</label>
+                                            <input
+                                                id="task-modal-assignee-phone"
+                                                type="tel"
+                                                inputMode="tel"
+                                                autoComplete="tel"
+                                                value={assigneePhone}
+                                                onChange={(e) => {
+                                                    setAssigneePhone(e.target.value);
+                                                    if (e.target.value.trim()) {
+                                                        setAssigneeId('');
+                                                        setAssigneeEmail('');
+                                                    }
+                                                }}
+                                                className={fieldClass}
+                                                placeholder="+1 555 123 4567"
+                                            />
+                                        </div>
+                                    </div>
                                 </div>
                             </PermissionGuard>
 
-                            {projectPhases.length > 0 && (
-                                <div>
-                                    <label className={labelClass} htmlFor="task-modal-phase">Phase</label>
+                            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-3">
+                                {projectPhases.length > 0 && (
+                                    <div className="min-w-0">
+                                        <label className={labelClass} htmlFor="task-modal-phase">Phase</label>
+                                        <select
+                                            id="task-modal-phase"
+                                            value={phaseId}
+                                            onChange={(e) => setPhaseId(e.target.value)}
+                                            className={selectClass}
+                                        >
+                                            <option value="">Unassigned</option>
+                                            {projectPhases.map((p) => (
+                                                <option key={p.id} value={p.id}>
+                                                    {p.name}
+                                                </option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                )}
+                                <div className={`min-w-0 ${projectPhases.length === 0 ? 'sm:col-span-2' : ''}`}>
+                                    <label className={labelClass} htmlFor="task-modal-priority">Priority</label>
                                     <select
-                                        id="task-modal-phase"
-                                        value={phaseId}
-                                        onChange={(e) => setPhaseId(e.target.value)}
+                                        id="task-modal-priority"
+                                        value={priority}
+                                        onChange={(e) => setPriority(e.target.value)}
                                         className={selectClass}
                                     >
-                                        <option value="">Unassigned</option>
-                                        {projectPhases.map((p) => (
-                                            <option key={p.id} value={p.id}>
-                                                {p.name}
-                                            </option>
-                                        ))}
+                                        <option>Low</option>
+                                        <option>Medium</option>
+                                        <option>High</option>
                                     </select>
                                 </div>
-                            )}
-
-                            <div>
-                                <label className={labelClass} htmlFor="task-modal-priority">Priority</label>
-                                <select
-                                    id="task-modal-priority"
-                                    value={priority}
-                                    onChange={(e) => setPriority(e.target.value)}
-                                    className={selectClass}
-                                >
-                                    <option>Low</option>
-                                    <option>Medium</option>
-                                    <option>High</option>
-                                </select>
                             </div>
 
-                            <TaskDependencyCombobox
-                                allTasks={allTasks}
-                                selectedIds={selectedPredecessorTaskIds}
-                                onChange={setSelectedPredecessorTaskIds}
-                                inputClassName={fieldClass}
-                            />
+                            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-3">
+                                <div className="min-w-0">
+                                    <label className={labelClass} htmlFor="task-modal-percent-complete">Percent complete</label>
+                                    <div className="flex items-center gap-3">
+                                        <input
+                                            id="task-modal-percent-complete"
+                                            type="range"
+                                            min="0"
+                                            max="100"
+                                            step="5"
+                                            value={Math.max(0, Math.min(100, Number(percentComplete) || 0))}
+                                            onChange={(e) => setPercentComplete(Number(e.target.value))}
+                                            className="w-full"
+                                        />
+                                        <input
+                                            type="number"
+                                            min="0"
+                                            max="100"
+                                            value={Math.max(0, Math.min(100, Number(percentComplete) || 0))}
+                                            onChange={(e) => setPercentComplete(Number(e.target.value))}
+                                            className="w-16 shrink-0 rounded-lg border border-gray-200 bg-white px-2 py-1 text-sm"
+                                            aria-label="Task percent complete"
+                                        />
+                                    </div>
+                                </div>
+                                <div className="min-w-0">
+                                    <TaskDependencyCombobox
+                                        allTasks={allTasks}
+                                        selectedIds={selectedPredecessorTaskIds}
+                                        onChange={setSelectedPredecessorTaskIds}
+                                        inputClassName={fieldClass}
+                                    />
+                                </div>
+                            </div>
                         </aside>
                     </div>
                     
@@ -476,18 +473,13 @@ function TaskModal({ project, projectPhases = [], onClose, onSave, isLoading = f
                         </button>
                         <button
                             type="submit"
-                            disabled={isLoading || isPreparingPhotos}
+                            disabled={isLoading}
                             className="flex items-center gap-2 rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-medium text-white shadow-xs transition hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500/30 disabled:opacity-50"
                         >
                             {isLoading ? (
                                 <>
                                     <LoadingSpinner size="sm" text="" />
                                     Adding...
-                                </>
-                            ) : isPreparingPhotos ? (
-                                <>
-                                    <LoadingSpinner size="sm" text="" />
-                                    Preparing Photos...
                                 </>
                             ) : (
                                 'Add Task'

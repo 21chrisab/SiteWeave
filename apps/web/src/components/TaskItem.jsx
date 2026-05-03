@@ -1,11 +1,11 @@
-import React, { useState, memo } from 'react';
+import React, { useState, memo, useMemo } from 'react';
 import Icon from './Icon';
-import DateDropdown from './DateDropdown';
+import DateRangePicker from './DateRangePicker';
 import PermissionGuard from './PermissionGuard';
 import { addDaysIso, localDateIso } from '../utils/dateHelpers';
 import Avatar from './Avatar';
 
-const TaskItem = memo(function TaskItem({ task, onToggle, onEdit, onDelete, isSelected, onSelect, onOpenPhotos = null }) {
+const TaskItem = memo(function TaskItem({ task, onEdit, onDelete, isSelected, onSelect, onOpenPhotos = null }) {
     const [isEditing, setIsEditing] = useState(false);
     const [editText, setEditText] = useState(task.text);
     const [editStartDate, setEditStartDate] = useState(task.start_date || '');
@@ -23,6 +23,8 @@ const TaskItem = memo(function TaskItem({ task, onToggle, onEdit, onDelete, isSe
         if (!dateString) return 'No due date';
         return new Date(dateString).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
     };
+    const progressPercent = Math.max(0, Math.min(100, Number(task.percent_complete ?? (task.completed ? 100 : 0)) || 0));
+    const isComplete = task.completed || progressPercent >= 100;
 
     const handleSaveEdit = () => {
         onEdit(task.id, {
@@ -42,9 +44,50 @@ const TaskItem = memo(function TaskItem({ task, onToggle, onEdit, onDelete, isSe
         setIsEditing(false);
     };
 
+    const dateRangePresets = useMemo(
+        () => (
+            <>
+                <button
+                    type="button"
+                    onClick={() => {
+                        const t = localDateIso();
+                        setEditStartDate(t);
+                        setEditDueDate(t);
+                    }}
+                    className="rounded-full border border-gray-200 bg-gray-50 px-2 py-0.5 text-[10px] font-medium text-gray-700 hover:bg-gray-100"
+                >
+                    Today
+                </button>
+                <button
+                    type="button"
+                    onClick={() => {
+                        const t = localDateIso();
+                        setEditStartDate((s) => s || t);
+                        setEditDueDate(addDaysIso(t, 7) || t);
+                    }}
+                    className="rounded-full border border-gray-200 bg-gray-50 px-2 py-0.5 text-[10px] font-medium text-gray-700 hover:bg-gray-100"
+                >
+                    +1 week
+                </button>
+                <button
+                    type="button"
+                    onClick={() => {
+                        const t = localDateIso();
+                        setEditStartDate((s) => s || t);
+                        setEditDueDate(addDaysIso(t, 14) || t);
+                    }}
+                    className="rounded-full border border-gray-200 bg-gray-50 px-2 py-0.5 text-[10px] font-medium text-gray-700 hover:bg-gray-100"
+                >
+                    +2 weeks
+                </button>
+            </>
+        ),
+        []
+    );
+
     if (isEditing) {
         return (
-            <li className="p-3 rounded-xl bg-blue-50/90 border border-blue-200">
+            <li className="p-3 rounded-xl bg-blue-50/90 border border-blue-200 overflow-visible">
                 <div className="space-y-3">
                     <input
                         type="text"
@@ -53,58 +96,21 @@ const TaskItem = memo(function TaskItem({ task, onToggle, onEdit, onDelete, isSe
                         className="w-full p-2 border rounded-lg"
                         placeholder="Task description"
                     />
-                    <div className="flex flex-wrap gap-1.5">
-                        <button
-                            type="button"
-                            onClick={() => {
-                                const t = localDateIso();
-                                setEditStartDate(t);
-                                setEditDueDate(t);
+                    <div className="overflow-visible">
+                        <DateRangePicker
+                            size="sm"
+                            compact
+                            label="Schedule"
+                            startValue={editStartDate}
+                            endValue={editDueDate}
+                            onChange={({ start, end }) => {
+                                setEditStartDate(start);
+                                setEditDueDate(end);
                             }}
-                            className="rounded-full border border-gray-200 bg-gray-50 px-2.5 py-0.5 text-xs font-medium text-gray-700 hover:bg-gray-100"
-                        >
-                            Today
-                        </button>
-                        <button
-                            type="button"
-                            onClick={() => {
-                                const t = localDateIso();
-                                setEditStartDate((s) => s || t);
-                                setEditDueDate(addDaysIso(t, 7) || t);
-                            }}
-                            className="rounded-full border border-gray-200 bg-gray-50 px-2.5 py-0.5 text-xs font-medium text-gray-700 hover:bg-gray-100"
-                        >
-                            +1 week
-                        </button>
-                        <button
-                            type="button"
-                            onClick={() => {
-                                const t = localDateIso();
-                                setEditStartDate((s) => s || t);
-                                setEditDueDate(addDaysIso(t, 14) || t);
-                            }}
-                            className="rounded-full border border-gray-200 bg-gray-50 px-2.5 py-0.5 text-xs font-medium text-gray-700 hover:bg-gray-100"
-                        >
-                            +2 weeks
-                        </button>
+                            presets={dateRangePresets}
+                        />
                     </div>
                     <div className="flex gap-3 items-end flex-wrap">
-                        <div className="flex-1 min-w-[120px]">
-                            <DateDropdown 
-                                compact
-                                value={editStartDate} 
-                                onChange={setEditStartDate}
-                                label="Start Date"
-                            />
-                        </div>
-                        <div className="flex-1 min-w-[120px]">
-                            <DateDropdown 
-                                compact
-                                value={editDueDate} 
-                                onChange={setEditDueDate}
-                                label="End Date"
-                            />
-                        </div>
                         <select
                             value={editPriority}
                             onChange={(e) => setEditPriority(e.target.value)}
@@ -137,35 +143,44 @@ const TaskItem = memo(function TaskItem({ task, onToggle, onEdit, onDelete, isSe
     return (
         <li 
             className={`flex items-center justify-between p-3 rounded-xl group transition-all animate-slide-in ${
-                isSelected ? 'bg-blue-50 border border-blue-200' : task.completed ? '' : 'border border-slate-100 bg-white/80 hover:bg-slate-50'
-            } ${task.completed ? 'bg-emerald-50/40 hover:bg-emerald-50/60 border-l-4 border-l-emerald-500' : ''}`}
+                isSelected ? 'bg-blue-50 border border-blue-200' : isComplete ? '' : 'border border-slate-100 bg-white/80 hover:bg-slate-50'
+            } ${isComplete ? 'bg-emerald-50/40 hover:bg-emerald-50/60 border-l-4 border-l-emerald-500' : ''}`}
             role="listitem"
-            aria-label={`Task: ${task.text}, Priority: ${task.priority}, Start: ${formatDate(task.start_date)}, End: ${formatDate(task.due_date)}`}
+            aria-label={`Task: ${task.text}, ${progressPercent}% complete, Priority: ${task.priority}, Start: ${formatDate(task.start_date)}, End: ${formatDate(task.due_date)}`}
         >
-            <div className="flex items-center gap-4">
-                {/* Always show completion checkbox that directly toggles task completion */}
-                <div className="relative">
-                    <input 
-                        type="checkbox" 
-                        checked={task.completed} 
-                        onChange={() => onToggle(task.id, task.completed)}
-                        className={`h-5 w-5 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer transition-all ${
-                            task.completed ? 'hover:scale-105 hover:shadow-xs' : ''
-                        }`}
-                        title={task.completed ? 'Click to uncomplete task' : 'Click to complete task'}
-                        aria-label={task.completed ? `Mark task as incomplete: ${task.text}` : `Mark task as complete: ${task.text}`}
-                    />
-                    {task.completed && (
-                        <div className="absolute -top-1 -right-1 w-3 h-3 bg-green-500 rounded-full border-2 border-white flex items-center justify-center">
-                            <div className="w-1.5 h-1.5 bg-white rounded-full"></div>
-                        </div>
-                    )}
-                </div>
-                <div className="flex-1">
-                    <p className={`font-semibold transition-all ${task.completed ? 'line-through text-gray-400' : ''}`}>
+            <div className="flex items-center gap-3 min-w-0 flex-1">
+                <PermissionGuard
+                    permission="can_edit_tasks"
+                    fallback={
+                        <span className="shrink-0 tabular-nums text-xs font-semibold text-gray-600 w-12 text-right" title="Percent complete">
+                            {progressPercent}%
+                        </span>
+                    }
+                >
+                    <label className="flex shrink-0 items-center gap-1 text-xs text-gray-500" title="Percent complete (100% marks task done)">
+                        <input
+                            type="number"
+                            min="0"
+                            max="100"
+                            value={progressPercent}
+                            onChange={(e) => {
+                                const bounded = Math.max(0, Math.min(100, Number(e.target.value) || 0));
+                                onEdit(task.id, {
+                                    percent_complete: bounded,
+                                    completed: bounded >= 100,
+                                });
+                            }}
+                            className="w-14 rounded border border-gray-200 px-1.5 py-0.5 text-xs text-gray-700"
+                            aria-label={`Percent complete for ${task.text}`}
+                        />
+                        <span className="text-gray-400">%</span>
+                    </label>
+                </PermissionGuard>
+                <div className="flex-1 min-w-0">
+                    <p className={`font-semibold transition-all ${isComplete ? 'line-through text-gray-400' : ''}`}>
                         {task.text}
                     </p>
-                    <p className={`text-sm transition-all ${task.completed ? 'text-gray-400' : 'text-gray-500'}`}>
+                    <p className={`text-sm transition-all ${isComplete ? 'text-gray-400' : 'text-gray-500'}`}>
                         {task.start_date && <span>Start: {formatDate(task.start_date)}</span>}
                         {task.start_date && task.due_date && ' · '}
                         {task.due_date && <span>End: {formatDate(task.due_date)}</span>}
@@ -173,7 +188,7 @@ const TaskItem = memo(function TaskItem({ task, onToggle, onEdit, onDelete, isSe
                     </p>
                 </div>
             </div>
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-4 shrink-0">
                 <span className={`px-2 py-1 text-xs font-bold rounded-full ${priorityClasses[task.priority]}`}>{task.priority}</span>
                 {task.contacts && (
                     task.contacts.avatar_url ? (

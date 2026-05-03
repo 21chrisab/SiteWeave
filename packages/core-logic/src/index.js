@@ -6,7 +6,18 @@ export {
   computeWeightedProjectProgressPercent,
   computeProjectScheduleTimeline,
   groupPhasesByProjectId,
+  inferScheduleBoundsFromTasks,
 } from './utils/projectProgressRollup.js';
+
+export {
+  addBusinessDays,
+  inclusiveBusinessDaysLost,
+  inclusiveBusinessDaysInRange,
+  buildFederalHolidayMap,
+  businessDaysBetween,
+} from './utils/usBusinessCalendar.js';
+
+export { normalizeAssigneePhone } from './utils/assigneePhone.js';
 
 // Export services
 export * from './services/tasksService.js';

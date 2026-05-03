@@ -58,6 +58,7 @@ export async function duplicateProject(supabase, projectId, newName, organizatio
         status: originalProject.status || 'Planning',
         status_color: originalProject.status_color,
         project_type: originalProject.project_type,
+        start_date: originalProject.start_date ? shiftDate(originalProject.start_date, deltaDays) : null,
         due_date: originalProject.due_date ? shiftDate(originalProject.due_date, deltaDays) : null,
         next_milestone: originalProject.next_milestone,
         milestones: originalProject.milestones,

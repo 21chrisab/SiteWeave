@@ -66,14 +66,14 @@ serve(async (req) => {
           can_create_projects: true,
           can_edit_projects: true,
           can_delete_projects: true,
-          can_view_financials: true,
           can_assign_tasks: true,
           can_manage_contacts: true,
           can_create_tasks: true,
           can_edit_tasks: true,
           can_delete_tasks: true,
           can_send_messages: true,
-          can_manage_progress_reports: true
+          can_manage_progress_reports: true,
+          can_manage_org_progress_reports: true,
         },
         is_system_role: true
       })
@@ -100,7 +100,6 @@ serve(async (req) => {
           can_create_projects: false,
           can_edit_projects: false,
           can_delete_projects: false,
-          can_view_financials: false,
           can_assign_tasks: false,
           can_manage_contacts: false,
           can_create_tasks: false,
@@ -133,7 +132,6 @@ serve(async (req) => {
           can_create_projects: true,
           can_edit_projects: true,
           can_delete_projects: false,
-          can_view_financials: true,
           can_assign_tasks: true,
           can_manage_contacts: true,
           can_create_tasks: true,
