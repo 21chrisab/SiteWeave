@@ -136,6 +136,26 @@ export function logTaskDeleted(task, user, projectId) {
     });
 }
 
+/** kind: 'assignment' | 'ping' — proof of immediate email to assignee */
+export function logTaskAssigneeEmailSent({ task, user, projectId, kind, recipientEmail, success, errorMessage }) {
+    const action = kind === 'ping' ? 'assignee_ping_email' : 'assignee_assignment_email';
+    return logActivity({
+        action,
+        entityType: 'task',
+        entityId: task.id,
+        entityName: task.text,
+        projectId,
+        organizationId: task.organization_id,
+        user,
+        details: {
+            kind,
+            recipient_email: recipientEmail,
+            success: success !== false,
+            error: errorMessage || null,
+        },
+    });
+}
+
 export function logProjectCreated(project, user) {
     return logActivity({
         action: 'created',

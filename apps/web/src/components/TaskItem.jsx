@@ -1,11 +1,25 @@
-import React, { useState, memo, useMemo } from 'react';
+import React, { useState, memo, useMemo, useCallback, useEffect, useRef } from 'react';
 import Icon from './Icon';
 import DateRangePicker from './DateRangePicker';
 import PermissionGuard from './PermissionGuard';
 import { addDaysIso, localDateIso } from '../utils/dateHelpers';
 import Avatar from './Avatar';
 
-const TaskItem = memo(function TaskItem({ task, onEdit, onDelete, isSelected, onSelect, onOpenPhotos = null }) {
+const PERCENT_PRESETS = [0, 25, 50, 75, 100];
+
+const percentFieldClass =
+  'w-16 select-text rounded border border-gray-200 bg-white px-2 py-0.5 text-xs tabular-nums text-gray-700 [-moz-appearance:textfield] [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none';
+
+const TaskItem = memo(function TaskItem({
+    task,
+    onEdit,
+    onDelete,
+    isSelected,
+    onSelect,
+    onOpenPhotos = null,
+    onPingAssignee = null,
+    pingingTaskId = null,
+}) {
     const [isEditing, setIsEditing] = useState(false);
     const [editText, setEditText] = useState(task.text);
     const [editStartDate, setEditStartDate] = useState(task.start_date || '');
@@ -25,6 +39,30 @@ const TaskItem = memo(function TaskItem({ task, onEdit, onDelete, isSelected, on
     };
     const progressPercent = Math.max(0, Math.min(100, Number(task.percent_complete ?? (task.completed ? 100 : 0)) || 0));
     const isComplete = task.completed || progressPercent >= 100;
+
+    /** null = show committed value from task; string = in-progress edit */
+    const [percentDraft, setPercentDraft] = useState(null);
+    const skipPercentBlurCommitRef = useRef(false);
+
+    const commitPercentDraft = useCallback(() => {
+        const raw = percentDraft !== null ? percentDraft : String(progressPercent);
+        const n = Math.max(0, Math.min(100, parseInt(String(raw).trim(), 10) || 0));
+        if (n !== progressPercent) {
+            onEdit(task.id, {
+                percent_complete: n,
+                completed: n >= 100,
+            });
+        }
+        setPercentDraft(null);
+    }, [percentDraft, progressPercent, task.id, onEdit]);
+
+    const cancelPercentDraft = useCallback(() => {
+        setPercentDraft(null);
+    }, []);
+
+    useEffect(() => {
+        setPercentDraft(null);
+    }, [task.id]);
 
     const handleSaveEdit = () => {
         onEdit(task.id, {
@@ -157,24 +195,72 @@ const TaskItem = memo(function TaskItem({ task, onEdit, onDelete, isSelected, on
                         </span>
                     }
                 >
-                    <label className="flex shrink-0 items-center gap-1 text-xs text-gray-500" title="Percent complete (100% marks task done)">
-                        <input
-                            type="number"
-                            min="0"
-                            max="100"
-                            value={progressPercent}
-                            onChange={(e) => {
-                                const bounded = Math.max(0, Math.min(100, Number(e.target.value) || 0));
-                                onEdit(task.id, {
-                                    percent_complete: bounded,
-                                    completed: bounded >= 100,
-                                });
-                            }}
-                            className="w-14 rounded border border-gray-200 px-1.5 py-0.5 text-xs text-gray-700"
-                            aria-label={`Percent complete for ${task.text}`}
-                        />
-                        <span className="text-gray-400">%</span>
-                    </label>
+                    <div className="flex shrink-0 flex-col gap-1" title="Percent complete (100% marks task done)">
+                        <label className="flex items-center gap-1 text-xs text-gray-500">
+                            <input
+                                type="text"
+                                draggable={false}
+                                inputMode="numeric"
+                                pattern="[0-9]*"
+                                autoComplete="off"
+                                value={percentDraft !== null ? percentDraft : String(progressPercent)}
+                                onFocus={() => setPercentDraft(String(progressPercent))}
+                                onChange={(e) => {
+                                    const next = e.target.value;
+                                    if (next !== '' && !/^\d+$/.test(next)) return;
+                                    if (next.length > 3) return;
+                                    if (next !== '' && Number(next) > 100) return;
+                                    setPercentDraft(next);
+                                }}
+                                onBlur={() => {
+                                    if (skipPercentBlurCommitRef.current) {
+                                        skipPercentBlurCommitRef.current = false;
+                                        return;
+                                    }
+                                    commitPercentDraft();
+                                }}
+                                onKeyDown={(e) => {
+                                    if (e.key === 'Enter') {
+                                        e.preventDefault();
+                                        commitPercentDraft();
+                                        e.currentTarget.blur();
+                                    } else if (e.key === 'Escape') {
+                                        e.preventDefault();
+                                        skipPercentBlurCommitRef.current = true;
+                                        cancelPercentDraft();
+                                        e.currentTarget.blur();
+                                    }
+                                }}
+                                className={percentFieldClass}
+                                aria-label={`Percent complete for ${task.text}`}
+                            />
+                            <span className="text-gray-400">%</span>
+                        </label>
+                        <div className="flex max-w-[7.5rem] flex-nowrap gap-0.5 overflow-x-auto">
+                            {PERCENT_PRESETS.map((p) => (
+                                <button
+                                    key={p}
+                                    type="button"
+                                    onMouseDown={(ev) => ev.preventDefault()}
+                                    onClick={(ev) => {
+                                        ev.stopPropagation();
+                                        onEdit(task.id, {
+                                            percent_complete: p,
+                                            completed: p >= 100,
+                                        });
+                                        setPercentDraft(null);
+                                    }}
+                                    className={`rounded px-1 py-0.5 text-[10px] font-medium tabular-nums transition-colors ${
+                                        progressPercent === p
+                                            ? 'bg-blue-600 text-white'
+                                            : 'border border-gray-200 bg-white text-gray-600 hover:bg-gray-50'
+                                    }`}
+                                >
+                                    {p}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
                 </PermissionGuard>
                 <div className="flex-1 min-w-0">
                     <p className={`font-semibold transition-all ${isComplete ? 'line-through text-gray-400' : ''}`}>
@@ -204,6 +290,29 @@ const TaskItem = memo(function TaskItem({ task, onEdit, onDelete, isSelected, on
                         </span>
                     )
                 )}
+                {onPingAssignee &&
+                    task.assignee_id &&
+                    task.contacts?.email &&
+                    String(task.contacts.email).includes('@') && (
+                        <PermissionGuard permission="can_assign_tasks">
+                            <button
+                                type="button"
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    onPingAssignee(task);
+                                }}
+                                disabled={pingingTaskId === task.id}
+                                className="shrink-0 rounded-lg border border-gray-200 bg-white p-1.5 text-gray-500 shadow-xs transition hover:border-blue-200 hover:text-blue-600 disabled:cursor-not-allowed disabled:opacity-50"
+                                title="Email a reminder to the assignee now"
+                                aria-label={`Ping assignee for task: ${task.text}`}
+                            >
+                                <Icon
+                                    path="M3.478 2.405a.75.75 0 0 0-.926.94l2.432 7.905H13.5a.75.75 0 0 1 0 1.5H4.984l-2.432 7.905a.75.75 0 0 0 .926.94 60.519 60.519 0 0 0 18.445-8.986.75.75 0 0 0 0-1.218A60.517 60.517 0 0 0 3.478 2.405z"
+                                    className="h-4 w-4"
+                                />
+                            </button>
+                        </PermissionGuard>
+                    )}
                 <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity" role="group" aria-label="Task actions">
                     {onOpenPhotos && (
                         <button

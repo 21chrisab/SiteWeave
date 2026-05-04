@@ -22,7 +22,8 @@ function SettingsView() {
   const [appVersion, setAppVersion] = useState(packageJson.version);
   const [googleCalendarSynced, setGoogleCalendarSynced] = useState(false);
   const [outlookCalendarSynced, setOutlookCalendarSynced] = useState(false);
-  
+  const [isSavingOrgAssignmentEmail, setIsSavingOrgAssignmentEmail] = useState(false);
+
   // Form states
   const [fullName, setFullName] = useState(state.user?.user_metadata?.full_name || '');
   const [currentPassword, setCurrentPassword] = useState('');
@@ -144,6 +145,32 @@ function SettingsView() {
     }
   };
 
+  const handleToggleDefaultAssignmentEmail = async (e) => {
+    const checked = e.target.checked;
+    const orgId = state.currentOrganization?.id;
+    if (!orgId) return;
+    setIsSavingOrgAssignmentEmail(true);
+    try {
+      const { error } = await supabaseClient
+        .from('organizations')
+        .update({ default_send_assignment_email: checked })
+        .eq('id', orgId);
+      if (error) {
+        addToast(t('toast.error_updating_profile', { message: error.message }) || error.message, 'error');
+        return;
+      }
+      dispatch({
+        type: 'SET_ORGANIZATION',
+        payload: { ...state.currentOrganization, default_send_assignment_email: checked },
+      });
+      addToast('Organization notification default saved.', 'success');
+    } catch (err) {
+      addToast(err?.message || 'Could not update setting', 'error');
+    } finally {
+      setIsSavingOrgAssignmentEmail(false);
+    }
+  };
+
   return (
     <div className="max-w-[95%] mx-auto space-y-8">
       <header className="flex items-center justify-between">
@@ -185,6 +212,23 @@ function SettingsView() {
                   <p className="font-medium text-gray-900 mt-1">{state.userRole?.name || t('settings.no_role_assigned')}</p>
                 </div>
                 <div className="pt-3 border-t border-gray-200 space-y-2">
+                  <PermissionGuard permission="can_manage_users">
+                    <label className="flex cursor-pointer items-start gap-2 rounded-md px-1 py-2 hover:bg-gray-50">
+                      <input
+                        type="checkbox"
+                        className="mt-0.5 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                        checked={state.currentOrganization?.default_send_assignment_email === true}
+                        disabled={isSavingOrgAssignmentEmail}
+                        onChange={handleToggleDefaultAssignmentEmail}
+                      />
+                      <span className="min-w-0 text-sm text-gray-700">
+                        <span className="font-medium text-gray-900">Pre-check “Send email notification” on new tasks</span>
+                        <span className="mt-0.5 block text-xs text-gray-500">
+                          When creating a task, turn on the assignment email option by default for assignees who have an email. Assigners can still uncheck it before saving.
+                        </span>
+                      </span>
+                    </label>
+                  </PermissionGuard>
                   <PermissionGuard permission="can_manage_roles">
                     <button
                       onClick={() => setShowRoleManagement(true)}

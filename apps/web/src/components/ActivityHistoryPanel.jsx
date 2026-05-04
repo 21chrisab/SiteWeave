@@ -34,6 +34,21 @@ function lineFromActivity(activity) {
   const entityType = activity?.entity_type || 'item';
   const entityName = activity?.entity_name || '';
   const projectSuffix = activity?.project_id ? ` (project: ${activity.project_id})` : '';
+  const d = activity?.details || {};
+
+  if (action === 'assignee_assignment_email' && d.recipient_email) {
+    const ok = d.success !== false;
+    return ok
+      ? `sent assignment email to ${d.recipient_email} for task "${entityName}"`
+      : `assignment email to ${d.recipient_email} failed for task "${entityName}"${d.error ? `: ${d.error}` : ''}`;
+  }
+  if (action === 'assignee_ping_email' && d.recipient_email) {
+    const ok = d.success !== false;
+    return ok
+      ? `pinged assignee (${d.recipient_email}) for task "${entityName}"`
+      : `ping email to ${d.recipient_email} failed for task "${entityName}"${d.error ? `: ${d.error}` : ''}`;
+  }
+
   return `${action} ${entityType}${entityName ? ` "${entityName}"` : ''}${projectSuffix}`;
 }
 

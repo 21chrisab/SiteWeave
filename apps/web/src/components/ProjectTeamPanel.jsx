@@ -1,7 +1,14 @@
 import React from 'react';
 import Avatar from './Avatar';
 
+function hasEmailableAddress(email) {
+  return Boolean(email && String(email).trim().includes('@'));
+}
+
 function ContactRow({ contact }) {
+  const emailOk = hasEmailableAddress(contact.email);
+  const phoneOk = Boolean(contact.phone && String(contact.phone).replace(/\D/g, '').length >= 7);
+
   return (
     <div className="flex w-full min-w-0 items-center gap-3 rounded-lg border border-gray-100 bg-gray-50 px-3 py-2">
       {contact.avatar_url ? (
@@ -18,6 +25,30 @@ function ContactRow({ contact }) {
         <p className="truncate text-xs text-gray-500">
           {contact.role || contact.trade || contact.company || 'Project member'}
         </p>
+      </div>
+      <div className="flex shrink-0 items-center gap-1.5" aria-label="Notification readiness">
+        <span
+          className={`inline-flex h-7 w-7 items-center justify-center rounded-md border text-xs ${
+            emailOk ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-gray-200 bg-white text-gray-300'
+          }`}
+          title={
+            emailOk
+              ? 'Will receive task reminder emails at ' + String(contact.email).trim()
+              : 'No email on file — add in Directory for automated emails'
+          }
+          aria-label={emailOk ? 'Email on file for reminders' : 'Missing email for reminders'}
+        >
+          @
+        </span>
+        <span
+          className={`inline-flex h-7 w-7 items-center justify-center rounded-md border text-xs ${
+            phoneOk ? 'border-sky-200 bg-sky-50 text-sky-700' : 'border-gray-200 bg-white text-gray-300'
+          }`}
+          title={phoneOk ? 'Phone on file (directory)' : 'No phone on file'}
+          aria-label={phoneOk ? 'Phone on file' : 'No phone on file'}
+        >
+          ☎
+        </span>
       </div>
       <span className="rounded-full bg-white px-2 py-0.5 text-[11px] font-medium text-gray-500">
         {contact.status || 'Available'}

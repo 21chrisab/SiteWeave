@@ -124,7 +124,17 @@ function ContactsView({ embedded = false, defaultProjectFilter = null }) {
                         changes
                     );
                 }
-                addToast('Contact updated successfully!', 'success');
+                if (contactData.type === 'Subcontractor') {
+                    const hasEmail = contactData.email && String(contactData.email).includes('@');
+                    addToast(
+                        hasEmail
+                            ? 'Saved. They can receive task emails once assigned to a project.'
+                            : 'Saved. Add an email address if you want automated task reminders for this trade partner.',
+                        'success',
+                    );
+                } else {
+                    addToast('Contact updated successfully!', 'success');
+                }
                 dispatch({ type: 'UPDATE_CONTACT', payload: contactData });
                 setShowAddModal(false);
                 setEditingContact(null);
@@ -146,7 +156,17 @@ function ContactsView({ embedded = false, defaultProjectFilter = null }) {
             if (error) {
                 addToast('Error creating contact: ' + error.message, 'error');
             } else {
-                addToast('Contact created successfully!', 'success');
+                if (contactData.type === 'Subcontractor') {
+                    const hasEmail = contactData.email && String(contactData.email).includes('@');
+                    addToast(
+                        hasEmail
+                            ? 'Saved. They can receive task emails once assigned to a project.'
+                            : 'Saved. Add an email address if you want automated task reminders for this trade partner.',
+                        'success',
+                    );
+                } else {
+                    addToast('Contact created successfully!', 'success');
+                }
                 dispatch({ type: 'ADD_CONTACT', payload: data });
                 if (state.user) logContactCreated(data, state.user, null);
                 setShowAddModal(false);

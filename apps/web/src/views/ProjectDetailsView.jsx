@@ -31,7 +31,15 @@ import { mergeWeatherIntoPhaseTasks } from '../utils/weatherTaskTimeline';
 import { useTaskShortcuts } from '../hooks/useKeyboardShortcuts';
 import { handleApiError } from '../utils/errorHandling';
 import { parseRecurrence } from '../utils/recurrenceService';
-import { logTaskCreated, logTaskCompleted, logTaskUncompleted, logTaskUpdated, logTaskDeleted } from '../utils/activityLogger';
+import {
+    logTaskCreated,
+    logTaskCompleted,
+    logTaskUncompleted,
+    logTaskUpdated,
+    logTaskDeleted,
+    logTaskAssigneeEmailSent,
+} from '../utils/activityLogger';
+import { sendTaskAssignmentEmail, sendTaskPingEmail } from '../utils/emailNotifications';
 import { getCriticalPathTaskIds } from '../utils/criticalPath';
 import { orderTasksForGantt } from '../utils/ganttOrdering';
 import { buildTaskPhotoDraft, canManageTaskPhotos, revokeTaskPhotoDraftUrls, sortTaskPhotos } from '../utils/taskPhotoUtils';
@@ -44,6 +52,7 @@ function ProjectDetailsView({ routeTab = 'tasks', onTabChange = null }) {
     const { addToast } = useToast();
     const [showTaskModal, setShowTaskModal] = useState(false);
     const [isCreatingTask, setIsCreatingTask] = useState(false);
+    const [pingingTaskId, setPingingTaskId] = useState(null);
     const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
     const [taskToDelete, setTaskToDelete] = useState(null);
     const [selectedTasks, setSelectedTasks] = useState([]);
@@ -192,7 +201,7 @@ function ProjectDetailsView({ routeTab = 'tasks', onTabChange = null }) {
                 const [tasksResult, fieldIssuesResult] = await Promise.all([
                     supabaseClient
                         .from('tasks')
-                        .select('*, contacts!fk_tasks_assignee_id(name, avatar_url), task_photos(*)')
+                        .select('*, contacts!fk_tasks_assignee_id(name, avatar_url, email), task_photos(*)')
                         .eq('project_id', state.selectedProjectId)
                         .order('due_date', { ascending: true, nullsFirst: false })
                         .order('id', { ascending: true }),
@@ -471,6 +480,56 @@ function ProjectDetailsView({ routeTab = 'tasks', onTabChange = null }) {
         }
     };
 
+    const handlePingAssignee = async (task) => {
+        const email = task.contacts?.email?.trim();
+        if (!email || !email.includes('@')) {
+            addToast('No email on file for this assignee.', 'warning');
+            return;
+        }
+        setPingingTaskId(task.id);
+        try {
+            const tenMinAgo = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+            const { count, error: countErr } = await supabaseClient
+                .from('activity_log')
+                .select('*', { count: 'exact', head: true })
+                .eq('entity_id', task.id)
+                .eq('action', 'assignee_ping_email')
+                .gte('created_at', tenMinAgo);
+            if (countErr) console.warn('ping cooldown check:', countErr.message);
+            if ((count ?? 0) >= 1) {
+                addToast('Wait a few minutes before pinging again.', 'info');
+                return;
+            }
+
+            const senderName =
+                state.user?.user_metadata?.full_name || state.user?.email || 'SiteWeave user';
+            const res = await sendTaskPingEmail(
+                email,
+                { title: task.text },
+                { name: project.name, address: project.address },
+                senderName,
+            );
+            await logTaskAssigneeEmailSent({
+                task,
+                user: state.user,
+                projectId: project.id,
+                kind: 'ping',
+                recipientEmail: email,
+                success: res.success,
+                errorMessage: res.error,
+            });
+            if (res.success) {
+                addToast('Ping sent to assignee.', 'success');
+            } else {
+                addToast(res.error || 'Could not send ping email.', 'error');
+            }
+        } catch (e) {
+            addToast(handleApiError(e, 'Could not send ping'), 'error');
+        } finally {
+            setPingingTaskId(null);
+        }
+    };
+
     const handleAddTask = async (taskData) => {
         setIsCreatingTask(true);
         
@@ -478,8 +537,10 @@ function ProjectDetailsView({ routeTab = 'tasks', onTabChange = null }) {
             const predecessorTaskIds = Array.isArray(taskData.predecessor_task_ids)
                 ? [...new Set(taskData.predecessor_task_ids.filter(Boolean))]
                 : [];
+            const sendAssignmentRequested = taskData.send_assignment_email === true;
             const payload = { ...taskData };
             delete payload.predecessor_task_ids;
+            delete payload.send_assignment_email;
             const normalizedPercent = Math.max(
                 0,
                 Math.min(100, Number(payload.percent_complete ?? (payload.completed ? 100 : 0)) || 0),
@@ -491,6 +552,7 @@ function ProjectDetailsView({ routeTab = 'tasks', onTabChange = null }) {
             const assigneePhoneRaw = String(payload.assignee_phone || '').trim();
             delete payload.assignee_phone;
             payload.organization_id = payload.organization_id || project.organization_id;
+            payload.notify_assignee_email = Boolean(sendAssignmentRequested);
 
             if (!payload.assignee_id && assigneeEmailInput) {
                 let resolvedContactId = null;
@@ -601,7 +663,7 @@ function ProjectDetailsView({ routeTab = 'tasks', onTabChange = null }) {
                 // Verify the contact exists
                 const { data: contact, error: contactError } = await supabaseClient
                     .from('contacts')
-                    .select('id')
+                    .select('id, email, name')
                     .eq('id', payload.assignee_id)
                     .single();
                 
@@ -621,17 +683,21 @@ function ProjectDetailsView({ routeTab = 'tasks', onTabChange = null }) {
                 }
             }
             
-            const { data, error } = await supabaseClient.from('tasks').insert(payload).select().single();
+            const { data, error } = await supabaseClient
+                .from('tasks')
+                .insert(payload)
+                .select('*, contacts!fk_tasks_assignee_id(name, avatar_url, email), task_photos(*)')
+                .single();
             if (error) {
                 // Provide more specific error message for foreign key violations
                 if (error.message?.includes('foreign key constraint')) {
                     addToast('Cannot assign task: Selected assignee is not valid. Task created without assignee.', 'warning');
                     // Retry without assignee
-                    const taskDataWithoutAssignee = { ...payload, assignee_id: null };
+                    const taskDataWithoutAssignee = { ...payload, assignee_id: null, notify_assignee_email: false };
                     const { data: retryData, error: retryError } = await supabaseClient
                         .from('tasks')
                         .insert(taskDataWithoutAssignee)
-                        .select()
+                        .select('*, contacts!fk_tasks_assignee_id(name, avatar_url, email), task_photos(*)')
                         .single();
                     if (!retryError && retryData) {
                         if (predecessorTaskIds.length > 0) {
@@ -683,6 +749,52 @@ function ProjectDetailsView({ routeTab = 'tasks', onTabChange = null }) {
             
             // Log activity
             logTaskCreated(data, state.user, project.id);
+
+            if (sendAssignmentRequested && data.assignee_id) {
+                const assigneeEmail = data.contacts?.email?.trim();
+                const assignerName =
+                    state.user?.user_metadata?.full_name || state.user?.email || 'SiteWeave user';
+                if (assigneeEmail && assigneeEmail.includes('@')) {
+                    const taskDetails = {
+                        title: data.text,
+                        description: data.text,
+                        dueDate: data.due_date,
+                        priority: data.priority,
+                    };
+                    const projectDetails = { name: project.name, address: project.address };
+                    const res = await sendTaskAssignmentEmail(
+                        assigneeEmail,
+                        taskDetails,
+                        projectDetails,
+                        assignerName,
+                    );
+                    await logTaskAssigneeEmailSent({
+                        task: data,
+                        user: state.user,
+                        projectId: project.id,
+                        kind: 'assignment',
+                        recipientEmail: assigneeEmail,
+                        success: res.success,
+                        errorMessage: res.error,
+                    });
+                    if (res.success) {
+                        addToast('Assignment email sent to ' + assigneeEmail, 'success');
+                    } else {
+                        addToast('Task saved, but assignment email failed: ' + (res.error || 'Unknown error'), 'warning');
+                    }
+                } else {
+                    await logTaskAssigneeEmailSent({
+                        task: data,
+                        user: state.user,
+                        projectId: project.id,
+                        kind: 'assignment',
+                        recipientEmail: assigneeEmail || '',
+                        success: false,
+                        errorMessage: 'No assignee email on file',
+                    });
+                    addToast('Task saved, but there is no email on file for this assignee.', 'warning');
+                }
+            }
         } catch (error) {
             addToast(handleApiError(error, 'Could not add task'), 'error');
         } finally {
@@ -1526,6 +1638,8 @@ function ProjectDetailsView({ routeTab = 'tasks', onTabChange = null }) {
                                                                                     isSelected={selectedTasks.includes(row.task.id)}
                                                                                     onSelect={handleTaskSelect}
                                                                                     onOpenPhotos={handleOpenTaskPhotos}
+                                                                                    onPingAssignee={handlePingAssignee}
+                                                                                    pingingTaskId={pingingTaskId}
                                                                                 />
                                                                             )
                                                                         )}
@@ -1572,6 +1686,8 @@ function ProjectDetailsView({ routeTab = 'tasks', onTabChange = null }) {
                                                                             isSelected={selectedTasks.includes(row.task.id)}
                                                                             onSelect={handleTaskSelect}
                                                                             onOpenPhotos={handleOpenTaskPhotos}
+                                                                            onPingAssignee={handlePingAssignee}
+                                                                            pingingTaskId={pingingTaskId}
                                                                         />
                                                                     )
                                                                 )}

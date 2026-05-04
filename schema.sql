@@ -3579,6 +3579,12 @@ ADD COLUMN IF NOT EXISTS progress_report_send_hour INTEGER NOT NULL DEFAULT 8;
 ALTER TABLE public.organizations
 ADD COLUMN IF NOT EXISTS progress_report_timezone TEXT NOT NULL DEFAULT 'America/New_York';
 
+ALTER TABLE public.organizations
+ADD COLUMN IF NOT EXISTS default_send_assignment_email BOOLEAN NOT NULL DEFAULT false;
+
+ALTER TABLE public.tasks
+ADD COLUMN IF NOT EXISTS notify_assignee_email BOOLEAN NOT NULL DEFAULT false;
+
 ALTER TABLE public.projects
 ADD COLUMN IF NOT EXISTS notification_email_batching_enabled BOOLEAN;
 

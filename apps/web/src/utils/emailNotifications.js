@@ -205,6 +205,51 @@ export async function sendTaskUpdateEmail(contactEmail, updateDetails, projectDe
 }
 
 /**
+ * Short reminder (“ping”) for an assignee who already has the task.
+ */
+export async function sendTaskPingEmail(contactEmail, taskDetails, projectDetails, senderName) {
+    try {
+        if (!contactEmail || !contactEmail.includes('@')) {
+            return { success: false, error: 'Invalid email address' };
+        }
+
+        const subject = `Reminder: ${taskDetails.title || 'Task'} — ${projectDetails.name}`;
+        const safeTitle = String(taskDetails.title || 'Task').replace(/</g, '&lt;');
+        const safeProject = String(projectDetails.name || 'Project').replace(/</g, '&lt;');
+        const htmlBody = `
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"></head>
+<body style="font-family: system-ui, sans-serif; line-height: 1.5; color: #111;">
+  <p><strong>${senderName}</strong> asked us to send you a quick reminder about a task on <strong>${safeProject}</strong>.</p>
+  <p style="margin: 16px 0; padding: 12px 16px; background: #f3f4f6; border-radius: 8px;"><strong>${safeTitle}</strong></p>
+  ${projectDetails.address ? `<p>Location: ${String(projectDetails.address).replace(/</g, '&lt;')}</p>` : ''}
+  <p style="color: #6b7280; font-size: 14px;">Reply to this email if you have questions.</p>
+</body>
+</html>`.trim();
+
+        const textBody = `${senderName} sent a reminder about "${taskDetails.title || 'Task'}" on ${projectDetails.name}.\n${projectDetails.address ? `Location: ${projectDetails.address}\n` : ''}`;
+
+        const { error } = await supabaseClient.functions.invoke('send-email', {
+            body: {
+                to: contactEmail,
+                subject,
+                html: htmlBody,
+                text: textBody,
+            },
+        });
+
+        if (error) {
+            return { success: false, error: error.message || 'Failed to send email' };
+        }
+        return { success: true };
+    } catch (error) {
+        console.error('Error in sendTaskPingEmail:', error);
+        return { success: false, error: error.message || 'Unknown error' };
+    }
+}
+
+/**
  * Send calendar event invitation email to attendee
  * @param {string} attendeeEmail - Email address of the attendee
  * @param {object} eventDetails - Details of the calendar event

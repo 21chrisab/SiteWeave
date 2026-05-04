@@ -1,6 +1,13 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useAppContext } from '../context/AppContext';
 import LoadingSpinner from './LoadingSpinner';
+import {
+    ASSIGNEE_EMAIL_LABEL,
+    ASSIGNEE_PHONE_LABEL,
+    SEND_EMAIL_NOTIFICATION_LABEL,
+    SEND_EMAIL_NOTIFICATION_HINT,
+    SEND_EMAIL_NO_EMAIL_HINT,
+} from '../utils/contactNotificationCopy';
 import DateDropdown from './DateDropdown';
 import DateRangePicker from './DateRangePicker';
 import TaskDependencyCombobox from './TaskDependencyCombobox';
@@ -15,6 +22,11 @@ const selectClass = `${fieldClass} cursor-pointer appearance-none bg-white`;
 const chipClass =
     'rounded-full border border-gray-200 bg-white px-3 py-1 text-xs font-medium text-gray-700 shadow-xs transition hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20';
 
+const PERCENT_PRESETS = [0, 25, 50, 75, 100];
+
+const percentNumericInputClass =
+    'w-16 shrink-0 rounded-lg border border-gray-200 bg-white px-2 py-1 text-sm tabular-nums [-moz-appearance:textfield] [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none';
+
 function TaskModal({ project, onClose, onSave, isLoading = false, allTasks = [] }) {
     const { state } = useAppContext();
     const [text, setText] = useState('');
@@ -25,7 +37,8 @@ function TaskModal({ project, onClose, onSave, isLoading = false, allTasks = [] 
     const [assigneeId, setAssigneeId] = useState('');
     const [assigneeEmail, setAssigneeEmail] = useState('');
     const [assigneePhone, setAssigneePhone] = useState('');
-    
+    const [sendAssignmentEmail, setSendAssignmentEmail] = useState(false);
+
     const [isRecurring, setIsRecurring] = useState(false);
     const [recurrencePattern, setRecurrencePattern] = useState('weekly');
     const [recurrenceInterval, setRecurrenceInterval] = useState(1);
@@ -50,6 +63,47 @@ function TaskModal({ project, onClose, onSave, isLoading = false, allTasks = [] 
         ...projectContacts,
         ...orgAdmins.filter(admin => !projectContacts.some(pc => pc.id === admin.id))
     ];
+
+    const assigneeHasEmail = useMemo(() => {
+        if (assigneeId && String(assigneeId).trim()) {
+            const c = allAssignableContacts.find((x) => x.id === assigneeId);
+            return Boolean(c?.email && String(c.email).includes('@'));
+        }
+        const ne = assigneeEmail.trim().toLowerCase();
+        return ne.includes('@');
+    }, [assigneeId, assigneeEmail, allAssignableContacts]);
+
+    const orgDefaultSend = state.currentOrganization?.default_send_assignment_email === true;
+    const prevValidFreeEmailRef = useRef(false);
+
+    useEffect(() => {
+        if (!assigneeHasEmail) {
+            setSendAssignmentEmail(false);
+            prevValidFreeEmailRef.current = false;
+            return;
+        }
+        if (assigneeId && String(assigneeId).trim()) {
+            setSendAssignmentEmail(orgDefaultSend);
+        }
+    }, [assigneeHasEmail, orgDefaultSend, assigneeId]);
+
+    useEffect(() => {
+        if (assigneeId && String(assigneeId).trim()) {
+            prevValidFreeEmailRef.current = false;
+            return;
+        }
+        const ne = assigneeEmail.trim().toLowerCase();
+        const valid = ne.includes('@');
+        if (!valid) {
+            setSendAssignmentEmail(false);
+            prevValidFreeEmailRef.current = false;
+            return;
+        }
+        if (!prevValidFreeEmailRef.current) {
+            prevValidFreeEmailRef.current = true;
+            setSendAssignmentEmail(orgDefaultSend);
+        }
+    }, [assigneeEmail, assigneeId, orgDefaultSend]);
 
     const handleSubmit = (e) => {
         e.preventDefault();
@@ -106,6 +160,7 @@ function TaskModal({ project, onClose, onSave, isLoading = false, allTasks = [] 
             recurrence: recurrenceJson,
             completed: boundedPercent >= 100,
             predecessor_task_ids: selectedPredecessorTaskIds,
+            send_assignment_email: assigneeHasEmail && sendAssignmentEmail,
         });
     };
 
@@ -217,7 +272,7 @@ function TaskModal({ project, onClose, onSave, isLoading = false, allTasks = [] 
                                     )}
                                     <div className="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-3">
                                         <div className="min-w-0">
-                                            <label className={labelClass} htmlFor="web-task-assignee-email">Or assign by email (no account required)</label>
+                                            <label className={labelClass} htmlFor="web-task-assignee-email">{ASSIGNEE_EMAIL_LABEL}</label>
                                             <input
                                                 id="web-task-assignee-email"
                                                 type="email"
@@ -234,7 +289,7 @@ function TaskModal({ project, onClose, onSave, isLoading = false, allTasks = [] 
                                             />
                                         </div>
                                         <div className="min-w-0">
-                                            <label className={labelClass} htmlFor="web-task-assignee-phone">Or assign by phone (no account required)</label>
+                                            <label className={labelClass} htmlFor="web-task-assignee-phone">{ASSIGNEE_PHONE_LABEL}</label>
                                             <input
                                                 id="web-task-assignee-phone"
                                                 type="tel"
@@ -252,6 +307,24 @@ function TaskModal({ project, onClose, onSave, isLoading = false, allTasks = [] 
                                                 placeholder="+1 555 123 4567"
                                             />
                                         </div>
+                                    </div>
+                                    <div className="mt-3 rounded-lg border border-gray-200 bg-white px-3 py-2.5">
+                                        <label className="flex cursor-pointer items-start gap-2.5">
+                                            <input
+                                                type="checkbox"
+                                                className="mt-0.5 h-4 w-4 shrink-0 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                                checked={sendAssignmentEmail}
+                                                disabled={!assigneeHasEmail}
+                                                onChange={(e) => setSendAssignmentEmail(e.target.checked)}
+                                            />
+                                            <span className="min-w-0">
+                                                <span className="block text-sm font-medium text-gray-800">{SEND_EMAIL_NOTIFICATION_LABEL}</span>
+                                                <span className="mt-0.5 block text-xs text-gray-500">{SEND_EMAIL_NOTIFICATION_HINT}</span>
+                                                {!assigneeHasEmail && (
+                                                    <span className="mt-1 block text-xs text-amber-700">{SEND_EMAIL_NO_EMAIL_HINT}</span>
+                                                )}
+                                            </span>
+                                        </label>
                                     </div>
                                 </div>
                             </PermissionGuard>
@@ -273,13 +346,14 @@ function TaskModal({ project, onClose, onSave, isLoading = false, allTasks = [] 
                             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-3">
                                 <div className="min-w-0">
                                     <label className={labelClass} htmlFor="web-task-percent-complete">Percent complete</label>
+                                    <p className="mb-2 text-[11px] text-gray-500">100% marks the task complete. Press Enter in the box to finish editing.</p>
                                     <div className="flex items-center gap-3">
                                         <input
                                             id="web-task-percent-complete"
                                             type="range"
                                             min="0"
                                             max="100"
-                                            step="5"
+                                            step="1"
                                             value={Math.max(0, Math.min(100, Number(percentComplete) || 0))}
                                             onChange={(e) => setPercentComplete(Number(e.target.value))}
                                             className="w-full"
@@ -290,9 +364,31 @@ function TaskModal({ project, onClose, onSave, isLoading = false, allTasks = [] 
                                             max="100"
                                             value={Math.max(0, Math.min(100, Number(percentComplete) || 0))}
                                             onChange={(e) => setPercentComplete(Number(e.target.value))}
-                                            className="w-16 shrink-0 rounded-lg border border-gray-200 bg-white px-2 py-1 text-sm"
+                                            onKeyDown={(e) => {
+                                                if (e.key === 'Enter') {
+                                                    e.preventDefault();
+                                                    e.currentTarget.blur();
+                                                }
+                                            }}
+                                            className={percentNumericInputClass}
                                             aria-label="Task percent complete"
                                         />
+                                    </div>
+                                    <div className="mt-2 flex flex-wrap gap-1.5">
+                                        {PERCENT_PRESETS.map((p) => (
+                                            <button
+                                                key={p}
+                                                type="button"
+                                                onClick={() => setPercentComplete(p)}
+                                                className={`rounded-md px-2 py-1 text-xs font-medium tabular-nums transition-colors ${
+                                                    (Number(percentComplete) || 0) === p
+                                                        ? 'bg-blue-600 text-white'
+                                                        : 'border border-gray-200 bg-white text-gray-700 shadow-xs hover:bg-gray-50'
+                                                }`}
+                                            >
+                                                {p}%
+                                            </button>
+                                        ))}
                                     </div>
                                 </div>
                                 <div className="min-w-0">

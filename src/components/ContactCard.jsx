@@ -120,6 +120,24 @@ function ContactCard({
                                 {contact.role}
                             </span>
                         )}
+                        {contact.type === 'Subcontractor' && (
+                            <span
+                                className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
+                                    contact.email && String(contact.email).includes('@')
+                                        ? 'bg-emerald-50 text-emerald-800'
+                                        : 'bg-amber-50 text-amber-900'
+                                }`}
+                                title={
+                                    contact.email && String(contact.email).includes('@')
+                                        ? 'Can receive automated task emails'
+                                        : 'Add an email address to receive automated task emails'
+                                }
+                            >
+                                {contact.email && String(contact.email).includes('@')
+                                    ? 'Email ready'
+                                    : 'Add email for reminders'}
+                            </span>
+                        )}
                         {contact.company && contact.company !== 'SiteWeave' && (
                             <span className="text-xs text-gray-400">{contact.company}</span>
                         )}

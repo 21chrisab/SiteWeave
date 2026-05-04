@@ -34,7 +34,15 @@ import { useTaskShortcuts } from '../hooks/useKeyboardShortcuts';
 import { handleApiError } from '../utils/errorHandling';
 import { parseRecurrence } from '../utils/recurrenceService';
 import { buildTaskPhotoDraft, buildTaskCompletionPhotoDetails, revokeTaskPhotoDraftUrls, sortTaskPhotos, canManageTaskPhotos } from '../utils/taskPhotoUtils';
-import { logTaskCreated, logTaskCompleted, logTaskUncompleted, logTaskUpdated, logTaskDeleted } from '../utils/activityLogger';
+import {
+    logTaskCreated,
+    logTaskCompleted,
+    logTaskUncompleted,
+    logTaskUpdated,
+    logTaskDeleted,
+    logTaskAssigneeEmailSent,
+} from '../utils/activityLogger';
+import { sendTaskAssignmentEmail, sendTaskPingEmail } from '../utils/emailNotifications';
 import { getCriticalPathTaskIds } from '../utils/criticalPath';
 import { orderTasksForGantt } from '../utils/ganttOrdering';
 import {
@@ -60,6 +68,7 @@ function ProjectDetailsView() {
 
     const [showTaskModal, setShowTaskModal] = useState(false);
     const [isCreatingTask, setIsCreatingTask] = useState(false);
+    const [pingingTaskId, setPingingTaskId] = useState(null);
     const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
     const [taskToDelete, setTaskToDelete] = useState(null);
     const [selectedTasks, setSelectedTasks] = useState([]);
@@ -665,6 +674,56 @@ function ProjectDetailsView() {
         );
     }
 
+    const handlePingAssignee = async (task) => {
+        const email = task.contacts?.email?.trim();
+        if (!email || !email.includes('@')) {
+            addToast('No email on file for this assignee.', 'warning');
+            return;
+        }
+        setPingingTaskId(task.id);
+        try {
+            const tenMinAgo = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+            const { count, error: countErr } = await supabaseClient
+                .from('activity_log')
+                .select('*', { count: 'exact', head: true })
+                .eq('entity_id', task.id)
+                .eq('action', 'assignee_ping_email')
+                .gte('created_at', tenMinAgo);
+            if (countErr) console.warn('ping cooldown check:', countErr.message);
+            if ((count ?? 0) >= 1) {
+                addToast('Wait a few minutes before pinging again.', 'info');
+                return;
+            }
+
+            const senderName =
+                state.user?.user_metadata?.full_name || state.user?.email || 'SiteWeave user';
+            const res = await sendTaskPingEmail(
+                email,
+                { title: task.text },
+                { name: project.name, address: project.address },
+                senderName,
+            );
+            await logTaskAssigneeEmailSent({
+                task,
+                user: state.user,
+                projectId: project.id,
+                kind: 'ping',
+                recipientEmail: email,
+                success: res.success,
+                errorMessage: res.error,
+            });
+            if (res.success) {
+                addToast('Ping sent to assignee.', 'success');
+            } else {
+                addToast(res.error || 'Could not send ping email.', 'error');
+            }
+        } catch (e) {
+            addToast(handleApiError(e, 'Could not send ping'), 'error');
+        } finally {
+            setPingingTaskId(null);
+        }
+    };
+
     const handleAddTask = async (taskData) => {
         setIsCreatingTask(true);
         
@@ -672,6 +731,7 @@ function ProjectDetailsView() {
             const {
                 pending_photos: pendingPhotos = [],
                 predecessor_task_ids: predecessorTaskIds = [],
+                send_assignment_email: sendAssignmentRequested = false,
                 ...taskPayload
             } = taskData;
             const assigneeEmailInput = String(taskPayload.assignee_email || '').trim().toLowerCase();
@@ -679,6 +739,7 @@ function ProjectDetailsView() {
             const assigneePhoneRaw = String(taskPayload.assignee_phone || '').trim();
             delete taskPayload.assignee_phone;
             taskPayload.organization_id = project.organization_id;
+            taskPayload.notify_assignee_email = Boolean(sendAssignmentRequested);
             Object.assign(taskPayload, normalizeTaskProgressUpdate(null, {
                 percent_complete: taskPayload.percent_complete ?? 0,
                 completed: taskPayload.completed ?? false,
@@ -794,7 +855,7 @@ function ProjectDetailsView() {
                 // Verify the contact exists
                 const { data: contact, error: contactError } = await supabaseClient
                     .from('contacts')
-                    .select('id')
+                    .select('id, email, name')
                     .eq('id', taskPayload.assignee_id)
                     .single();
                 
@@ -810,7 +871,7 @@ function ProjectDetailsView() {
                 if (error.message?.includes('foreign key constraint')) {
                     addToast(t('toast.cannot_assign_task'), 'warning');
                     // Retry without assignee
-                    const taskDataWithoutAssignee = { ...taskPayload, assignee_id: null };
+                    const taskDataWithoutAssignee = { ...taskPayload, assignee_id: null, notify_assignee_email: false };
                     const { data: retryData, error: retryError } = await supabaseClient
                         .from('tasks')
                         .insert(taskDataWithoutAssignee)
@@ -926,6 +987,55 @@ function ProjectDetailsView() {
             
             // Log activity
             logTaskCreated(createdTask, state.user, project.id);
+
+            if (sendAssignmentRequested && createdTask.assignee_id) {
+                const assigneeEmail = createdTask.contacts?.email?.trim();
+                const assignerName =
+                    state.user?.user_metadata?.full_name || state.user?.email || 'SiteWeave user';
+                if (assigneeEmail && assigneeEmail.includes('@')) {
+                    const taskDetails = {
+                        title: createdTask.text,
+                        description: createdTask.text,
+                        dueDate: createdTask.due_date,
+                        priority: createdTask.priority,
+                    };
+                    const projectDetails = { name: project.name, address: project.address };
+                    const res = await sendTaskAssignmentEmail(
+                        assigneeEmail,
+                        taskDetails,
+                        projectDetails,
+                        assignerName,
+                    );
+                    await logTaskAssigneeEmailSent({
+                        task: createdTask,
+                        user: state.user,
+                        projectId: project.id,
+                        kind: 'assignment',
+                        recipientEmail: assigneeEmail,
+                        success: res.success,
+                        errorMessage: res.error,
+                    });
+                    if (res.success) {
+                        addToast('Assignment email sent to ' + assigneeEmail, 'success');
+                    } else {
+                        addToast(
+                            'Task saved, but assignment email failed: ' + (res.error || 'Unknown error'),
+                            'warning',
+                        );
+                    }
+                } else {
+                    await logTaskAssigneeEmailSent({
+                        task: createdTask,
+                        user: state.user,
+                        projectId: project.id,
+                        kind: 'assignment',
+                        recipientEmail: assigneeEmail || '',
+                        success: false,
+                        errorMessage: 'No assignee email on file',
+                    });
+                    addToast('Task saved, but there is no email on file for this assignee.', 'warning');
+                }
+            }
         } catch (error) {
             addToast(handleApiError(error, t('errors.could_not_add_task')), 'error');
         } finally {
@@ -2124,6 +2234,8 @@ function ProjectDetailsView() {
                                                                                     }
                                                                                     allTasks={allTasks}
                                                                                     onOpenDependencyDrawer={setDependencyDrawerTaskId}
+                                                                                    onPingAssignee={handlePingAssignee}
+                                                                                    pingingTaskId={pingingTaskId}
                                                                                 />
                                                                             )
                                                                         )}
@@ -2179,6 +2291,8 @@ function ProjectDetailsView() {
                                                                             }
                                                                             allTasks={allTasks}
                                                                             onOpenDependencyDrawer={setDependencyDrawerTaskId}
+                                                                            onPingAssignee={handlePingAssignee}
+                                                                            pingingTaskId={pingingTaskId}
                                                                         />
                                                                     )
                                                                 )}

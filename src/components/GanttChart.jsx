@@ -161,6 +161,69 @@ export default function GanttChart({
     [criticalPathIds]
   );
 
+  /** Mouse drag on the chart pane pans the scroll area (document-level move so pan works past the edge). */
+  useEffect(() => {
+    const el = rightScrollRef.current;
+    if (!el || tasksWithDates.length === 0) return;
+
+    let active = false;
+    let pointerId = 0;
+    let startX = 0;
+    let startY = 0;
+    let startScrollLeft = 0;
+    let startScrollTop = 0;
+
+    const moveOpts = { passive: false };
+
+    const endPan = () => {
+      if (!active) return;
+      active = false;
+      el.classList.remove('gantt-panning');
+      document.body.style.userSelect = '';
+      document.removeEventListener('pointermove', onPointerMove, moveOpts);
+      document.removeEventListener('pointerup', onPointerUp);
+      document.removeEventListener('pointercancel', onPointerUp);
+    };
+
+    const onPointerMove = (e) => {
+      if (!active || e.pointerId !== pointerId) return;
+      e.preventDefault();
+      const dx = e.clientX - startX;
+      const dy = e.clientY - startY;
+      el.scrollLeft = startScrollLeft - dx;
+      el.scrollTop = startScrollTop - dy;
+    };
+
+    const onPointerUp = (e) => {
+      if (!active || e.pointerId !== pointerId) return;
+      endPan();
+    };
+
+    const onPointerDown = (e) => {
+      if (e.pointerType !== 'mouse' || e.button !== 0) return;
+      const t = e.target;
+      if (t && typeof t.closest === 'function' && t.closest('a, button, select, input, textarea, [role="button"]')) return;
+      active = true;
+      pointerId = e.pointerId;
+      startX = e.clientX;
+      startY = e.clientY;
+      startScrollLeft = el.scrollLeft;
+      startScrollTop = el.scrollTop;
+      el.classList.add('gantt-panning');
+      document.body.style.userSelect = 'none';
+      document.addEventListener('pointermove', onPointerMove, moveOpts);
+      document.addEventListener('pointerup', onPointerUp);
+      document.addEventListener('pointercancel', onPointerUp);
+    };
+
+    el.addEventListener('pointerdown', onPointerDown);
+    return () => {
+      el.removeEventListener('pointerdown', onPointerDown);
+      endPan();
+      document.body.style.userSelect = '';
+    };
+  }, [tasksWithDates.length]);
+
   const handleChangeViewMode = useCallback((mode) => {
     setViewMode(mode);
     viewModeRef.current = mode;
@@ -283,6 +346,9 @@ export default function GanttChart({
           >
             Fit timeline
           </button>
+          <span className="text-xs text-slate-500 hidden sm:inline" title="Use the mouse on the chart area">
+            Drag chart to pan
+          </span>
           <div className="flex-1 min-w-[8px]" />
           <button
             type="button"
@@ -444,7 +510,10 @@ export default function GanttChart({
         {/* Right: chart (horizontal scroll here, vertical synced with left) */}
         <div className="flex-1 min-w-0 flex flex-col overflow-hidden">
           {/* Chart header area is inside the chart SVG, so no separate element needed */}
-          <div ref={rightScrollRef} className="flex-1 min-h-0 overflow-x-auto overflow-y-auto gantt-right-scroll">
+          <div
+            ref={rightScrollRef}
+            className="gantt-right-scroll flex-1 min-h-0 cursor-grab overflow-x-auto overflow-y-auto active:cursor-grabbing"
+          >
             <div
               ref={chartContainerRef}
               className="gantt-chart-wrapper"
@@ -544,6 +613,10 @@ export default function GanttChart({
         }
         .gantt-left-scroll::-webkit-scrollbar {
           display: none !important;
+        }
+
+        .gantt-right-scroll.gantt-panning {
+          cursor: grabbing !important;
         }
       `}</style>
     </div>

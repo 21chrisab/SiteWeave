@@ -373,6 +373,29 @@ function ProjectModal({ onClose, onSave, isLoading = false, project = null }) {
                     </div>
                 </div>
                 <form onSubmit={handleSubmit}>
+                    {isEditMode && project && state.currentOrganization && (
+                        <div className="mb-4 rounded-lg border border-slate-200 bg-slate-50/80 px-3 py-2.5 text-sm text-slate-700">
+                            <span className="font-medium text-slate-800">Smart task emails: </span>
+                            {project.task_notifications_use_org_defaults !== false ? (
+                                <>
+                                    Using organization defaults (
+                                    {state.currentOrganization.task_start_notifications_enabled !== false ? 'on' : 'off'}
+                                    ).
+                                </>
+                            ) : project.task_start_notifications_enabled !== false ? (
+                                <>On for this project.</>
+                            ) : (
+                                <>Off for this project.</>
+                            )}{' '}
+                            <button
+                                type="button"
+                                className="font-semibold text-blue-600 hover:text-blue-800"
+                                onClick={() => setSmartTaskNotifOpen(true)}
+                            >
+                                Edit notification settings
+                            </button>
+                        </div>
+                    )}
                     <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-[7fr_3fr] lg:grid-cols-1">
                         <div className="min-w-0 lg:col-span-1">
                             <label className="block text-sm font-semibold mb-1 text-gray-600">Project Name</label>

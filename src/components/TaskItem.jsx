@@ -19,6 +19,8 @@ const TaskItem = memo(function TaskItem({
     assignableContacts = [],
     dependencyMeta = null,
     onOpenDependencyDrawer,
+    onPingAssignee = null,
+    pingingTaskId = null,
 }) {
     const { i18n } = useTranslation();
     /** @type {[TaskPanel, (p: TaskPanel) => void]} */
@@ -33,6 +35,7 @@ const TaskItem = memo(function TaskItem({
     const [showAllPredecessors, setShowAllPredecessors] = useState(false);
 
     const rootRef = useRef(null);
+    const suppressRowDragRef = useRef(false);
 
     const syncDraftsFromTask = useCallback(() => {
         setDraftStart(task.start_date || '');
@@ -144,6 +147,57 @@ const TaskItem = memo(function TaskItem({
 
     const stop = (e) => e.stopPropagation();
 
+    const restoreRowDrag = useCallback(() => {
+        suppressRowDragRef.current = false;
+        if (rootRef.current) {
+            rootRef.current.draggable = true;
+        }
+        document.removeEventListener('mouseup', restoreRowDrag);
+        document.removeEventListener('touchend', restoreRowDrag);
+        document.removeEventListener('touchcancel', restoreRowDrag);
+    }, []);
+
+    const suppressRowDrag = useCallback((e) => {
+        e.stopPropagation();
+        suppressRowDragRef.current = true;
+        if (rootRef.current) {
+            rootRef.current.draggable = false;
+        }
+        document.addEventListener('mouseup', restoreRowDrag, { once: true });
+        document.addEventListener('touchend', restoreRowDrag, { once: true });
+        document.addEventListener('touchcancel', restoreRowDrag, { once: true });
+    }, [restoreRowDrag]);
+
+    /**
+     * When the row is draggable, selecting text in the percent field can start a task drag.
+     * `dragstart.target` is often the <li>, not the input, so use composedPath() to see where
+     * the pointer actually was (per HTML drag-and-drop hit testing).
+     */
+    const handleTaskRowDragStart = (e) => {
+        if (suppressRowDragRef.current) {
+            e.preventDefault();
+            return;
+        }
+        const path =
+            typeof e.nativeEvent?.composedPath === 'function' ? e.nativeEvent.composedPath() : [e.target];
+        for (const node of path) {
+            if (node === e.currentTarget) break;
+            if (
+                node &&
+                node.nodeType === Node.ELEMENT_NODE &&
+                typeof node.matches === 'function' &&
+                node.matches(
+                    'input, textarea, select, option, button, [contenteditable="true"], a[href]',
+                )
+            ) {
+                e.preventDefault();
+                return;
+            }
+        }
+        e.dataTransfer.setData('text/plain', task.id);
+        e.dataTransfer.effectAllowed = 'move';
+    };
+
     const openPanel = (which) => (e) => {
         e?.stopPropagation?.();
         syncDraftsFromTask();
@@ -245,10 +299,7 @@ const TaskItem = memo(function TaskItem({
         <li
             ref={rootRef}
             draggable
-            onDragStart={(e) => {
-                e.dataTransfer.setData('text/plain', task.id);
-                e.dataTransfer.effectAllowed = 'move';
-            }}
+            onDragStart={handleTaskRowDragStart}
             className={`group relative transition-colors animate-slide-in border-b border-gray-100 last:border-b-0 ${
                 isSelected ? 'bg-blue-50/80' : ''
             } ${isComplete ? 'bg-green-50/40' : 'bg-white hover:bg-gray-50/80'}`}
@@ -282,9 +333,20 @@ const TaskItem = memo(function TaskItem({
                                     </span>
                                 }
                             >
-                                <label className="flex shrink-0 items-center gap-0.5" title="Percent complete (100% marks done)" onClick={stop}>
+                                <label
+                                    className="flex shrink-0 items-center gap-0.5"
+                                    title="Percent complete (100% marks done)"
+                                    onClick={stop}
+                                    onMouseDown={suppressRowDrag}
+                                    onTouchStart={suppressRowDrag}
+                                    onDragStart={(e) => {
+                                        e.preventDefault();
+                                        e.stopPropagation();
+                                    }}
+                                >
                                     <input
                                         type="number"
+                                        draggable={false}
                                         min="0"
                                         max="100"
                                         value={progressPercent}
@@ -295,7 +357,7 @@ const TaskItem = memo(function TaskItem({
                                                 completed: bounded >= 100,
                                             });
                                         }}
-                                        className="h-7 w-14 shrink-0 rounded border border-gray-300 px-1 text-xs text-gray-800"
+                                        className="h-7 w-14 shrink-0 select-text rounded border border-gray-300 px-1 text-xs text-gray-800 [-moz-appearance:textfield] [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
                                         aria-label={`Percent complete for ${task.text}`}
                                     />
                                     <span className="text-[11px] text-gray-500">%</span>
@@ -513,6 +575,31 @@ const TaskItem = memo(function TaskItem({
                                 <span className="hidden sm:inline max-w-[96px] ui-ellipsis-1">{assigneeLabel}</span>
                             </button>
                         </PermissionGuard>
+
+                        {onPingAssignee &&
+                            task.assignee_id &&
+                            task.contacts?.email &&
+                            String(task.contacts.email).includes('@') && (
+                                <PermissionGuard permission="can_assign_tasks">
+                                    <button
+                                        type="button"
+                                        onClick={(event) => {
+                                            event.stopPropagation();
+                                            onPingAssignee(task);
+                                        }}
+                                        disabled={pingingTaskId === task.id}
+                                        className="relative flex shrink-0 items-center gap-1 rounded-md border border-gray-200 bg-white px-1.5 py-1 text-xs text-gray-500 shadow-xs hover:border-blue-200 hover:text-blue-600 disabled:cursor-not-allowed disabled:opacity-50"
+                                        title="Email a reminder to the assignee now"
+                                        aria-label={`Ping assignee for task: ${task.text}`}
+                                    >
+                                        <Icon
+                                            path="M3.478 2.405a.75.75 0 0 0-.926.94l2.432 7.905H13.5a.75.75 0 0 1 0 1.5H4.984l-2.432 7.905a.75.75 0 0 0 .926.94 60.519 60.519 0 0 0 18.445-8.986.75.75 0 0 0 0-1.218A60.517 60.517 0 0 0 3.478 2.405z"
+                                            className="h-3.5 w-3.5 shrink-0"
+                                        />
+                                        <span className="hidden sm:inline">Ping</span>
+                                    </button>
+                                </PermissionGuard>
+                            )}
 
                         {/* Delete */}
                         <PermissionGuard permission="can_delete_tasks">

@@ -1,5 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import LoadingSpinner from './LoadingSpinner';
+import {
+    TRADE_PARTNER_NOTIFICATION_INFO,
+    LABEL_EMAIL_FOR_REMINDERS,
+    LABEL_PHONE_DIRECTORY,
+} from '../utils/contactNotificationCopy';
 
 function AddContactModal({ onClose, onSave, contact = null, isLoading = false }) {
     const isEditMode = !!contact;
@@ -116,6 +121,16 @@ function AddContactModal({ onClose, onSave, contact = null, isLoading = false })
                         </div>
                     )}
 
+                    {type === 'Subcontractor' && (
+                        <div
+                            className="rounded-lg border border-blue-100 bg-blue-50/80 px-4 py-3 text-sm text-blue-900"
+                            role="note"
+                        >
+                            <p className="font-semibold text-blue-950">How they get updates</p>
+                            <p className="mt-1 leading-relaxed">{TRADE_PARTNER_NOTIFICATION_INFO}</p>
+                        </div>
+                    )}
+
                     {/* Contact Information */}
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div>
@@ -126,6 +141,9 @@ function AddContactModal({ onClose, onSave, contact = null, isLoading = false })
                                 onChange={e => setEmail(e.target.value)} 
                                 className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent" 
                             />
+                            {type === 'Subcontractor' && (
+                                <p className="mt-1 text-xs text-gray-500">{LABEL_EMAIL_FOR_REMINDERS}</p>
+                            )}
                         </div>
                         
                         <div>
@@ -144,6 +162,9 @@ function AddContactModal({ onClose, onSave, contact = null, isLoading = false })
                                 maxLength="14"
                                 className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent" 
                             />
+                            {type === 'Subcontractor' && (
+                                <p className="mt-1 text-xs text-gray-500">{LABEL_PHONE_DIRECTORY}</p>
+                            )}
                         </div>
                     </div>
 

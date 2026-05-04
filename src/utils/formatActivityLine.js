@@ -56,6 +56,19 @@ export function formatActivityLine(activity, t, options = {}) {
     });
   }
 
+  if (action === 'assignee_assignment_email' && details.recipient_email) {
+    const ok = details.success !== false;
+    return ok
+      ? `sent assignment email to ${details.recipient_email} for task "${entityName}"`
+      : `assignment email to ${details.recipient_email} failed for task "${entityName}"${details.error ? `: ${details.error}` : ''}`;
+  }
+  if (action === 'assignee_ping_email' && details.recipient_email) {
+    const ok = details.success !== false;
+    return ok
+      ? `pinged assignee (${details.recipient_email}) for task "${entityName}"`
+      : `ping email to ${details.recipient_email} failed for task "${entityName}"${details.error ? `: ${details.error}` : ''}`;
+  }
+
   const nameFor = entityName || fallbackEntityLabel(entityType, t);
   const taskDetailSuffix = formatTaskUpdateDetails(details, t);
   const contactDetailSuffix = formatGenericFieldDetails(details, t);
