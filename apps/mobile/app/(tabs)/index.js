@@ -1,6 +1,8 @@
 import { View, Text, StyleSheet, ScrollView, RefreshControl, FlatList } from 'react-native';
 import { useState, useEffect } from 'react';
+import { useRouter } from 'expo-router';
 import { useAuth } from '../../context/AuthContext';
+import { filterByOrganizationId } from '../../utils/orgScope';
 import { 
   fetchUserIncompleteTasks, 
   fetchTodayEvents, 
@@ -22,6 +24,7 @@ import { useHaptics } from '../../hooks/useHaptics';
 
 export default function HomeScreen() {
   const { user, supabase, activeOrganization } = useAuth();
+  const router = useRouter();
   const insets = useSafeAreaInsets();
   const haptics = useHaptics();
   const [tasks, setTasks] = useState([]);
@@ -55,10 +58,10 @@ export default function HomeScreen() {
         fetchOverdueTasksCount(supabase, user.id),
       ]);
       
-      // Filter all data by organization_id
-      const orgTasks = (tasksData || []).filter(task => task.organization_id === activeOrganization.id);
-      const orgEvents = (eventsData || []).filter(event => event.organization_id === activeOrganization.id);
-      const orgProjects = (projectsData || []).filter(project => project.organization_id === activeOrganization.id);
+      const orgId = activeOrganization.id;
+      const orgTasks = filterByOrganizationId(tasksData || [], orgId);
+      const orgEvents = filterByOrganizationId(eventsData || [], orgId);
+      const orgProjects = filterByOrganizationId(projectsData || [], orgId);
       
       setTasks(orgTasks);
       setEvents(orgEvents);
@@ -272,6 +275,46 @@ export default function HomeScreen() {
         {/* Weather Widget */}
         <WeatherWidget />
 
+        {/* Mobile-first shortcuts (not desktop parity) */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>QUICK ACCESS</Text>
+          <View style={styles.quickAccessRow}>
+            <PressableWithFade
+              style={styles.quickAccessChip}
+              onPress={() => {
+                haptics.light();
+                router.push('/projects');
+              }}
+              hapticType="light"
+            >
+              <Ionicons name="folder-outline" size={22} color="#2563EB" />
+              <Text style={styles.quickAccessLabel}>Projects</Text>
+            </PressableWithFade>
+            <PressableWithFade
+              style={styles.quickAccessChip}
+              onPress={() => {
+                haptics.light();
+                router.push('/messages');
+              }}
+              hapticType="light"
+            >
+              <Ionicons name="chatbubbles-outline" size={22} color="#2563EB" />
+              <Text style={styles.quickAccessLabel}>Messages</Text>
+            </PressableWithFade>
+            <PressableWithFade
+              style={styles.quickAccessChip}
+              onPress={() => {
+                haptics.light();
+                router.push('/calendar');
+              }}
+              hapticType="light"
+            >
+              <Ionicons name="calendar-outline" size={22} color="#2563EB" />
+              <Text style={styles.quickAccessLabel}>Calendar</Text>
+            </PressableWithFade>
+          </View>
+        </View>
+
         {/* Section A: KPIs Carousel */}
         <View style={styles.kpiSection}>
           <KPICarousel
@@ -431,6 +474,27 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     textTransform: 'uppercase',
     letterSpacing: 0.5,
+  },
+  quickAccessRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+  },
+  quickAccessChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    backgroundColor: '#EFF6FF',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+  },
+  quickAccessLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#1D4ED8',
   },
   myDayItem: {
     paddingVertical: 16,

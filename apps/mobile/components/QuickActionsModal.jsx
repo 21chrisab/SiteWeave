@@ -5,11 +5,12 @@ import { createFieldIssue, fetchUserProjectsWithProgress } from '@siteweave/core
 import { Ionicons } from '@expo/vector-icons';
 import PressableWithFade from './PressableWithFade';
 import { useHaptics } from '../hooks/useHaptics';
+import { filterByOrganizationId } from '../utils/orgScope';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 export default function QuickActionsModal({ visible, onClose }) {
-  const { user, supabase } = useAuth();
+  const { user, supabase, activeOrganization } = useAuth();
   const haptics = useHaptics();
   const [issueData, setIssueData] = useState({
     title: '',
@@ -30,13 +31,17 @@ export default function QuickActionsModal({ visible, onClose }) {
       // Reset form when modal opens
       setIssueData({ title: '', description: '', project_id: null });
     }
-  }, [visible, user, supabase]);
+  }, [visible, user, supabase, activeOrganization?.id]);
 
   const loadProjects = async () => {
     if (!user || !supabase) return;
     try {
       const data = await fetchUserProjectsWithProgress(supabase, user.id);
-      setProjects(data || []);
+      const scoped =
+        activeOrganization?.id != null
+          ? filterByOrganizationId(data || [], activeOrganization.id)
+          : data || [];
+      setProjects(scoped);
     } catch (error) {
       console.error('Error loading projects:', error);
       setProjects([]);
@@ -98,8 +103,10 @@ export default function QuickActionsModal({ visible, onClose }) {
     try {
       haptics.medium();
       setLoading(true);
+      const orgId = selectedProject?.organization_id ?? activeOrganization?.id;
       await createFieldIssue(supabase, {
         ...issueData,
+        ...(orgId ? { organization_id: orgId } : {}),
         created_by_user_id: user.id,
         status: 'open',
         priority: 'Medium',

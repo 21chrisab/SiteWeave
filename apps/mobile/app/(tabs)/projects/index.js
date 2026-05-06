@@ -2,7 +2,8 @@ import { View, Text, StyleSheet, FlatList, TouchableOpacity } from 'react-native
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { useAuth } from '../../../context/AuthContext';
-import { fetchUserProjectsWithProgress, fetchTasksByProject } from '@siteweave/core-logic';
+import { fetchUserProjectsWithProgress } from '@siteweave/core-logic';
+import { filterByOrganizationId } from '../../../utils/orgScope';
 import ProjectCardCompact from '../../../components/ProjectCardCompact';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -25,10 +26,7 @@ export default function ProjectsScreen() {
       setLoading(true);
       const data = await fetchUserProjectsWithProgress(supabase, user.id);
       
-      // Filter projects by organization_id
-      const orgProjects = (data || []).filter(project => 
-        project.organization_id === activeOrganization.id
-      );
+      const orgProjects = filterByOrganizationId(data || [], activeOrganization.id);
       
       // Fetch incoming tasks with assignee info for each project
       const projectsWithTasks = await Promise.all(

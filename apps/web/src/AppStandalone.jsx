@@ -19,6 +19,11 @@ import { useSession } from './hooks/useSession'
 import { trackRouteChange } from './utils/webTelemetry'
 import { AppProvider, useAppContext } from './context/AppContext'
 import { ToastProvider } from './context/ToastContext'
+import SetupWizardModal from './components/SetupWizardModal'
+
+/** Prevent duplicate OAuth processing (matches desktop `App.jsx` behavior). */
+let oauthCallbackProcessing = false
+let oauthCallbackProcessed = false
 
 function RouteStateSync({ view, children }) {
   const { state, dispatch } = useAppContext()
@@ -34,6 +39,40 @@ function RouteStateSync({ view, children }) {
 
 function WorkspaceLayout({ session }) {
   const { state, dispatch } = useAppContext()
+  const [showSetupWizard, setShowSetupWizard] = React.useState(false)
+
+  React.useEffect(() => {
+    if (!state.user || !state.currentOrganization || state.mustChangePassword || !state.userRole) {
+      setShowSetupWizard(false)
+      return
+    }
+
+    const isOrgAdmin = state.userRole?.name === 'Org Admin'
+    const isFoundingAdmin =
+      state.currentOrganization.created_by_user_id != null &&
+      state.currentOrganization.created_by_user_id === state.user.id
+    const wizardPending = !state.currentOrganization.setup_wizard_completed_at
+
+    if (isOrgAdmin && isFoundingAdmin && wizardPending) {
+      setShowSetupWizard(true)
+    } else {
+      setShowSetupWizard(false)
+    }
+  }, [state.user, state.userRole, state.currentOrganization, state.mustChangePassword])
+
+  const handleSetupComplete = async () => {
+    if (state.currentOrganization?.id) {
+      const { data: org } = await supabase
+        .from('organizations')
+        .select('*')
+        .eq('id', state.currentOrganization.id)
+        .single()
+      if (org) {
+        dispatch({ type: 'SET_ORGANIZATION', payload: org })
+      }
+    }
+    setShowSetupWizard(false)
+  }
 
   if (state.authLoading || state.isLoading) {
     return (
@@ -58,6 +97,9 @@ function WorkspaceLayout({ session }) {
   return (
     <>
       <AppShell session={session} />
+      {showSetupWizard && (
+        <SetupWizardModal show={showSetupWizard} onComplete={handleSetupComplete} />
+      )}
       <ForcePasswordReset
         show={Boolean(state.mustChangePassword)}
         onComplete={() => dispatch({ type: 'SET_MUST_CHANGE_PASSWORD', payload: false })}
@@ -118,17 +160,84 @@ export default function AppStandalone() {
     }
 
     const handleAuthCallback = async () => {
+      if (oauthCallbackProcessing || oauthCallbackProcessed) return
+
+      const hash = window.location.hash
+      if (hash && hash.includes('access_token')) {
+        oauthCallbackProcessing = true
+        try {
+          const hashParams = new URLSearchParams(hash.substring(1))
+          const accessToken = hashParams.get('access_token')
+          const refreshToken = hashParams.get('refresh_token')
+
+          if (accessToken) {
+            const { data, error: setSessionError } = await supabase.auth.setSession({
+              access_token: accessToken,
+              refresh_token: refreshToken || '',
+            })
+
+            if (setSessionError) {
+              console.error('Error setting session from hash fragment:', setSessionError)
+              oauthCallbackProcessing = false
+              return
+            }
+
+            if (data.session) {
+              oauthCallbackProcessed = true
+              window.history.replaceState({}, document.title, window.location.pathname + window.location.search)
+              navigate('/')
+              oauthCallbackProcessing = false
+              return
+            }
+          }
+        } catch (err) {
+          console.error('Error processing hash fragment OAuth:', err)
+          oauthCallbackProcessing = false
+          return
+        }
+        oauthCallbackProcessing = false
+      }
+
       const urlParams = new URLSearchParams(window.location.search)
+      const oauthErr = urlParams.get('error')
+      if (oauthErr) {
+        console.error('OAuth error:', oauthErr, urlParams.get('error_description') || '')
+        return
+      }
+
       const code = urlParams.get('code')
       if (!code) return
-      const { error } = await supabase.auth.exchangeCodeForSession(code)
-      if (!error) {
-        window.history.replaceState({}, document.title, window.location.pathname)
-        navigate('/')
+
+      oauthCallbackProcessing = true
+      try {
+        const { data, error: exchangeError } = await supabase.auth.exchangeCodeForSession(code)
+
+        if (exchangeError) {
+          console.error('Error exchanging code for session:', exchangeError)
+          const { data: { session: existing } } = await supabase.auth.getSession()
+          if (existing) {
+            oauthCallbackProcessed = true
+            window.history.replaceState({}, document.title, window.location.pathname)
+            navigate('/')
+          }
+          oauthCallbackProcessing = false
+          return
+        }
+
+        if (data.session) {
+          oauthCallbackProcessed = true
+          window.history.replaceState({}, document.title, window.location.pathname)
+          navigate('/')
+        }
+      } catch (err) {
+        console.error('Error during OAuth code exchange:', err)
+      } finally {
+        oauthCallbackProcessing = false
       }
     }
+
     handleAuthCallback()
-  }, [navigate, location.search])
+  }, [navigate, location.search, location.hash])
 
   if (loading) {
     return (

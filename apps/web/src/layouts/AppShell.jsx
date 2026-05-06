@@ -3,11 +3,13 @@ import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { PRIMARY_NAV_ITEMS } from '../config/routes'
 import { supabase } from '../supabaseClient'
 import { useAppContext } from '../context/AppContext'
+import { useToast } from '../context/ToastContext'
 import Avatar from '../components/Avatar'
 import Icon from '../components/Icon'
 
 export default function AppShell({ session }) {
   const { state, dispatch } = useAppContext()
+  const { addToast } = useToast()
   const navigate = useNavigate()
 
   const displayName = session?.user?.user_metadata?.full_name || session?.user?.email || 'User'
@@ -16,8 +18,39 @@ export default function AppShell({ session }) {
     (state.isProjectCollaborator ? 'Guest collaborator' : 'User')
 
   const handleLogout = async () => {
-    await supabase.auth.signOut()
-    dispatch({ type: 'SET_USER', payload: null })
+    try {
+      const { data: { session: current } } = await supabase.auth.getSession()
+
+      if (!current) {
+        dispatch({ type: 'SET_USER', payload: null })
+        addToast('Signed out successfully', 'success')
+        navigate('/login', { replace: true })
+        return
+      }
+
+      const { error } = await supabase.auth.signOut()
+      if (error) {
+        if (
+          error.message?.includes('session') ||
+          error.message?.includes('Session') ||
+          error.message?.includes('403') ||
+          error.status === 403
+        ) {
+          dispatch({ type: 'SET_USER', payload: null })
+          addToast('Signed out successfully', 'success')
+        } else {
+          console.error('Sign out error:', error)
+          dispatch({ type: 'SET_USER', payload: null })
+          addToast('Signed out successfully', 'success')
+        }
+      } else {
+        addToast('Signed out successfully', 'success')
+      }
+    } catch (err) {
+      console.log('Sign out error caught, clearing local state:', err)
+      dispatch({ type: 'SET_USER', payload: null })
+      addToast('Signed out successfully', 'success')
+    }
     navigate('/login', { replace: true })
   }
 
@@ -32,10 +65,31 @@ export default function AppShell({ session }) {
             </span>
           </div>
           <div className="px-4 py-3 border-b border-slate-200">
-            <p className="text-[11px] uppercase tracking-wider text-slate-500">Organization</p>
-            <p className="text-sm font-semibold text-slate-800 mt-1 truncate">
-              {state.currentOrganization?.name || 'Workspace'}
-            </p>
+            {state.currentOrganization ? (
+              <>
+                <p className="text-[11px] uppercase tracking-wider text-slate-500">Organization</p>
+                <p className="text-sm font-semibold text-slate-800 mt-1 truncate">
+                  {state.currentOrganization.name}
+                </p>
+              </>
+            ) : state.isProjectCollaborator ? (
+              <>
+                <p className="text-[11px] uppercase tracking-wider text-slate-500">Guest access</p>
+                <p className="text-sm font-semibold text-slate-800 mt-1">Project collaborator</p>
+                <p className="text-xs text-slate-500 mt-1">
+                  {(state.collaborationProjects?.length || 0) === 1
+                    ? '1 project accessible'
+                    : `${state.collaborationProjects?.length || 0} projects accessible`}
+                </p>
+              </>
+            ) : state.organizationLoading ? (
+              <p className="text-xs text-slate-500">Loading…</p>
+            ) : (
+              <>
+                <p className="text-[11px] uppercase tracking-wider text-slate-500">Organization</p>
+                <p className="text-sm font-semibold text-slate-800 mt-1 truncate">Workspace</p>
+              </>
+            )}
           </div>
           <nav className="px-3 py-3 space-y-1 flex-1">
             {PRIMARY_NAV_ITEMS.map((item) => (
