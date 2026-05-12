@@ -7,7 +7,7 @@ param(
 )
 
 $version = "1.0.36"
-$owner = "21chrisab"
+$owner = "SiteWeave"
 $repo = "SiteWeave"
 $exePath = "release/SiteWeave Setup $version.exe"
 

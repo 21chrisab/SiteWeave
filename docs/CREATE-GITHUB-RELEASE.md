@@ -22,7 +22,7 @@ The script will:
 ## Manual Method (Using GitHub Web UI)
 
 1. **Go to GitHub Releases**:
-   - Navigate to: https://github.com/21chrisab/SiteWeave/releases
+   - Navigate to: https://github.com/SiteWeave/SiteWeave/releases
    - Click "Draft a new release"
 
 2. **Fill in release details**:
@@ -83,8 +83,8 @@ gh release create v1.0.35 \
 3. Follow the setup wizard
 
 ### 🔗 Links
-- [Documentation](https://github.com/21chrisab/SiteWeave)
-- [Changelog](https://github.com/21chrisab/SiteWeave/commits/main)
+- [Documentation](https://github.com/SiteWeave/SiteWeave)
+- [Changelog](https://github.com/SiteWeave/SiteWeave/commits/main)
 ```
 
 ---

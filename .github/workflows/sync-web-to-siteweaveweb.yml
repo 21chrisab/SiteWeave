@@ -1,4 +1,4 @@
-# Mirrors monorepo apps/web (+ shared core-logic) to https://github.com/21chrisab/SiteWeaveWeb
+# Mirrors monorepo apps/web (+ shared core-logic) to https://github.com/SiteWeave/SiteWeaveWeb
 #
 # Required repo secret on SiteWeave (this monorepo):
 #   SITEWEAVEWEB_REPO_TOKEN — fine-grained PAT with Contents: Read and write on repo SiteWeaveWeb only.
@@ -37,14 +37,14 @@ jobs:
         run: |
           set -euo pipefail
           if [ -z "${TOKEN:-}" ]; then
-            echo "::error::Missing repository secret SITEWEAVEWEB_REPO_TOKEN (PAT with write access to 21chrisab/SiteWeaveWeb)."
+            echo "::error::Missing repository secret SITEWEAVEWEB_REPO_TOKEN (PAT with write access to SiteWeave/SiteWeaveWeb)."
             exit 1
           fi
 
           git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git config --global user.name "github-actions[bot]"
 
-          git clone --depth=1 "https://x-access-token:${TOKEN}@github.com/21chrisab/SiteWeaveWeb.git" _sw_web
+          git clone --depth=1 "https://x-access-token:${TOKEN}@github.com/SiteWeave/SiteWeaveWeb.git" _sw_web
 
           rsync -a --delete \
             --exclude 'node_modules' \
@@ -92,5 +92,5 @@ jobs:
           else
             git commit -m "Sync from SiteWeave monorepo @ ${GITHUB_SHA:0:7}"
             git push origin HEAD:main
-            echo "Pushed to https://github.com/21chrisab/SiteWeaveWeb"
+            echo "Pushed to https://github.com/SiteWeave/SiteWeaveWeb"
           fi

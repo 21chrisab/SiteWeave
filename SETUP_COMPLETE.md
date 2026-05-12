@@ -6,12 +6,12 @@ Successfully cleaned up the monorepo structure and set up two GitHub repositorie
 
 ### 1. SiteWeave (Monorepo) ✅
 - **Location:** `c:\Users\Abadi\siteweaveapp\`
-- **GitHub:** `https://github.com/21chrisab/SiteWeave`
+- **GitHub:** `https://github.com/SiteWeave/SiteWeave`
 - **Status:** Committed (commit: 40be1c2)
 
 ### 2. SiteWeaveWeb (Standalone) ✅
 - **Location:** `c:\Users\Abadi\siteweave-web\`
-- **GitHub:** `https://github.com/21chrisab/SiteWeaveWeb`
+- **GitHub:** `https://github.com/SiteWeave/SiteWeaveWeb`
 - **Status:** Committed (commit: d1d9679)
 
 ## 📋 What Was Done
@@ -50,7 +50,7 @@ Removed duplicate/misplaced directories:
 - Verified root structure is correct
 - Updated root `README.md` to document monorepo
 - Created `GITHUB_WORKFLOW_GUIDE.md` for workflow instructions
-- Git remote already configured: `https://github.com/21chrisab/SiteWeave.git`
+- Git remote already configured: `https://github.com/SiteWeave/SiteWeave.git`
 
 ### Phase 5: Standalone Repository ✅
 - Created directory: `c:\Users\Abadi\siteweave-web\`
@@ -58,7 +58,7 @@ Removed duplicate/misplaced directories:
 - Copied `packages/core-logic/` package
 - Updated all paths for standalone structure
 - Initialized git repository
-- Set remote: `https://github.com/21chrisab/SiteWeaveWeb.git`
+- Set remote: `https://github.com/SiteWeave/SiteWeaveWeb.git`
 
 ### Phase 6: Build Testing ✅
 **Monorepo Web App:**

@@ -7,7 +7,7 @@ Quick reference for committing and pushing to the correct GitHub repository.
 ## 🎯 Two Separate Repositories
 
 ### 1. **SiteWeave** (Main Monorepo)
-- **GitHub URL:** `https://github.com/21chrisab/SiteWeave`
+- **GitHub URL:** `https://github.com/SiteWeave/SiteWeave`
 - **Local Path:** `c:\Users\Abadi\siteweaveapp\`
 - **Contains:**
   - Desktop Electron app (`src/`)
@@ -16,7 +16,7 @@ Quick reference for committing and pushing to the correct GitHub repository.
   - Shared package (`packages/core-logic/`)
 
 ### 2. **SiteWeaveWeb** (Standalone Web App)
-- **GitHub URL:** `https://github.com/21chrisab/SiteWeaveWeb`
+- **GitHub URL:** `https://github.com/SiteWeave/SiteWeaveWeb`
 - **Local Path:** `c:\Users\Abadi\siteweave-web\` *(to be created)*
 - **Contains:**
   - Web app only (standalone version)

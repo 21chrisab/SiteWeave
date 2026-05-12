@@ -6,7 +6,7 @@ param(
     [string]$GitHubToken,
     
     [string]$Version = "1.0.35",
-    [string]$Owner = "21chrisab",
+    [string]$Owner = "SiteWeave",
     [string]$Repo = "SiteWeave"
 )
 
