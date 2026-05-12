@@ -1,0 +1,91 @@
+# Mirrors monorepo apps/web (+ shared core-logic) to https://github.com/21chrisab/SiteWeaveWeb
+#
+# Required repo secret on SiteWeave (this monorepo):
+#   SITEWEAVEWEB_REPO_TOKEN — fine-grained PAT with Contents: Read and write on repo SiteWeaveWeb only.
+#
+name: Sync web to SiteWeaveWeb
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'apps/web/**'
+      - 'packages/core-logic/**'
+      - '.github/workflows/sync-web-to-siteweaveweb.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: sync-siteweaveweb
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout monorepo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Clone SiteWeaveWeb, rsync, patch paths, commit, push
+        env:
+          TOKEN: ${{ secrets.SITEWEAVEWEB_REPO_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "${TOKEN:-}" ]; then
+            echo "::error::Missing repository secret SITEWEAVEWEB_REPO_TOKEN (PAT with write access to 21chrisab/SiteWeaveWeb)."
+            exit 1
+          fi
+
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config --global user.name "github-actions[bot]"
+
+          git clone --depth=1 "https://x-access-token:${TOKEN}@github.com/21chrisab/SiteWeaveWeb.git" _sw_web
+
+          rsync -a --delete \
+            --exclude 'node_modules' \
+            --exclude 'dist' \
+            --exclude '.git' \
+            --exclude 'packages' \
+            apps/web/ _sw_web/
+
+          mkdir -p _sw_web/packages
+          rsync -a --delete \
+            --exclude 'node_modules' \
+            --exclude '.git' \
+            packages/core-logic/ _sw_web/packages/core-logic/
+
+          node <<'NODE'
+          const fs = require('fs');
+          const path = require('path');
+          const root = '_sw_web';
+          const pkgPath = path.join(root, 'package.json');
+          const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
+          if (pkg.dependencies && pkg.dependencies['@siteweave/core-logic']) {
+            pkg.dependencies['@siteweave/core-logic'] = 'file:./packages/core-logic';
+            fs.writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + '\n');
+          }
+          const vitePath = path.join(root, 'vite.config.ts');
+          if (fs.existsSync(vitePath)) {
+            let v = fs.readFileSync(vitePath, 'utf8');
+            v = v.replaceAll(
+              "path.resolve(__dirname, '../../packages/core-logic/src/index.js')",
+              "path.resolve(__dirname, 'packages/core-logic/src/index.js')"
+            );
+            fs.writeFileSync(vitePath, v);
+          }
+          NODE
+
+          cd _sw_web
+          git add -A
+          if git diff --staged --quiet; then
+            echo "No file changes compared to SiteWeaveWeb main; nothing to push."
+          else
+            git commit -m "Sync from SiteWeave monorepo @ ${GITHUB_SHA:0:7}"
+            git push origin HEAD:main
+            echo "Pushed to https://github.com/21chrisab/SiteWeaveWeb"
+          fi
