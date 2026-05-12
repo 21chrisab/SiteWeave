@@ -53,6 +53,10 @@ jobs:
             --exclude 'packages' \
             apps/web/ _sw_web/
 
+          # Monorepo package-lock.json uses file:../../packages/core-logic; SiteWeaveWeb uses
+          # file:./packages/core-logic. npm ci requires a matching lockfile.
+          cp apps/web/package-lock.standalone.json _sw_web/package-lock.json
+
           mkdir -p _sw_web/packages
           rsync -a --delete \
             --exclude 'node_modules' \
