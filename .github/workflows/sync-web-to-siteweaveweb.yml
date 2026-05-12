@@ -51,6 +51,7 @@ jobs:
             --exclude 'dist' \
             --exclude '.git' \
             --exclude 'packages' \
+            --exclude 'package-lock.standalone.json' \
             apps/web/ _sw_web/
 
           # Monorepo package-lock.json uses file:../../packages/core-logic; SiteWeaveWeb uses
