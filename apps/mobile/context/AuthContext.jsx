@@ -5,8 +5,14 @@ import * as WebBrowser from 'expo-web-browser';
 import * as Linking from 'expo-linking';
 import * as AppleAuthentication from 'expo-apple-authentication';
 import * as Crypto from 'expo-crypto';
-import { Platform } from 'react-native';
-import { getPushToken, registerPushToken, setupNotificationListeners } from '../utils/notifications';
+import { Platform, AppState } from 'react-native';
+import {
+  getPushToken,
+  registerPushToken,
+  setupNotificationListeners,
+  resolveNotificationRoute,
+  getLastNotificationRoute,
+} from '../utils/notifications';
 
 const AuthContext = createContext();
 
@@ -26,11 +32,20 @@ function parseHashParams(url) {
   return params;
 }
 
+function getMobileRedirectUrl() {
+  // Force deterministic native callback URI so Supabase/provider allowlist can match exactly.
+  // Do not use Linking.createURL here because Expo Go/dev environments may produce exp://... values.
+  const scheme = Constants.expoConfig?.scheme || 'siteweave';
+  return `${scheme}://auth/callback`;
+}
+
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const [activeOrganization, setActiveOrganization] = useState(null);
   const [organizationError, setOrganizationError] = useState(null);
+  const [pendingNotificationRoute, setPendingNotificationRoute] = useState(null);
+  const [syncPulse, setSyncPulse] = useState(0);
   
   // Get Supabase credentials from environment
   // Expo uses EXPO_PUBLIC_ prefix for environment variables
@@ -44,8 +59,8 @@ export function AuthProvider({ children }) {
   }, []);
 
   // Load user's organization from profiles table
-  const loadUserOrganization = async () => {
-    if (!user) {
+  const loadUserOrganization = async (targetUser = user) => {
+    if (!targetUser) {
       setActiveOrganization(null);
       setOrganizationError(null);
       return;
@@ -62,7 +77,7 @@ export function AuthProvider({ children }) {
             name
           )
         `)
-        .eq('id', user.id)
+        .eq('id', targetUser.id)
         .single();
 
       if (profileError) {
@@ -89,6 +104,16 @@ export function AuthProvider({ children }) {
       setActiveOrganization(null);
     }
   };
+
+  // Always (re)load organization when authenticated user changes.
+  useEffect(() => {
+    if (user?.id) {
+      loadUserOrganization(user);
+    } else {
+      setActiveOrganization(null);
+      setOrganizationError(null);
+    }
+  }, [user?.id]);
 
   // Register push token when user is available
   useEffect(() => {
@@ -119,15 +144,41 @@ export function AuthProvider({ children }) {
       },
       (response) => {
         console.log('Notification tapped:', response);
-        // Handle notification tap navigation if needed
-        // const data = response.notification.request.content.data;
-        // if (data?.screen) {
-        //   router.push(data.screen);
-        // }
+        const data = response?.notification?.request?.content?.data || {};
+        const route = resolveNotificationRoute(data);
+        if (!route) return;
+        if (route.startsWith('http://') || route.startsWith('https://')) {
+          Linking.openURL(route).catch(() => {});
+          return;
+        }
+        setPendingNotificationRoute(route);
       }
     );
 
     return cleanup;
+  }, []);
+
+  // Lightweight background/foreground sync trigger.
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (nextState) => {
+      if (nextState === 'active') {
+        setSyncPulse((value) => value + 1);
+      }
+    });
+    return () => subscription.remove();
+  }, []);
+
+  useEffect(() => {
+    const hydrateLastTappedRoute = async () => {
+      const route = await getLastNotificationRoute();
+      if (!route) return;
+      if (route.startsWith('http://') || route.startsWith('https://')) {
+        Linking.openURL(route).catch(() => {});
+        return;
+      }
+      setPendingNotificationRoute(route);
+    };
+    hydrateLastTappedRoute();
   }, []);
 
   useEffect(() => {
@@ -148,10 +199,7 @@ export function AuthProvider({ children }) {
             // User is signed in or session refreshed - keep them signed in
             if (session?.user) {
               setUser(session.user);
-              // Load organization after user is set
-              setTimeout(() => {
-                loadUserOrganization();
-              }, 100);
+              // Organization is loaded by the user.id effect above.
             }
             break;
           case 'SIGNED_OUT':
@@ -210,15 +258,9 @@ export function AuthProvider({ children }) {
           // Otherwise, keep the existing session
         } else if (refreshedSession?.user) {
           setUser(refreshedSession.user);
-          // Load organization after user is set
-          setTimeout(() => {
-            loadUserOrganization();
-          }, 100);
         } else if (session?.user) {
-          // If refresh failed but we have a session, still load organization
-          setTimeout(() => {
-            loadUserOrganization();
-          }, 100);
+          // Keep existing session user until auth listener/effects settle.
+          setUser(session.user);
         }
       } else {
         console.log('No session found');
@@ -244,8 +286,8 @@ export function AuthProvider({ children }) {
 
   const signInWithGoogle = async () => {
     try {
-      // Create redirect URL using the app scheme - must match exactly what's configured
-      const redirectUrl = `${Constants.expoConfig?.scheme || 'siteweave'}://`;
+      const redirectUrl = getMobileRedirectUrl();
+      console.log('Google OAuth redirect URL:', redirectUrl);
       
       // Start OAuth flow with implicit flow (no PKCE) since WebCrypto isn't available in React Native
       // This avoids the "invalid flow state" error caused by PKCE without WebCrypto
@@ -351,8 +393,8 @@ export function AuthProvider({ children }) {
 
   const signInWithMicrosoft = async () => {
     try {
-      // Create redirect URL using the app scheme
-      const redirectUrl = `${Constants.expoConfig?.scheme || 'siteweave'}://`;
+      const redirectUrl = getMobileRedirectUrl();
+      console.log('Microsoft OAuth redirect URL:', redirectUrl);
       
       // Use implicit flow for React Native (no PKCE)
       const { data, error } = await supabase.auth.signInWithOAuth({
@@ -568,7 +610,10 @@ export function AuthProvider({ children }) {
       signInWithApple,
       signOut,
       deleteAccount,
-      supabase 
+      supabase,
+      pendingNotificationRoute,
+      clearPendingNotificationRoute: () => setPendingNotificationRoute(null),
+      syncPulse,
     }}>
       {children}
     </AuthContext.Provider>

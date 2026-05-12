@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { supabaseClient } from '../context/AppContext';
 import { useToast } from '../context/ToastContext';
 import LoadingSpinner from './LoadingSpinner';
@@ -8,6 +8,52 @@ function LoginForm({ onPasswordSignInSuccess }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const oauthTimeoutRef = useRef(null);
+
+  useEffect(() => {
+    const { data: { subscription } } = supabaseClient.auth.onAuthStateChange((_event, session) => {
+      if (session?.user) {
+        setIsLoading(false);
+        if (oauthTimeoutRef.current) {
+          clearTimeout(oauthTimeoutRef.current);
+          oauthTimeoutRef.current = null;
+        }
+      }
+    });
+
+    return () => {
+      subscription.unsubscribe();
+      if (oauthTimeoutRef.current) {
+        clearTimeout(oauthTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    const handleOAuthError = (event) => {
+      const message = event?.detail?.message || 'OAuth sign-in failed. Please try again.';
+      setIsLoading(false);
+      if (oauthTimeoutRef.current) {
+        clearTimeout(oauthTimeoutRef.current);
+        oauthTimeoutRef.current = null;
+      }
+      addToast(message, 'error');
+    };
+
+    window.addEventListener('supabase-oauth-error', handleOAuthError);
+    return () => window.removeEventListener('supabase-oauth-error', handleOAuthError);
+  }, [addToast]);
+
+  const startOAuthLoadingGuard = () => {
+    setIsLoading(true);
+    if (oauthTimeoutRef.current) {
+      clearTimeout(oauthTimeoutRef.current);
+    }
+    oauthTimeoutRef.current = setTimeout(() => {
+      setIsLoading(false);
+      addToast('OAuth sign-in timed out. Please try again.', 'error');
+    }, 30000);
+  };
 
   const handleLogin = async (e) => {
     e.preventDefault();
@@ -27,46 +73,64 @@ function LoginForm({ onPasswordSignInSuccess }) {
     setIsLoading(false);
   };
 
-  const handleGoogleLogin = async () => {
-    setIsLoading(true);
-    
-    // Use Electron loopback method if available
-    const redirectTo = window.electronAPI?.isElectron 
+  const startProviderOAuth = async (provider, extraOptions = {}) => {
+    const isElectron = !!window.electronAPI?.isElectron;
+    const redirectTo = isElectron
       ? 'http://127.0.0.1:5000/supabase-callback'
       : window.location.origin;
 
-    const { error } = await supabaseClient.auth.signInWithOAuth({
-      provider: 'google',
+    const { data, error } = await supabaseClient.auth.signInWithOAuth({
+      provider,
       options: {
-        redirectTo: redirectTo
-      }
+        ...extraOptions,
+        redirectTo,
+        // In Electron we open the URL ourselves so the renderer never tries to
+        // navigate to the provider; this preserves the in-memory PKCE
+        // code_verifier so exchangeCodeForSession can succeed on return.
+        skipBrowserRedirect: isElectron,
+      },
     });
 
+    if (error) return { error };
+
+    if (isElectron && data?.url) {
+      try {
+        if (window.electronAPI?.openExternal) {
+          window.electronAPI.openExternal(data.url);
+        } else {
+          window.open(data.url, '_blank');
+        }
+      } catch (err) {
+        return { error: { message: err?.message || 'Failed to open OAuth window' } };
+      }
+    }
+
+    return { error: null };
+  };
+
+  const handleGoogleLogin = async () => {
+    startOAuthLoadingGuard();
+    const { error } = await startProviderOAuth('google');
     if (error) {
       addToast('Google login failed: ' + error.message, 'error');
       setIsLoading(false);
+      if (oauthTimeoutRef.current) {
+        clearTimeout(oauthTimeoutRef.current);
+        oauthTimeoutRef.current = null;
+      }
     }
   };
 
   const handleMicrosoftLogin = async () => {
-    setIsLoading(true);
-    
-    // Use Electron loopback method if available
-    const redirectTo = window.electronAPI?.isElectron 
-      ? 'http://127.0.0.1:5000/supabase-callback'
-      : window.location.origin;
-
-    const { error } = await supabaseClient.auth.signInWithOAuth({
-      provider: 'azure',
-      options: {
-        redirectTo: redirectTo,
-        scopes: 'openid email profile'
-      }
-    });
-
+    startOAuthLoadingGuard();
+    const { error } = await startProviderOAuth('azure', { scopes: 'openid email profile' });
     if (error) {
       addToast('Microsoft login failed: ' + error.message, 'error');
       setIsLoading(false);
+      if (oauthTimeoutRef.current) {
+        clearTimeout(oauthTimeoutRef.current);
+        oauthTimeoutRef.current = null;
+      }
     }
   };
 

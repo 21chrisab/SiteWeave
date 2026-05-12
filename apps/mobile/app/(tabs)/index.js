@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'expo-router';
 import { useAuth } from '../../context/AuthContext';
 import { filterByOrganizationId } from '../../utils/orgScope';
+import { fetchUnreadNotificationCount } from '../../utils/notifications';
 import { 
   fetchUserIncompleteTasks, 
   fetchTodayEvents, 
@@ -37,6 +38,26 @@ export default function HomeScreen() {
   const [selectedItem, setSelectedItem] = useState(null);
   const [showItemModal, setShowItemModal] = useState(false);
   const [showProfileDrawer, setShowProfileDrawer] = useState(false);
+  const [unreadNotificationCount, setUnreadNotificationCount] = useState(0);
+
+  useEffect(() => {
+    if (!supabase || !user) return;
+    const channel = supabase
+      .channel('user_notifications_home')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'user_notifications' }, async () => {
+        try {
+          const unreadCount = await fetchUnreadNotificationCount(supabase, { userId: user.id, email: user.email || '' });
+          setUnreadNotificationCount(unreadCount || 0);
+        } catch (error) {
+          console.error('Failed to refresh unread notification count:', error);
+        }
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [supabase, user]);
 
   const loadData = async () => {
     if (!user || !supabase || !activeOrganization) {
@@ -49,13 +70,14 @@ export default function HomeScreen() {
     }
     
     try {
-      const [tasksData, eventsData, projectsData, activeCount, completedCount, overdueCount] = await Promise.all([
+      const [tasksData, eventsData, projectsData, activeCount, completedCount, overdueCount, unreadCount] = await Promise.all([
         fetchUserIncompleteTasks(supabase, user.id),
         fetchTodayEvents(supabase),
         fetchUserProjectsWithProgress(supabase, user.id),
         fetchActiveProjectsCount(supabase, user.id),
         fetchCompletedTasksCount(supabase, user.id),
         fetchOverdueTasksCount(supabase, user.id),
+        fetchUnreadNotificationCount(supabase, { userId: user.id, email: user.email || '' }),
       ]);
       
       const orgId = activeOrganization.id;
@@ -71,6 +93,7 @@ export default function HomeScreen() {
         completedTasks: completedCount,
         overdueTasks: overdueCount,
       });
+      setUnreadNotificationCount(unreadCount || 0);
 
       // Combine and prioritize My Day items (top 3)
       const today = new Date();
@@ -246,12 +269,19 @@ export default function HomeScreen() {
                 style={styles.notificationButton}
                 onPress={() => {
                   haptics.light();
-                  /* TODO: Open notifications */
+                  router.push('/notifications');
                 }}
                 activeOpacity={0.7}
                 hapticType="light"
               >
                 <Ionicons name="notifications-outline" size={24} color="#111827" />
+                {unreadNotificationCount > 0 && (
+                  <View style={styles.notificationBadge}>
+                    <Text style={styles.notificationBadgeText}>
+                      {unreadNotificationCount > 99 ? '99+' : unreadNotificationCount}
+                    </Text>
+                  </View>
+                )}
               </PressableWithFade>
               <PressableWithFade 
                 style={styles.profileButton}
@@ -274,46 +304,6 @@ export default function HomeScreen() {
 
         {/* Weather Widget */}
         <WeatherWidget />
-
-        {/* Mobile-first shortcuts (not desktop parity) */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>QUICK ACCESS</Text>
-          <View style={styles.quickAccessRow}>
-            <PressableWithFade
-              style={styles.quickAccessChip}
-              onPress={() => {
-                haptics.light();
-                router.push('/projects');
-              }}
-              hapticType="light"
-            >
-              <Ionicons name="folder-outline" size={22} color="#2563EB" />
-              <Text style={styles.quickAccessLabel}>Projects</Text>
-            </PressableWithFade>
-            <PressableWithFade
-              style={styles.quickAccessChip}
-              onPress={() => {
-                haptics.light();
-                router.push('/messages');
-              }}
-              hapticType="light"
-            >
-              <Ionicons name="chatbubbles-outline" size={22} color="#2563EB" />
-              <Text style={styles.quickAccessLabel}>Messages</Text>
-            </PressableWithFade>
-            <PressableWithFade
-              style={styles.quickAccessChip}
-              onPress={() => {
-                haptics.light();
-                router.push('/calendar');
-              }}
-              hapticType="light"
-            >
-              <Ionicons name="calendar-outline" size={22} color="#2563EB" />
-              <Text style={styles.quickAccessLabel}>Calendar</Text>
-            </PressableWithFade>
-          </View>
-        </View>
 
         {/* Section A: KPIs Carousel */}
         <View style={styles.kpiSection}>
@@ -437,6 +427,24 @@ const styles = StyleSheet.create({
     minHeight: 44,
     justifyContent: 'center',
     alignItems: 'center',
+    position: 'relative',
+  },
+  notificationBadge: {
+    position: 'absolute',
+    top: 2,
+    right: 0,
+    minWidth: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: '#DC2626',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 4,
+  },
+  notificationBadgeText: {
+    color: '#fff',
+    fontSize: 10,
+    fontWeight: '700',
   },
   profileButton: {
     padding: 4,
@@ -474,27 +482,6 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     textTransform: 'uppercase',
     letterSpacing: 0.5,
-  },
-  quickAccessRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 10,
-  },
-  quickAccessChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    paddingVertical: 10,
-    paddingHorizontal: 14,
-    backgroundColor: '#EFF6FF',
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#BFDBFE',
-  },
-  quickAccessLabel: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#1D4ED8',
   },
   myDayItem: {
     paddingVertical: 16,

@@ -6,6 +6,9 @@
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { normalizeAssigneePhone } from '../_shared/phone.ts'
+import { sendTwilioSms } from '../_shared/twilioSms.ts'
+import { gateOrSendOptInForSubstantiveSms } from '../_shared/smsConsent.ts'
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
@@ -87,8 +90,16 @@ serve(async (req) => {
     const organizationId = projectData.organization_id
     console.log('Project organization_id:', organizationId)
 
+    const { data: orgRowForSms } = await supabaseAdmin
+      .from('organizations')
+      .select('name')
+      .eq('id', organizationId)
+      .maybeSingle()
+    const organizationNameForSms = orgRowForSms?.name || 'Your team'
+
     const results: Array<{ email: string; action: 'added' | 'invited' | 'skipped'; reason?: string }> = []
     const emailsToSend: Array<{ from: string; to: string[]; subject: string; html: string }> = []
+    const smsToSend: Array<{ email: string; phone: string; message: string }> = []
 
     for (const entry of entries as Entry[]) {
       const email = normalizeEmail(entry.email || '')
@@ -110,11 +121,12 @@ serve(async (req) => {
         // First, look for a contact in THIS organization
         console.log('Checking for existing contact with email in organization:', email, organizationId)
         let contactId: string | undefined = undefined
+        let contactPhone: string | null = null
         
         // Try to find contact in the same organization first
         const { data: orgContact, error: orgContactError } = await supabaseAdmin
           .from('contacts')
-          .select('id')
+          .select('id, phone')
           .ilike('email', email)
           .eq('organization_id', organizationId)
           .maybeSingle()
@@ -123,6 +135,7 @@ serve(async (req) => {
           console.warn('Error looking up contact in org:', orgContactError)
         } else if (orgContact) {
           contactId = orgContact.id
+          contactPhone = orgContact.phone || null
           console.log('Found contact in organization:', contactId)
         }
 
@@ -130,7 +143,7 @@ serve(async (req) => {
         if (!contactId) {
           const { data: anyContacts, error: anyContactError } = await supabaseAdmin
             .from('contacts')
-            .select('id, organization_id')
+            .select('id, organization_id, phone')
             .ilike('email', email)
             .limit(1)
 
@@ -142,6 +155,7 @@ serve(async (req) => {
           
           if (anyContacts && anyContacts.length > 0) {
             contactId = anyContacts[0].id
+            contactPhone = anyContacts[0].phone || null
             console.log('Found contact (different org or null org):', contactId, 'org:', anyContacts[0].organization_id)
             
             // Update contact's organization_id if it's null
@@ -177,7 +191,7 @@ serve(async (req) => {
           const { data: newContact, error: contactError } = await supabaseAdmin
             .from('contacts')
             .insert(contactData)
-            .select('id')
+            .select('id, phone')
             .single()
 
           if (contactError) {
@@ -196,6 +210,7 @@ serve(async (req) => {
             continue
           }
           contactId = newContact.id
+          contactPhone = newContact.phone || null
           console.log('Created new contact with ID:', contactId)
         }
 
@@ -292,6 +307,18 @@ serve(async (req) => {
                          Deno.env.get('VITE_APP_URL') || 
                          'https://app.siteweave.org').replace(/\/+$/, '')
         const dashboardUrl = `${baseUrl}/projects/${projectId}`
+
+        const normalizedPhone = normalizeAssigneePhone(contactPhone || '')
+        if (normalizedPhone.isValid && normalizedPhone.e164) {
+          const smsMessage = `${inviterName} added you to ${projectName} on SiteWeave as ${role}. View project: ${dashboardUrl}`
+          smsToSend.push({
+            email,
+            phone: normalizedPhone.e164,
+            message: smsMessage,
+          })
+        } else if (contactPhone) {
+          console.log('Skipping SMS due to invalid phone format', { email, contactPhone })
+        }
         
         // Prepare notification email (will be sent in batch later)
         if (RESEND_API_KEY) {
@@ -519,6 +546,39 @@ serve(async (req) => {
         }
       } catch (batchError) {
         console.error('Error sending batch emails:', batchError)
+      }
+    }
+
+    // Send SMS notifications one-by-one to preserve per-recipient status handling.
+    if (smsToSend.length > 0) {
+      for (const sms of smsToSend) {
+        const gate = await gateOrSendOptInForSubstantiveSms(supabaseAdmin, {
+          phoneE164: sms.phone,
+          organizationId,
+          organizationName: organizationNameForSms,
+        })
+        if (!gate.allowed) {
+          if (gate.optInSent) {
+            console.log('SMS substantive skipped; opt-in sent', { phone: sms.phone, email: sms.email })
+          } else {
+            console.log('SMS substantive skipped', { phone: sms.phone, reason: gate.reason })
+          }
+          const resultIndex = results.findIndex((r) => r.email === sms.email)
+          if (resultIndex !== -1 && results[resultIndex].action === 'added' && !results[resultIndex].reason) {
+            results[resultIndex].reason = gate.optInSent
+              ? 'sms_opt_in_sent'
+              : `sms_blocked:${gate.reason || 'consent'}`
+          }
+          continue
+        }
+        const smsResult = await sendTwilioSms({ to: sms.phone, body: sms.message })
+        if (!smsResult.success) {
+          console.error('Twilio SMS failed:', { email: sms.email, phone: sms.phone, error: smsResult.error })
+          const resultIndex = results.findIndex((r) => r.email === sms.email)
+          if (resultIndex !== -1 && results[resultIndex].action === 'added' && !results[resultIndex].reason) {
+            results[resultIndex].reason = `sms_failed:${smsResult.error || 'unknown'}`
+          }
+        }
       }
     }
 

@@ -48,6 +48,13 @@ function lineFromActivity(activity) {
       ? `pinged assignee (${d.recipient_email}) for task "${entityName}"`
       : `ping email to ${d.recipient_email} failed for task "${entityName}"${d.error ? `: ${d.error}` : ''}`;
   }
+  if (action === 'assignee_ping_sms' && d.recipient_email) {
+    const ok = d.success !== false;
+    const to = d.recipient_email;
+    return ok
+      ? `pinged assignee by SMS (${to}) for task "${entityName}"`
+      : `SMS ping to ${to} failed for task "${entityName}"${d.error ? `: ${d.error}` : ''}`;
+  }
 
   return `${action} ${entityType}${entityName ? ` "${entityName}"` : ''}${projectSuffix}`;
 }

@@ -103,6 +103,137 @@ export async function registerPushToken(supabase, userId, token) {
 }
 
 /**
+ * Parse a push payload into an in-app route path.
+ * Supports explicit route payloads and fallback project deep links.
+ * @param {Object} data
+ * @returns {string|null}
+ */
+export function resolveNotificationRoute(data = {}) {
+  if (!data || typeof data !== 'object') return null;
+
+  if (typeof data.screen === 'string' && data.screen.trim()) {
+    return data.screen.startsWith('/') ? data.screen : `/${data.screen}`;
+  }
+
+  if (typeof data.route === 'string' && data.route.trim()) {
+    return data.route.startsWith('/') ? data.route : `/${data.route}`;
+  }
+
+  if (typeof data.action_url === 'string' && data.action_url.trim()) {
+    const u = data.action_url.trim();
+    if (u.startsWith('http://') || u.startsWith('https://')) {
+      return u;
+    }
+  }
+
+  if (data.project_id) {
+    return `/projects/${data.project_id}`;
+  }
+
+  if (typeof data.action_url === 'string' && data.action_url.includes('project=')) {
+    try {
+      const url = new URL(data.action_url);
+      const projectId = url.searchParams.get('project');
+      if (projectId) {
+        return `/projects/${projectId}`;
+      }
+    } catch {
+      // Ignore malformed URL and continue fallback routing.
+    }
+  }
+
+  return '/notifications';
+}
+
+/**
+ * Fetch notification center rows for current user.
+ * @param {Object} supabase
+ * @param {{ userId?: string, email?: string, limit?: number }} options
+ */
+export async function fetchUserNotifications(supabase, options = {}) {
+  const { userId, email, limit = 100 } = options;
+
+  let query = supabase
+    .from('user_notifications')
+    .select('*')
+    .order('created_at', { ascending: false })
+    .limit(limit);
+
+  if (userId) {
+    query = query.or(`recipient_user_id.eq.${userId},recipient_email.eq.${email || ''}`);
+  } else if (email) {
+    query = query.eq('recipient_email', email);
+  }
+
+  const { data, error } = await query;
+  if (error) throw error;
+  return data || [];
+}
+
+/**
+ * Fetch unread count for user notifications.
+ * @param {Object} supabase
+ * @param {{ userId?: string, email?: string }} options
+ * @returns {Promise<number>}
+ */
+export async function fetchUnreadNotificationCount(supabase, options = {}) {
+  const { userId, email } = options;
+  let query = supabase
+    .from('user_notifications')
+    .select('id', { count: 'exact', head: true })
+    .is('read_at', null);
+
+  if (userId) {
+    query = query.or(`recipient_user_id.eq.${userId},recipient_email.eq.${email || ''}`);
+  } else if (email) {
+    query = query.eq('recipient_email', email);
+  }
+
+  const { count, error } = await query;
+  if (error) throw error;
+  return count || 0;
+}
+
+/**
+ * Mark a notification as read and log action.
+ * @param {Object} supabase
+ * @param {{ notificationId: string, userId?: string }} options
+ */
+export async function markNotificationRead(supabase, options = {}) {
+  const { notificationId, userId } = options;
+  if (!notificationId) return;
+
+  // Use edge function so action history stays consistent with web/desktop.
+  await supabase.functions.invoke('dispatch-notification', {
+    body: {
+      action: 'notification_action',
+      notificationId,
+      userId,
+      actionType: 'mark_read',
+    },
+  });
+}
+
+/**
+ * Acknowledge notification without navigating away.
+ * @param {Object} supabase
+ * @param {{ notificationId: string, userId?: string }} options
+ */
+export async function acknowledgeNotification(supabase, options = {}) {
+  const { notificationId, userId } = options;
+  if (!notificationId) return;
+
+  await supabase.functions.invoke('dispatch-notification', {
+    body: {
+      action: 'notification_action',
+      notificationId,
+      userId,
+      actionType: 'acknowledge',
+    },
+  });
+}
+
+/**
  * Setup notification listeners
  * @param {Function} onNotificationReceived - Callback when notification received
  * @param {Function} onNotificationTapped - Callback when notification tapped
@@ -128,6 +259,21 @@ export function setupNotificationListeners(onNotificationReceived, onNotificatio
     Notifications.removeNotificationSubscription(receivedListener);
     Notifications.removeNotificationSubscription(responseListener);
   };
+}
+
+/**
+ * Returns route from the most recent tapped notification if available.
+ * Useful for cold starts.
+ */
+export async function getLastNotificationRoute() {
+  try {
+    const response = await Notifications.getLastNotificationResponseAsync();
+    const data = response?.notification?.request?.content?.data || {};
+    return resolveNotificationRoute(data);
+  } catch (error) {
+    console.error('Error getting last notification route:', error);
+    return null;
+  }
 }
 
 /**

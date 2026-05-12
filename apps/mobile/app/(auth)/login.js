@@ -10,7 +10,7 @@ export default function LoginScreen() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
-  const { signIn, signInWithGoogle, signInWithMicrosoft, signInWithApple, loadUserOrganization, organizationError, activeOrganization } = useAuth();
+  const { signIn, signInWithGoogle, signInWithMicrosoft, signInWithApple, loadUserOrganization } = useAuth();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const haptics = useHaptics();
@@ -32,13 +32,6 @@ export default function LoginScreen() {
       // Load organization after login
       await loadUserOrganization();
       await new Promise(resolve => setTimeout(resolve, 200));
-      
-      if (organizationError || !activeOrganization) {
-        haptics.error();
-        Alert.alert('Organization Error', organizationError || 'No organization found. Please contact your administrator.');
-        setLoading(false);
-        return;
-      }
       
       haptics.success();
       router.replace('/(tabs)');
@@ -62,13 +55,6 @@ export default function LoginScreen() {
       await loadUserOrganization();
       await new Promise(resolve => setTimeout(resolve, 200));
       
-      if (organizationError || !activeOrganization) {
-        haptics.error();
-        Alert.alert('Organization Error', organizationError || 'No organization found. Please contact your administrator.');
-        setLoading(false);
-        return;
-      }
-      
       haptics.success();
       router.replace('/(tabs)');
     } catch (error) {
@@ -91,13 +77,6 @@ export default function LoginScreen() {
       await loadUserOrganization();
       await new Promise(resolve => setTimeout(resolve, 200));
       
-      if (organizationError || !activeOrganization) {
-        haptics.error();
-        Alert.alert('Organization Error', organizationError || 'No organization found. Please contact your administrator.');
-        setLoading(false);
-        return;
-      }
-      
       haptics.success();
       router.replace('/(tabs)');
     } catch (error) {
@@ -119,13 +98,6 @@ export default function LoginScreen() {
       // Load organization after login
       await loadUserOrganization();
       await new Promise(resolve => setTimeout(resolve, 200));
-      
-      if (organizationError || !activeOrganization) {
-        haptics.error();
-        Alert.alert('Organization Error', organizationError || 'No organization found. Please contact your administrator.');
-        setLoading(false);
-        return;
-      }
       
       haptics.success();
       router.replace('/(tabs)');

@@ -6,11 +6,12 @@ import { Ionicons } from '@expo/vector-icons';
 import PressableWithFade from './PressableWithFade';
 import { useHaptics } from '../hooks/useHaptics';
 import { filterByOrganizationId } from '../utils/orgScope';
+import { enqueueOfflineAction, processOfflineQueue } from '../utils/offlineQueue';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 export default function QuickActionsModal({ visible, onClose }) {
-  const { user, supabase, activeOrganization } = useAuth();
+  const { user, supabase, activeOrganization, syncPulse } = useAuth();
   const haptics = useHaptics();
   const [issueData, setIssueData] = useState({
     title: '',
@@ -27,11 +28,25 @@ export default function QuickActionsModal({ visible, onClose }) {
   useEffect(() => {
     if (visible && user && supabase) {
       haptics.light();
+      flushOfflineIssues();
       loadProjects();
       // Reset form when modal opens
       setIssueData({ title: '', description: '', project_id: null });
     }
   }, [visible, user, supabase, activeOrganization?.id]);
+
+  const flushOfflineIssues = async () => {
+    if (!supabase) return;
+    await processOfflineQueue({
+      create_issue: async (payload) => {
+        await createFieldIssue(supabase, payload);
+      },
+    });
+  };
+
+  useEffect(() => {
+    flushOfflineIssues();
+  }, [syncPulse]);
 
   const loadProjects = async () => {
     if (!user || !supabase) return;
@@ -118,7 +133,17 @@ export default function QuickActionsModal({ visible, onClose }) {
     } catch (error) {
       console.error('Error reporting issue:', error);
       haptics.error();
-      alert('Error reporting issue');
+      await enqueueOfflineAction({
+        type: 'create_issue',
+        payload: {
+          ...issueData,
+          ...(selectedProject?.organization_id ? { organization_id: selectedProject.organization_id } : {}),
+          created_by_user_id: user.id,
+          status: 'open',
+          priority: 'Medium',
+        },
+      });
+      alert('No connection. Issue saved to sync queue.');
     } finally {
       setLoading(false);
     }

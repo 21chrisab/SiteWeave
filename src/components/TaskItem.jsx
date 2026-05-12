@@ -4,6 +4,7 @@ import Icon from './Icon';
 import PermissionGuard from './PermissionGuard';
 import DateRangePicker from './DateRangePicker';
 import { addDaysIso, localDateIso } from '../utils/dateHelpers';
+import { normalizeAssigneePhone } from '@siteweave/core-logic';
 
 /** @typedef {null | 'dates' | 'assign' | 'title'} TaskPanel */
 
@@ -20,6 +21,7 @@ const TaskItem = memo(function TaskItem({
     dependencyMeta = null,
     onOpenDependencyDrawer,
     onPingAssignee = null,
+    onRequestAssigneeSmsConsent = null,
     pingingTaskId = null,
 }) {
     const { i18n } = useTranslation();
@@ -31,6 +33,8 @@ const TaskItem = memo(function TaskItem({
     const [editTitle, setEditTitle] = useState(task.text);
     const [editPhaseId, setEditPhaseId] = useState(task.project_phase_id || '');
     const [editAssigneeId, setEditAssigneeId] = useState(task.assignee_id || '');
+    const [editAssigneeEmail, setEditAssigneeEmail] = useState(task.contacts?.email || '');
+    const [editAssigneePhone, setEditAssigneePhone] = useState(String(task.contacts?.phone || '').trim());
     const [editPriority, setEditPriority] = useState(task.priority);
     const [showAllPredecessors, setShowAllPredecessors] = useState(false);
 
@@ -43,6 +47,8 @@ const TaskItem = memo(function TaskItem({
         setEditTitle(task.text);
         setEditPhaseId(task.project_phase_id || '');
         setEditAssigneeId(task.assignee_id || '');
+        setEditAssigneeEmail(task.contacts?.email || '');
+        setEditAssigneePhone(String(task.contacts?.phone || '').trim());
         setEditPriority(task.priority);
     }, [task]);
 
@@ -227,8 +233,12 @@ const TaskItem = memo(function TaskItem({
     const saveAssign = () => {
         const validAssignee =
             editAssigneeId && assignableContacts.some((c) => c.id === editAssigneeId) ? editAssigneeId : null;
+        const normalizedAssigneeEmail = String(editAssigneeEmail || '').trim().toLowerCase();
+        const trimmedAssigneePhone = String(editAssigneePhone || '').trim();
         onEdit(task.id, {
             assignee_id: validAssignee,
+            assignee_email: validAssignee ? null : (normalizedAssigneeEmail || null),
+            assignee_phone: validAssignee ? null : (trimmedAssigneePhone || null),
             priority: editPriority,
         });
         setPanel(null);
@@ -248,10 +258,42 @@ const TaskItem = memo(function TaskItem({
         .filter(Boolean)
         .join(' · ');
 
-    const assigneeName = task.contacts?.name || null;
-    const assigneeLabel = assigneeName
-        ? assigneeName.split(' ')[0]
-        : 'Assign';
+    const formatAssigneePhone = (phone) => {
+        const raw = String(phone || '').trim();
+        if (!raw) return '';
+        const digits = raw.replace(/\D/g, '');
+        if (digits.length === 11 && digits.startsWith('1')) {
+            return `(${digits.slice(1, 4)}) ${digits.slice(4, 7)}-${digits.slice(7)}`;
+        }
+        if (digits.length === 10) {
+            return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`;
+        }
+        return raw;
+    };
+
+    const selectedAssigneeContact = useMemo(() => {
+        if (task.contacts) return task.contacts;
+        if (!task.assignee_id) return null;
+        return assignableContacts.find((contact) => contact.id === task.assignee_id) || null;
+    }, [task.contacts, task.assignee_id, assignableContacts]);
+    const assigneeName = String(selectedAssigneeContact?.name || '').trim();
+    const assigneeEmail = String(selectedAssigneeContact?.email || '').trim();
+    const assigneePhoneDisplay = formatAssigneePhone(selectedAssigneeContact?.phone);
+    const assigneePhoneNorm = normalizeAssigneePhone(String(selectedAssigneeContact?.phone || '').trim(), {
+        defaultRegion: 'US',
+    });
+    const assigneePhoneOkPing = assigneePhoneNorm.isValid;
+    const smsConsent = task.assignee_sms_consent ?? null;
+    const smsPingAllowed = assigneePhoneOkPing && smsConsent === 'confirmed';
+    const smsConsentBlocked = assigneePhoneOkPing && smsConsent === 'opted_out';
+    const looksLikePlaceholderName =
+        /^assignee?\b/i.test(assigneeName) ||
+        /^external assignee\b/i.test(assigneeName) ||
+        /^asignado\s*\(/i.test(assigneeName);
+    const assigneeDisplay = (
+        assigneeName && !looksLikePlaceholderName ? assigneeName : ''
+    ) || assigneeEmail || assigneePhoneDisplay || assigneeName || null;
+    const assigneeLabel = assigneeDisplay || 'Assign';
     const predecessors = dependencyMeta?.predecessors || [];
     const successors = dependencyMeta?.successors || [];
     const depCount = predecessors.length + successors.length;
@@ -317,8 +359,8 @@ const TaskItem = memo(function TaskItem({
                 {/* ── Row 1: What ── */}
                 <div className="flex items-start justify-between gap-3">
                     {/* Left: checkbox + task name */}
-                    <div className="flex min-w-0 flex-1 items-start gap-2.5">
-                        <div className="mt-0.5 flex items-center gap-1">
+                    <div className="flex min-w-0 flex-1 items-center gap-2.5">
+                        <div className="flex items-center gap-1">
                             {unmetCount > 0 && !isComplete && (
                                 <Icon
                                     path="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 0h10.5A1.5 1.5 0 0118.75 12v7.5A1.5 1.5 0 0117.25 21h-10.5A1.5 1.5 0 015.25 19.5V12a1.5 1.5 0 011.5-1.5z"
@@ -545,15 +587,15 @@ const TaskItem = memo(function TaskItem({
                             fallback={
                                 <span
                                     className={`flex shrink-0 items-center gap-1 rounded-md px-1.5 py-1 text-xs ${
-                                        assigneeName ? 'text-gray-600' : 'text-gray-400'
+                                        assigneeDisplay ? 'text-gray-600' : 'text-gray-400'
                                     }`}
-                                    title={assigneeName ? `Assigned: ${assigneeName}` : 'Unassigned'}
+                                    title={assigneeDisplay ? `Assigned: ${assigneeDisplay}` : 'Unassigned'}
                                 >
                                     <Icon
                                         path="M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.433-3.059M4.318 18.318a9.38 9.38 0 01-.372-2.625 9.337 9.337 0 01.952-4.121 4.125 4.125 0 017.433 3.059M12 9.75a2.25 2.25 0 100-4.5 2.25 2.25 0 000 4.5z"
                                         className="h-3.5 w-3.5 shrink-0"
                                     />
-                                    <span className="hidden sm:inline max-w-[96px] ui-ellipsis-1">{assigneeName || 'Assign'}</span>
+                                    <span className="hidden sm:inline max-w-[96px] ui-ellipsis-1">{assigneeDisplay || 'Assign'}</span>
                                 </span>
                             }
                         >
@@ -565,7 +607,7 @@ const TaskItem = memo(function TaskItem({
                                         ? 'text-gray-600 hover:text-gray-900'
                                         : 'text-gray-400 hover:text-gray-600'
                                 }`}
-                                title={assigneeName ? `Assigned: ${assigneeName} — click to change` : 'Assign task'}
+                                title={assigneeDisplay ? `Assigned: ${assigneeDisplay} — click to change` : 'Assign task'}
                                 aria-label="Assignment"
                             >
                                 <Icon
@@ -578,26 +620,68 @@ const TaskItem = memo(function TaskItem({
 
                         {onPingAssignee &&
                             task.assignee_id &&
-                            task.contacts?.email &&
-                            String(task.contacts.email).includes('@') && (
+                            (
+                                (assigneeEmail && assigneeEmail.includes('@')) ||
+                                Boolean(String(selectedAssigneeContact?.phone || '').trim())
+                            ) && (
                                 <PermissionGuard permission="can_assign_tasks">
-                                    <button
-                                        type="button"
-                                        onClick={(event) => {
-                                            event.stopPropagation();
-                                            onPingAssignee(task);
-                                        }}
-                                        disabled={pingingTaskId === task.id}
-                                        className="relative flex shrink-0 items-center gap-1 rounded-md border border-gray-200 bg-white px-1.5 py-1 text-xs text-gray-500 shadow-xs hover:border-blue-200 hover:text-blue-600 disabled:cursor-not-allowed disabled:opacity-50"
-                                        title="Email a reminder to the assignee now"
-                                        aria-label={`Ping assignee for task: ${task.text}`}
-                                    >
-                                        <Icon
-                                            path="M3.478 2.405a.75.75 0 0 0-.926.94l2.432 7.905H13.5a.75.75 0 0 1 0 1.5H4.984l-2.432 7.905a.75.75 0 0 0 .926.94 60.519 60.519 0 0 0 18.445-8.986.75.75 0 0 0 0-1.218A60.517 60.517 0 0 0 3.478 2.405z"
-                                            className="h-3.5 w-3.5 shrink-0"
-                                        />
-                                        <span className="hidden sm:inline">Ping</span>
-                                    </button>
+                                    <div className="flex shrink-0 items-center gap-0.5">
+                                        <button
+                                            type="button"
+                                            onClick={(event) => {
+                                                event.stopPropagation();
+                                                onPingAssignee(task);
+                                            }}
+                                            disabled={pingingTaskId === task.id}
+                                            className="relative flex shrink-0 items-center gap-1 rounded-md border border-gray-200 bg-white px-1.5 py-1 text-xs text-gray-500 shadow-xs hover:border-blue-200 hover:text-blue-600 disabled:cursor-not-allowed disabled:opacity-50"
+                                            title={
+                                                assigneePhoneOkPing && smsConsent !== 'confirmed' && !smsConsentBlocked
+                                                    ? 'Sends email now; SMS only after assignee replies YES (use consent buttons).'
+                                                    : 'Send a reminder to the assignee now'
+                                            }
+                                            aria-label={`Ping assignee for task: ${task.text}`}
+                                        >
+                                            <Icon
+                                                path="M3.478 2.405a.75.75 0 0 0-.926.94l2.432 7.905H13.5a.75.75 0 0 1 0 1.5H4.984l-2.432 7.905a.75.75 0 0 0 .926.94 60.519 60.519 0 0 0 18.445-8.986.75.75 0 0 0 0-1.218A60.517 60.517 0 0 0 3.478 2.405z"
+                                                className="h-3.5 w-3.5 shrink-0"
+                                            />
+                                            <span className="hidden sm:inline">Ping</span>
+                                        </button>
+                                        {onRequestAssigneeSmsConsent &&
+                                            assigneePhoneOkPing &&
+                                            !smsPingAllowed &&
+                                            !smsConsentBlocked &&
+                                            smsConsent !== 'pending' && (
+                                                <button
+                                                    type="button"
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        onRequestAssigneeSmsConsent(task, { forceResend: false });
+                                                    }}
+                                                    disabled={pingingTaskId === task.id}
+                                                    className="flex shrink-0 items-center rounded-md border border-amber-200 bg-amber-50 px-1 py-0.5 text-[10px] font-medium text-amber-900 hover:bg-amber-100 disabled:opacity-50"
+                                                    title="Send SMS consent"
+                                                >
+                                                    SMS OK?
+                                                </button>
+                                            )}
+                                        {onRequestAssigneeSmsConsent &&
+                                            smsConsent === 'pending' &&
+                                            !smsConsentBlocked && (
+                                                <button
+                                                    type="button"
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        onRequestAssigneeSmsConsent(task, { forceResend: true });
+                                                    }}
+                                                    disabled={pingingTaskId === task.id}
+                                                    className="flex shrink-0 items-center rounded-md border border-gray-200 bg-white px-1 py-0.5 text-[10px] text-gray-600 hover:border-blue-200 disabled:opacity-50"
+                                                    title="Resend consent (24h limit)"
+                                                >
+                                                    Resend
+                                                </button>
+                                            )}
+                                    </div>
                                 </PermissionGuard>
                             )}
 
@@ -679,11 +763,17 @@ const TaskItem = memo(function TaskItem({
                 {panel === 'assign' && (
                     <PermissionGuard permission="can_edit_tasks">
                         <div
-                            className="mt-2 space-y-2 rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 shadow-sm"
+                            className="mt-2 space-y-2 rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 shadow-sm select-text"
                             onClick={stop}
+                            onMouseDown={suppressRowDrag}
+                            onTouchStart={suppressRowDrag}
+                            onDragStart={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                            }}
                         >
                             <p className="text-xs font-semibold text-gray-800">Assignment</p>
-                            <div className="grid grid-cols-2 gap-2">
+                            <div className="grid grid-cols-1 gap-2 lg:grid-cols-[96px_minmax(180px,1fr)_minmax(220px,1.2fr)_minmax(170px,1fr)] lg:items-end">
                                 <label className="block text-xs text-gray-600">
                                     Priority
                                     <select
@@ -701,7 +791,13 @@ const TaskItem = memo(function TaskItem({
                                         Assignee
                                         <select
                                             value={editAssigneeId}
-                                            onChange={(e) => setEditAssigneeId(e.target.value)}
+                                            onChange={(e) => {
+                                                setEditAssigneeId(e.target.value);
+                                                if (e.target.value) {
+                                                    setEditAssigneeEmail('');
+                                                    setEditAssigneePhone('');
+                                                }
+                                            }}
                                             className="mt-0.5 w-full rounded border border-gray-300 bg-white p-1.5 text-sm"
                                         >
                                             <option value="">Unassigned</option>
@@ -711,6 +807,40 @@ const TaskItem = memo(function TaskItem({
                                                 </option>
                                             ))}
                                         </select>
+                                    </label>
+                                </PermissionGuard>
+                                <PermissionGuard permission="can_assign_tasks">
+                                    <label className="block text-xs text-gray-600">
+                                        Assignee email
+                                        <input
+                                            type="email"
+                                            value={editAssigneeEmail}
+                                            onChange={(e) => {
+                                                setEditAssigneeEmail(e.target.value);
+                                                if (e.target.value.trim()) {
+                                                    setEditAssigneeId('');
+                                                }
+                                            }}
+                                            className="mt-0.5 w-full rounded border border-gray-300 bg-white p-1.5 text-sm"
+                                            placeholder="name@example.com"
+                                        />
+                                    </label>
+                                    <label className="block text-xs text-gray-600">
+                                        Assignee phone
+                                        <input
+                                            type="tel"
+                                            inputMode="tel"
+                                            autoComplete="tel"
+                                            value={editAssigneePhone}
+                                            onChange={(e) => {
+                                                setEditAssigneePhone(formatAssigneePhone(e.target.value));
+                                                if (e.target.value.trim()) {
+                                                    setEditAssigneeId('');
+                                                }
+                                            }}
+                                            className="mt-0.5 w-full rounded border border-gray-300 bg-white p-1.5 text-sm"
+                                            placeholder="(555) 123-4567"
+                                        />
                                     </label>
                                 </PermissionGuard>
                             </div>
@@ -738,8 +868,14 @@ const TaskItem = memo(function TaskItem({
                 {panel === 'title' && (
                     <PermissionGuard permission="can_edit_tasks">
                         <div
-                            className="mt-2 flex flex-wrap items-center gap-2 rounded-xl border border-gray-200 bg-white px-3 py-2 shadow-sm"
+                            className="mt-2 flex flex-wrap items-center gap-2 rounded-xl border border-gray-200 bg-white px-3 py-2 shadow-sm select-text"
                             onClick={stop}
+                            onMouseDown={suppressRowDrag}
+                            onTouchStart={suppressRowDrag}
+                            onDragStart={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                            }}
                         >
                             <input
                                 type="text"

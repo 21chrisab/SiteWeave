@@ -15,6 +15,7 @@ export const ROUTE_PATHS = {
   notifications: '/settings/notifications',
   login: '/login',
   invite: '/invite/:token',
+  guestTaskShare: '/guest/tasks/:token',
 }
 
 export const PRIMARY_NAV_ITEMS = [

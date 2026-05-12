@@ -4,6 +4,7 @@ import DateRangePicker from './DateRangePicker';
 import PermissionGuard from './PermissionGuard';
 import { addDaysIso, localDateIso } from '../utils/dateHelpers';
 import Avatar from './Avatar';
+import { normalizeAssigneePhone } from '@siteweave/core-logic';
 
 const PERCENT_PRESETS = [0, 25, 50, 75, 100];
 
@@ -18,13 +19,19 @@ const TaskItem = memo(function TaskItem({
     onSelect,
     onOpenPhotos = null,
     onPingAssignee = null,
+    onRequestAssigneeSmsConsent = null,
     pingingTaskId = null,
 }) {
     const [isEditing, setIsEditing] = useState(false);
+    const [isAssigning, setIsAssigning] = useState(false);
     const [editText, setEditText] = useState(task.text);
     const [editStartDate, setEditStartDate] = useState(task.start_date || '');
     const [editDueDate, setEditDueDate] = useState(task.due_date || '');
     const [editPriority, setEditPriority] = useState(task.priority);
+    const [editAssigneeEmail, setEditAssigneeEmail] = useState(task.contacts?.email || '');
+    const [editAssigneePhone, setEditAssigneePhone] = useState(task.contacts?.phone || '');
+    const [assignAssigneeEmail, setAssignAssigneeEmail] = useState(task.contacts?.email || '');
+    const [assignAssigneePhone, setAssignAssigneePhone] = useState(task.contacts?.phone || '');
     
     
     const priorityClasses = {
@@ -39,6 +46,13 @@ const TaskItem = memo(function TaskItem({
     };
     const progressPercent = Math.max(0, Math.min(100, Number(task.percent_complete ?? (task.completed ? 100 : 0)) || 0));
     const isComplete = task.completed || progressPercent >= 100;
+
+    const assigneeEmailOk = Boolean(task.contacts?.email && String(task.contacts.email).includes('@'));
+    const assigneePhoneNorm = normalizeAssigneePhone(String(task.contacts?.phone || '').trim(), { defaultRegion: 'US' });
+    const assigneePhoneOk = assigneePhoneNorm.isValid;
+    const smsConsent = task.assignee_sms_consent ?? null;
+    const smsPingAllowed = assigneePhoneOk && smsConsent === 'confirmed';
+    const smsConsentBlocked = assigneePhoneOk && smsConsent === 'opted_out';
 
     /** null = show committed value from task; string = in-progress edit */
     const [percentDraft, setPercentDraft] = useState(null);
@@ -62,14 +76,42 @@ const TaskItem = memo(function TaskItem({
 
     useEffect(() => {
         setPercentDraft(null);
-    }, [task.id]);
+        setIsAssigning(false);
+        const em = task.contacts?.email || '';
+        const ph = task.contacts?.phone || '';
+        setAssignAssigneeEmail(em);
+        setAssignAssigneePhone(ph);
+        setEditAssigneeEmail(em);
+        setEditAssigneePhone(ph);
+    }, [task.id, task.assignee_id, task.contacts?.email, task.contacts?.phone]);
+
+    const handleSaveAssign = () => {
+        const normalizedAssigneeEmail = String(assignAssigneeEmail || '').trim().toLowerCase();
+        const trimmedAssigneePhone = String(assignAssigneePhone || '').trim();
+        onEdit(task.id, {
+            assignee_id: (!normalizedAssigneeEmail && !trimmedAssigneePhone) ? null : undefined,
+            assignee_email: normalizedAssigneeEmail || null,
+            assignee_phone: trimmedAssigneePhone || null,
+        });
+        setIsAssigning(false);
+    };
+
+    const handleCancelAssign = () => {
+        setAssignAssigneeEmail(task.contacts?.email || '');
+        setAssignAssigneePhone(task.contacts?.phone || '');
+        setIsAssigning(false);
+    };
 
     const handleSaveEdit = () => {
+        const normalizedAssigneeEmail = String(editAssigneeEmail || '').trim().toLowerCase();
+        const trimmedAssigneePhone = String(editAssigneePhone || '').trim();
         onEdit(task.id, {
             text: editText,
             start_date: editStartDate || null,
             due_date: editDueDate || null,
-            priority: editPriority
+            priority: editPriority,
+            assignee_email: normalizedAssigneeEmail || null,
+            assignee_phone: trimmedAssigneePhone || null,
         });
         setIsEditing(false);
     };
@@ -79,6 +121,8 @@ const TaskItem = memo(function TaskItem({
         setEditStartDate(task.start_date || '');
         setEditDueDate(task.due_date || '');
         setEditPriority(task.priority);
+        setEditAssigneeEmail(task.contacts?.email || '');
+        setEditAssigneePhone(task.contacts?.phone || '');
         setIsEditing(false);
     };
 
@@ -123,6 +167,48 @@ const TaskItem = memo(function TaskItem({
         []
     );
 
+    if (isAssigning) {
+        return (
+            <li className="p-3 rounded-xl bg-indigo-50/90 border border-indigo-200 overflow-visible">
+                <div className="space-y-3">
+                    <p className="text-sm font-semibold text-gray-800">Assign task</p>
+                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                        <input
+                            type="email"
+                            value={assignAssigneeEmail}
+                            onChange={(e) => setAssignAssigneeEmail(e.target.value)}
+                            className="w-full p-2 border rounded-lg"
+                            placeholder="Assignee email (optional)"
+                        />
+                        <input
+                            type="tel"
+                            inputMode="tel"
+                            autoComplete="tel"
+                            value={assignAssigneePhone}
+                            onChange={(e) => setAssignAssigneePhone(e.target.value)}
+                            className="w-full p-2 border rounded-lg"
+                            placeholder="Assignee phone (optional)"
+                        />
+                    </div>
+                    <div className="flex gap-2">
+                        <button
+                            onClick={handleSaveAssign}
+                            className="px-3 py-1 bg-indigo-600 text-white rounded text-sm hover:bg-indigo-700"
+                        >
+                            Assign
+                        </button>
+                        <button
+                            onClick={handleCancelAssign}
+                            className="px-3 py-1 bg-gray-500 text-white rounded text-sm hover:bg-gray-600"
+                        >
+                            Cancel
+                        </button>
+                    </div>
+                </div>
+            </li>
+        );
+    }
+
     if (isEditing) {
         return (
             <li className="p-3 rounded-xl bg-blue-50/90 border border-blue-200 overflow-visible">
@@ -158,6 +244,24 @@ const TaskItem = memo(function TaskItem({
                             <option value="Medium">Medium</option>
                             <option value="High">High</option>
                         </select>
+                    </div>
+                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                        <input
+                            type="email"
+                            value={editAssigneeEmail}
+                            onChange={(e) => setEditAssigneeEmail(e.target.value)}
+                            className="w-full p-2 border rounded-lg"
+                            placeholder="Assignee email (optional)"
+                        />
+                        <input
+                            type="tel"
+                            inputMode="tel"
+                            autoComplete="tel"
+                            value={editAssigneePhone}
+                            onChange={(e) => setEditAssigneePhone(e.target.value)}
+                            className="w-full p-2 border rounded-lg"
+                            placeholder="Assignee phone (optional)"
+                        />
                     </div>
                     <div className="flex gap-2">
                         <button
@@ -290,27 +394,108 @@ const TaskItem = memo(function TaskItem({
                         </span>
                     )
                 )}
-                {onPingAssignee &&
-                    task.assignee_id &&
-                    task.contacts?.email &&
-                    String(task.contacts.email).includes('@') && (
+                {onPingAssignee && task.assignee_id && (assigneeEmailOk || assigneePhoneOk) && (
                         <PermissionGuard permission="can_assign_tasks">
-                            <button
-                                type="button"
-                                onClick={(e) => {
-                                    e.stopPropagation();
-                                    onPingAssignee(task);
-                                }}
-                                disabled={pingingTaskId === task.id}
-                                className="shrink-0 rounded-lg border border-gray-200 bg-white p-1.5 text-gray-500 shadow-xs transition hover:border-blue-200 hover:text-blue-600 disabled:cursor-not-allowed disabled:opacity-50"
-                                title="Email a reminder to the assignee now"
-                                aria-label={`Ping assignee for task: ${task.text}`}
-                            >
-                                <Icon
-                                    path="M3.478 2.405a.75.75 0 0 0-.926.94l2.432 7.905H13.5a.75.75 0 0 1 0 1.5H4.984l-2.432 7.905a.75.75 0 0 0 .926.94 60.519 60.519 0 0 0 18.445-8.986.75.75 0 0 0 0-1.218A60.517 60.517 0 0 0 3.478 2.405z"
-                                    className="h-4 w-4"
-                                />
-                            </button>
+                            <div className="flex shrink-0 items-center gap-0.5">
+                                {assigneeEmailOk && (
+                                    <button
+                                        type="button"
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            onPingAssignee(task, 'email');
+                                        }}
+                                        disabled={pingingTaskId === task.id}
+                                        className="shrink-0 rounded-lg border border-gray-200 bg-white p-1.5 text-gray-500 shadow-xs transition hover:border-blue-200 hover:text-blue-600 disabled:cursor-not-allowed disabled:opacity-50"
+                                        title="Ping assignee by email"
+                                        aria-label={`Ping assignee by email for task: ${task.text}`}
+                                    >
+                                        <Icon
+                                            path="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"
+                                            className="h-4 w-4"
+                                        />
+                                    </button>
+                                )}
+                                {assigneePhoneOk && (
+                                    <>
+                                        {smsPingAllowed ? (
+                                            <button
+                                                type="button"
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    onPingAssignee(task, 'sms');
+                                                }}
+                                                disabled={pingingTaskId === task.id}
+                                                className="shrink-0 rounded-lg border border-gray-200 bg-white p-1.5 text-gray-500 shadow-xs transition hover:border-emerald-200 hover:text-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
+                                                title="Ping assignee by SMS"
+                                                aria-label={`Ping assignee by SMS for task: ${task.text}`}
+                                            >
+                                                <Icon
+                                                    path="M2.25 6.75c0 8.284 6.716 15 15 15h2.25a2.25 2.25 0 002.25-2.25v-1.372c0-.516-.351-.966-.852-1.091l-4.423-1.106c-.44-.11-.902.055-1.173.417l-.97 1.293c-.282.376-.769.608-1.294.608H15a2.25 2.25 0 01-2.25-2.25v-9.75c0-1.24 1.01-2.25 2.25-2.25h.75c.525 0 1.012.232 1.294.608l.97 1.293c.271.362.733.527 1.173.417l4.423-1.105c.5-.125.852-.575.852-1.091V4.5A2.25 2.25 0 0019.5 2.25H17.25c-8.284 0-15 6.716-15 15z"
+                                                    className="h-4 w-4"
+                                                />
+                                            </button>
+                                        ) : (
+                                            <button
+                                                type="button"
+                                                disabled
+                                                className="shrink-0 cursor-not-allowed rounded-lg border border-gray-100 bg-gray-50 p-1.5 text-gray-300"
+                                                title={
+                                                    smsConsentBlocked
+                                                        ? 'This number opted out of SMS.'
+                                                        : 'Awaiting SMS consent — assignee must reply YES to the opt-in text.'
+                                                }
+                                                aria-label="SMS ping unavailable until consent"
+                                            >
+                                                <Icon
+                                                    path="M2.25 6.75c0 8.284 6.716 15 15 15h2.25a2.25 2.25 0 002.25-2.25v-1.372c0-.516-.351-.966-.852-1.091l-4.423-1.106c-.44-.11-.902.055-1.173.417l-.97 1.293c-.282.376-.769.608-1.294.608H15a2.25 2.25 0 01-2.25-2.25v-9.75c0-1.24 1.01-2.25 2.25-2.25h.75c.525 0 1.012.232 1.294.608l.97 1.293c.271.362.733.527 1.173.417l4.423-1.105c.5-.125.852-.575.852-1.091V4.5A2.25 2.25 0 0019.5 2.25H17.25c-8.284 0-15 6.716-15 15z"
+                                                    className="h-4 w-4"
+                                                />
+                                            </button>
+                                        )}
+                                        {onRequestAssigneeSmsConsent &&
+                                            !smsPingAllowed &&
+                                            !smsConsentBlocked &&
+                                            smsConsent !== 'pending' && (
+                                                <button
+                                                    type="button"
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        onRequestAssigneeSmsConsent(task, { forceResend: false });
+                                                    }}
+                                                    disabled={pingingTaskId === task.id}
+                                                    className="shrink-0 rounded-lg border border-amber-200 bg-amber-50 p-1.5 text-amber-800 shadow-xs transition hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-50"
+                                                    title="Send SMS consent request (reply YES required)"
+                                                    aria-label={`Send SMS consent for task: ${task.text}`}
+                                                >
+                                                    <Icon
+                                                        path="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                                                        className="h-4 w-4"
+                                                    />
+                                                </button>
+                                            )}
+                                        {onRequestAssigneeSmsConsent &&
+                                            smsConsent === 'pending' &&
+                                            !smsConsentBlocked && (
+                                                <button
+                                                    type="button"
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        onRequestAssigneeSmsConsent(task, { forceResend: true });
+                                                    }}
+                                                    disabled={pingingTaskId === task.id}
+                                                    className="shrink-0 rounded-lg border border-gray-200 bg-white p-1.5 text-gray-500 shadow-xs transition hover:border-blue-200 hover:text-blue-600 disabled:cursor-not-allowed disabled:opacity-50"
+                                                    title="Resend consent SMS (max once per 24 hours)"
+                                                    aria-label={`Resend SMS consent for task: ${task.text}`}
+                                                >
+                                                    <Icon
+                                                        path="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99"
+                                                        className="h-4 w-4"
+                                                    />
+                                                </button>
+                                            )}
+                                    </>
+                                )}
+                            </div>
                         </PermissionGuard>
                     )}
                 <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity" role="group" aria-label="Task actions">
@@ -326,12 +511,34 @@ const TaskItem = memo(function TaskItem({
                     )}
                     <PermissionGuard permission="can_edit_tasks">
                         <button
-                            onClick={() => setIsEditing(true)}
+                            onClick={() => {
+                                setEditText(task.text);
+                                setEditStartDate(task.start_date || '');
+                                setEditDueDate(task.due_date || '');
+                                setEditPriority(task.priority);
+                                setEditAssigneeEmail(task.contacts?.email || '');
+                                setEditAssigneePhone(task.contacts?.phone || '');
+                                setIsEditing(true);
+                            }}
                             className="p-1 text-gray-500 hover:text-blue-600"
                             title="Edit task"
                             aria-label={`Edit task: ${task.text}`}
                         >
                             <Icon path="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10" className="w-4 h-4" />
+                        </button>
+                    </PermissionGuard>
+                    <PermissionGuard permission="can_assign_tasks">
+                        <button
+                            onClick={() => {
+                                setAssignAssigneeEmail(task.contacts?.email || '');
+                                setAssignAssigneePhone(task.contacts?.phone || '');
+                                setIsAssigning(true);
+                            }}
+                            className="p-1 text-gray-500 hover:text-indigo-600"
+                            title="Assign task"
+                            aria-label={`Assign task: ${task.text}`}
+                        >
+                            <Icon path="M18 7a4.5 4.5 0 11-9 0 4.5 4.5 0 019 0zM3.75 20.25a6.75 6.75 0 1113.5 0v.75H3.75v-.75zm14.25-8.25h3m-1.5-1.5v3" className="w-4 h-4" />
                         </button>
                     </PermissionGuard>
                     <PermissionGuard permission="can_delete_tasks">

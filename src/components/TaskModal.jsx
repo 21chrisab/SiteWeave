@@ -22,6 +22,14 @@ const selectClass = `${fieldClass} cursor-pointer appearance-none bg-white`;
 const chipClass =
     'rounded-full border border-gray-200 bg-white px-3 py-1 text-xs font-medium text-gray-700 shadow-xs transition hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20';
 
+function formatUsPhoneInput(value) {
+    const digits = String(value || '').replace(/\D/g, '').slice(0, 10);
+    if (digits.length === 0) return '';
+    if (digits.length < 4) return `(${digits}`;
+    if (digits.length < 7) return `(${digits.slice(0, 3)}) ${digits.slice(3)}`;
+    return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`;
+}
+
 function TaskModal({ project, projectPhases = [], onClose, onSave, isLoading = false, allTasks = [] }) {
     const { state } = useAppContext();
     const [text, setText] = useState('');
@@ -281,7 +289,6 @@ function TaskModal({ project, projectPhases = [], onClose, onSave, isLoading = f
                                                     setAssigneeEmail(e.target.value);
                                                     if (e.target.value.trim()) {
                                                         setAssigneeId('');
-                                                        setAssigneePhone('');
                                                     }
                                                 }}
                                                 className={fieldClass}
@@ -297,14 +304,14 @@ function TaskModal({ project, projectPhases = [], onClose, onSave, isLoading = f
                                                 autoComplete="tel"
                                                 value={assigneePhone}
                                                 onChange={(e) => {
-                                                    setAssigneePhone(e.target.value);
+                                                    const formatted = formatUsPhoneInput(e.target.value);
+                                                    setAssigneePhone(formatted);
                                                     if (e.target.value.trim()) {
                                                         setAssigneeId('');
-                                                        setAssigneeEmail('');
                                                     }
                                                 }}
                                                 className={fieldClass}
-                                                placeholder="+1 555 123 4567"
+                                                placeholder="(555) 123-4567"
                                             />
                                         </div>
                                     </div>

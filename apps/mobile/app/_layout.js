@@ -4,7 +4,14 @@ import { useEffect } from 'react';
 import NoOrganizationScreen from '../components/NoOrganizationScreen';
 
 function RootLayoutNav() {
-  const { user, loading, activeOrganization, organizationError } = useAuth();
+  const {
+    user,
+    loading,
+    activeOrganization,
+    organizationError,
+    pendingNotificationRoute,
+    clearPendingNotificationRoute,
+  } = useAuth();
   const segments = useSegments();
   const router = useRouter();
 
@@ -26,6 +33,13 @@ function RootLayoutNav() {
 
     return () => clearTimeout(timer);
   }, [user, loading, segments, router]);
+
+  useEffect(() => {
+    if (!loading && user && pendingNotificationRoute) {
+      router.push(pendingNotificationRoute);
+      clearPendingNotificationRoute?.();
+    }
+  }, [loading, user, pendingNotificationRoute, router, clearPendingNotificationRoute]);
 
   // Show no organization screen if user is logged in but has no organization
   if (!loading && user && !activeOrganization && organizationError) {

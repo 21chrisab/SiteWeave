@@ -143,6 +143,41 @@ export async function deleteRole(supabase, roleId) {
 }
 
 /**
+ * If anyone in the org has fromRoleId, move them to toRoleId, then delete fromRoleId.
+ * If nobody has that role, deletes without needing toRoleId.
+ */
+export async function reassignOrganizationMembersAndDeleteRole(
+  supabase,
+  organizationId,
+  fromRoleId,
+  toRoleId,
+) {
+  const { count, error: countError } = await supabase
+    .from('profiles')
+    .select('id', { count: 'exact', head: true })
+    .eq('organization_id', organizationId)
+    .eq('role_id', fromRoleId);
+
+  if (countError) throw countError;
+
+  const n = count ?? 0;
+  if (n > 0) {
+    if (!toRoleId) {
+      throw new Error('Choose a role to move members to before deleting.');
+    }
+    const { error: updateError } = await supabase
+      .from('profiles')
+      .update({ role_id: toRoleId })
+      .eq('organization_id', organizationId)
+      .eq('role_id', fromRoleId);
+
+    if (updateError) throw updateError;
+  }
+
+  await deleteRole(supabase, fromRoleId);
+}
+
+/**
  * Assign a role to a user
  * @param {import('@supabase/supabase-js').SupabaseClient} supabase - Supabase client
  * @param {string} userId - User ID

@@ -112,7 +112,8 @@ function startOAuthServer() {
 
     // Handle OAuth callbacks
     if (pathname.includes('-callback')) {
-      const provider = pathname.replace('/-callback', '').replace('/', '');
+      // e.g. /google-callback -> google
+      const provider = pathname.replace(/^\//, '').replace(/-callback$/, '');
       
       // Send CORS headers
       res.setHeader('Access-Control-Allow-Origin', '*');

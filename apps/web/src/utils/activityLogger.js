@@ -136,8 +136,22 @@ export function logTaskDeleted(task, user, projectId) {
 }
 
 /** kind: 'assignment' | 'ping' — proof of immediate email to assignee */
-export function logTaskAssigneeEmailSent({ task, user, projectId, kind, recipientEmail, success, errorMessage }) {
-    const action = kind === 'ping' ? 'assignee_ping_email' : 'assignee_assignment_email';
+export function logTaskAssigneeEmailSent({
+    task,
+    user,
+    projectId,
+    kind,
+    recipientEmail,
+    success,
+    errorMessage,
+    channel = 'email',
+}) {
+    let action;
+    if (kind === 'ping') {
+        action = channel === 'sms' ? 'assignee_ping_sms' : 'assignee_ping_email';
+    } else {
+        action = 'assignee_assignment_email';
+    }
     return logActivity({
         action,
         entityType: 'task',
@@ -148,6 +162,7 @@ export function logTaskAssigneeEmailSent({ task, user, projectId, kind, recipien
         user,
         details: {
             kind,
+            channel,
             recipient_email: recipientEmail,
             success: success !== false,
             error: errorMessage || null,

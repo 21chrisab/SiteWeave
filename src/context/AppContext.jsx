@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useReducer, useState, useRef } from 'react';
+import React, { createContext, useContext, useEffect, useReducer, useState, useRef, useCallback } from 'react';
 import { createSupabaseClient } from '@siteweave/core-logic';
 import supabaseElectronAuth from '../utils/supabaseElectronAuth';
 import { dedupeTasksById } from '../utils/taskDedupe';
@@ -20,10 +20,16 @@ console.log('SUPABASE_ANON_KEY:', SUPABASE_ANON_KEY ? 'Present' : 'Missing');
 // Use shared Supabase client creation
 const supabaseClient = createSupabaseClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
+// Inject the canonical client into the Electron OAuth handler so it can do the
+// PKCE code-for-session exchange itself (no React mount required).
+supabaseElectronAuth.init(supabaseClient);
+
 export { supabaseClient };
 
 export const AppContext = createContext();
-let authBootstrapInitialized = false;
+
+/** Latest reducer state for lazy loaders (avoids stale closures across `await import()` / network). */
+const appStateRefForLazy = { current: null };
 
 // Helper functions for sessionStorage persistence
 const STORAGE_KEY = 'siteweave_app_state';
@@ -308,6 +314,7 @@ function appReducer(state, action) {
 
 export const AppProvider = ({ children }) => {
   const [state, dispatch] = useReducer(appReducer, initialState);
+  appStateRefForLazy.current = state;
   const currentActiveViewRef = useRef(state.activeView);
   /** Last org id after a successful fetch — used to reset lazy-loaded data on org / user context change */
   const lastOrgIdForLazyRef = useRef(undefined);
@@ -428,11 +435,6 @@ export const AppProvider = ({ children }) => {
   }, [state.tasks]);
 
   useEffect(() => {
-    if (authBootstrapInitialized) {
-      return;
-    }
-    authBootstrapInitialized = true;
-
     // Check for existing session
     const getInitialSession = async () => {
       try {
@@ -522,15 +524,20 @@ export const AppProvider = ({ children }) => {
       }
     );
 
-    // Listen for Electron OAuth callbacks
-    const handleElectronOAuthCallback = (event) => {
-      const { session } = event.detail;
-      if (session) {
-        console.log('Setting Supabase session from OAuth callback:', session);
-        // Set the session in Supabase client
-        supabaseClient.auth.setSession(session);
+    // Electron OAuth callbacks are handled directly inside `supabaseElectronAuth`
+    // (which runs the PKCE code-for-session exchange and dispatches
+    // `supabase-oauth-success` / `supabase-oauth-error`). We still listen here as
+    // a defensive fallback so the UI updates even if `onAuthStateChange` misses
+    // the event for any reason.
+    const handleOAuthSuccess = (event) => {
+      const session = event?.detail?.session;
+      console.log('[OAuth] Success event received in AppContext:', !!session?.user);
+      if (session?.user) {
+        dispatch({ type: 'SET_USER', payload: session.user });
+        dispatch({ type: 'SET_AUTH_LOADING', payload: false });
       }
     };
+    window.addEventListener('supabase-oauth-success', handleOAuthSuccess);
 
     // Listen for postMessage from OAuth callback window
     const handlePostMessage = (event) => {
@@ -576,7 +583,6 @@ export const AppProvider = ({ children }) => {
       }
     };
 
-    window.addEventListener('supabase-oauth-callback', handleElectronOAuthCallback);
     window.addEventListener('message', handlePostMessage);
 
     // Global error handler for unhandled Supabase auth errors
@@ -607,9 +613,9 @@ export const AppProvider = ({ children }) => {
 
     return () => {
       subscription.unsubscribe();
-      window.removeEventListener('supabase-oauth-callback', handleElectronOAuthCallback);
       window.removeEventListener('message', handlePostMessage);
       window.removeEventListener('unhandledrejection', handleUnhandledError);
+      window.removeEventListener('supabase-oauth-success', handleOAuthSuccess);
     };
   }, []);
 
@@ -1065,10 +1071,10 @@ export const AppProvider = ({ children }) => {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'tasks' }, async (payload) => {
         try {
           if (payload.eventType === 'INSERT') {
-            const { data: updatedTask } = await supabaseClient.from('tasks').select('*, contacts(name, avatar_url)').eq('id', payload.new.id).single();
-            if (updatedTask) dispatch({ type: 'ADD_TASK', payload: updatedTask });
-          } else if (payload.eventType === 'UPDATE') {
-            const { data: updatedTask } = await supabaseClient.from('tasks').select('*, contacts(name, avatar_url)').eq('id', payload.new.id).single();
+          const { data: updatedTask } = await supabaseClient.from('tasks').select('*, contacts(name, avatar_url, email, phone)').eq('id', payload.new.id).single();
+          if (updatedTask) dispatch({ type: 'ADD_TASK', payload: updatedTask });
+        } else if (payload.eventType === 'UPDATE') {
+          const { data: updatedTask } = await supabaseClient.from('tasks').select('*, contacts(name, avatar_url, email, phone)').eq('id', payload.new.id).single();
             if (updatedTask) dispatch({ type: 'UPDATE_TASK', payload: updatedTask });
           } else if (payload.eventType === 'DELETE') {
             dispatch({ type: 'DELETE_TASK', payload: payload.old.id });
@@ -1181,33 +1187,33 @@ export const useAppContext = () => useContext(AppContext);
 // Custom hook for lazy loading data
 export const useLazyDataLoader = () => {
   const { state, dispatch } = useAppContext();
-  
-  const loadTasksIfNeeded = async () => {
-    if (state.tasksLoaded) return;
-    
+  const getState = useCallback(() => appStateRefForLazy.current, []);
+
+  const loadTasksIfNeeded = useCallback(async () => {
     const { loadTasksIfNeeded: loadTasks } = await import('../utils/lazyDataLoader');
-    await loadTasks(supabaseClient, dispatch, state);
-  };
-  
-  const loadFilesIfNeeded = async () => {
-    if (state.filesLoaded) return;
-    
+    await loadTasks(supabaseClient, dispatch, getState);
+  }, [dispatch, getState]);
+
+  const loadFilesIfNeeded = useCallback(async () => {
+    if (getState()?.filesLoaded) return;
     const { loadFilesIfNeeded: loadFiles } = await import('../utils/lazyDataLoader');
-    await loadFiles(supabaseClient, dispatch, state);
-  };
-  
-  const loadCalendarEventsIfNeeded = async () => {
-    if (state.calendarEventsLoaded) return;
-    
+    await loadFiles(supabaseClient, dispatch, getState);
+  }, [dispatch, getState]);
+
+  const loadCalendarEventsIfNeeded = useCallback(async () => {
+    if (getState()?.calendarEventsLoaded) return;
     const { loadCalendarEventsIfNeeded: loadEvents } = await import('../utils/lazyDataLoader');
-    await loadEvents(supabaseClient, dispatch, state);
-  };
-  
-  const loadProjectTasks = async (projectId) => {
-    const { loadProjectTasks: loadTasks } = await import('../utils/lazyDataLoader');
-    return await loadTasks(supabaseClient, dispatch, projectId, state);
-  };
-  
+    await loadEvents(supabaseClient, dispatch, getState);
+  }, [dispatch, getState]);
+
+  const loadProjectTasks = useCallback(
+    async (projectId) => {
+      const { loadProjectTasks: loadTasks } = await import('../utils/lazyDataLoader');
+      return await loadTasks(supabaseClient, dispatch, projectId, getState);
+    },
+    [dispatch, getState],
+  );
+
   return {
     loadTasksIfNeeded,
     loadFilesIfNeeded,

@@ -24,6 +24,10 @@ if (import.meta.env.DEV) {
   });
 }
 
+// Inject the canonical client into the Electron OAuth handler so it can do the
+// PKCE code-for-session exchange itself (no React mount required).
+supabaseElectronAuth.init(supabaseClient);
+
 export { supabaseClient };
 
 export const AppContext = createContext();
@@ -522,15 +526,20 @@ export const AppProvider = ({ children }) => {
       }
     );
 
-    // Listen for Electron OAuth callbacks
-    const handleElectronOAuthCallback = (event) => {
-      const { session } = event.detail;
-      if (session) {
-        console.log('Setting Supabase session from OAuth callback:', session);
-        // Set the session in Supabase client
-        supabaseClient.auth.setSession(session);
+    // Electron OAuth callbacks are handled directly inside `supabaseElectronAuth`
+    // (which runs the PKCE code-for-session exchange and dispatches
+    // `supabase-oauth-success` / `supabase-oauth-error`). We still listen here as
+    // a defensive fallback so the UI updates even if `onAuthStateChange` misses
+    // the event for any reason.
+    const handleOAuthSuccess = (event) => {
+      const session = event?.detail?.session;
+      console.log('[OAuth] Success event received in AppContext:', !!session?.user);
+      if (session?.user) {
+        dispatch({ type: 'SET_USER', payload: session.user });
+        dispatch({ type: 'SET_AUTH_LOADING', payload: false });
       }
     };
+    window.addEventListener('supabase-oauth-success', handleOAuthSuccess);
 
     // Listen for postMessage from OAuth callback window
     const handlePostMessage = (event) => {
@@ -576,7 +585,6 @@ export const AppProvider = ({ children }) => {
       }
     };
 
-    window.addEventListener('supabase-oauth-callback', handleElectronOAuthCallback);
     window.addEventListener('message', handlePostMessage);
 
     // Global error handler for unhandled Supabase auth errors
@@ -607,9 +615,9 @@ export const AppProvider = ({ children }) => {
 
     return () => {
       subscription.unsubscribe();
-      window.removeEventListener('supabase-oauth-callback', handleElectronOAuthCallback);
       window.removeEventListener('message', handlePostMessage);
       window.removeEventListener('unhandledrejection', handleUnhandledError);
+      window.removeEventListener('supabase-oauth-success', handleOAuthSuccess);
     };
   }, []);
 
@@ -871,7 +879,7 @@ export const AppProvider = ({ children }) => {
 
           const [{ data: projects }, { data: tasks }, { data: files }, {data: calendarEvents}, {data: messageChannels}, {data: messages}, { data: userPreferences, error: userPrefsError }, activityLog] = await Promise.all([
             supabaseClient.from('projects').select('*'),
-            supabaseClient.from('tasks').select('*, contacts!fk_tasks_assignee_id(name, avatar_url, email)'),
+            supabaseClient.from('tasks').select('*, contacts!fk_tasks_assignee_id(name, avatar_url, email, phone)'),
             supabaseClient.from('files').select('*'),
             supabaseClient.from('calendar_events').select('*'),
             supabaseClient.from('message_channels').select('*'),
@@ -1059,10 +1067,10 @@ export const AppProvider = ({ children }) => {
     const tasksSubscription = supabaseClient.channel('public:tasks')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'tasks' }, async (payload) => {
         if (payload.eventType === 'INSERT') {
-          const { data: updatedTask } = await supabaseClient.from('tasks').select('*, contacts!fk_tasks_assignee_id(name, avatar_url, email)').eq('id', payload.new.id).single();
+          const { data: updatedTask } = await supabaseClient.from('tasks').select('*, contacts!fk_tasks_assignee_id(name, avatar_url, email, phone)').eq('id', payload.new.id).single();
           if (updatedTask) dispatch({ type: 'ADD_TASK', payload: updatedTask });
         } else if (payload.eventType === 'UPDATE') {
-          const { data: updatedTask } = await supabaseClient.from('tasks').select('*, contacts!fk_tasks_assignee_id(name, avatar_url, email)').eq('id', payload.new.id).single();
+          const { data: updatedTask } = await supabaseClient.from('tasks').select('*, contacts!fk_tasks_assignee_id(name, avatar_url, email, phone)').eq('id', payload.new.id).single();
           if (updatedTask) dispatch({ type: 'UPDATE_TASK', payload: updatedTask });
         } else if (payload.eventType === 'DELETE') {
           dispatch({ type: 'DELETE_TASK', payload: payload.old.id });

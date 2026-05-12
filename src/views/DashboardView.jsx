@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useAppContext, useLazyDataLoader, supabaseClient } from '../context/AppContext';
 import { useToast } from '../context/ToastContext';
@@ -27,10 +27,17 @@ function DashboardView() {
     const user = state.user;
     const projects = state.projects || [];
 
-    // Lazy load tasks when dashboard loads
+    const tasksBootstrapKey = useMemo(
+        () =>
+            `${user?.id ?? ''}|${state.currentOrganization?.id ?? ''}|${projects.length > 0 ? '1' : '0'}`,
+        [user?.id, state.currentOrganization?.id, projects.length],
+    );
+
+    // Lazy load tasks for dashboard KPIs once user/org/projects gate is stable (dedupe in lazyDataLoader handles overlap)
     useEffect(() => {
-        loadTasksIfNeeded();
-    }, []);
+        if (!user?.id) return;
+        void loadTasksIfNeeded();
+    }, [tasksBootstrapKey, state.tasksLoaded, loadTasksIfNeeded, user?.id]);
     const [showModal, setShowModal] = useState(false);
     const [isCreatingProject, setIsCreatingProject] = useState(false);
     const [isUpdatingProject, setIsUpdatingProject] = useState(false);

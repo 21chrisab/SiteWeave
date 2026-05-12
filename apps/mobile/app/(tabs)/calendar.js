@@ -1,5 +1,6 @@
 import { View, Text, StyleSheet, FlatList, ScrollView } from 'react-native';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
+import { useRouter } from 'expo-router';
 import { useAuth } from '../../context/AuthContext';
 import { fetchEventsByDate, fetchCalendarEvents } from '@siteweave/core-logic';
 import DatePickerStrip from '../../components/DatePickerStrip';
@@ -11,6 +12,7 @@ import { useHaptics } from '../../hooks/useHaptics';
 
 export default function CalendarScreen() {
   const { supabase } = useAuth();
+  const router = useRouter();
   const insets = useSafeAreaInsets();
   const haptics = useHaptics();
   const [selectedDate, setSelectedDate] = useState(new Date());
@@ -19,10 +21,35 @@ export default function CalendarScreen() {
   const [eventsByDate, setEventsByDate] = useState({});
   const [loading, setLoading] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
+  const [editingEvent, setEditingEvent] = useState(null);
+  const realtimeRef = useRef(null);
 
   useEffect(() => {
     loadAllEvents();
   }, []);
+
+  useEffect(() => {
+    if (!supabase) return;
+    if (realtimeRef.current) {
+      supabase.removeChannel(realtimeRef.current);
+      realtimeRef.current = null;
+    }
+
+    const channel = supabase
+      .channel('calendar_events_mobile')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'calendar_events' }, () => {
+        loadAllEvents();
+      })
+      .subscribe();
+    realtimeRef.current = channel;
+
+    return () => {
+      if (realtimeRef.current) {
+        supabase.removeChannel(realtimeRef.current);
+        realtimeRef.current = null;
+      }
+    };
+  }, [supabase]);
 
   useEffect(() => {
     if (selectedDate) {
@@ -55,6 +82,16 @@ export default function CalendarScreen() {
 
   const handleEventCreated = () => {
     loadAllEvents();
+  };
+
+  const handleOpenCreate = () => {
+    setEditingEvent(null);
+    setShowAddModal(true);
+  };
+
+  const handleOpenEdit = (event) => {
+    setEditingEvent(event);
+    setShowAddModal(true);
   };
 
   const loadEventsForDate = async () => {
@@ -110,7 +147,7 @@ export default function CalendarScreen() {
             <View style={styles.gapLine} />
           </View>
         )}
-        <View style={styles.eventCard}>
+        <PressableWithFade style={styles.eventCard} onPress={() => handleOpenEdit(item)} activeOpacity={0.85}>
           <View style={[styles.eventColorBar, { backgroundColor: eventColor }]} />
           <View style={styles.eventContent}>
             <View style={styles.eventHeader}>
@@ -138,8 +175,20 @@ export default function CalendarScreen() {
                 </Text>
               </View>
             )}
+            {item.project_id && (
+              <PressableWithFade
+                style={styles.eventActionButton}
+                onPress={() => {
+                  haptics.light();
+                  router.push(`/projects/${item.project_id}`);
+                }}
+              >
+                <Ionicons name="checkmark-done-outline" size={16} color="#1D4ED8" />
+                <Text style={styles.eventActionText}>Open project tasks</Text>
+              </PressableWithFade>
+            )}
           </View>
-        </View>
+        </PressableWithFade>
       </View>
     );
   };
@@ -174,7 +223,7 @@ export default function CalendarScreen() {
         style={styles.fab}
         onPress={() => {
           haptics.medium();
-          setShowAddModal(true);
+          handleOpenCreate();
         }}
         activeOpacity={0.8}
         hapticType="medium"
@@ -185,9 +234,14 @@ export default function CalendarScreen() {
       {/* Event Creation Modal */}
       <EventModal
         visible={showAddModal}
-        onClose={() => setShowAddModal(false)}
+        onClose={() => {
+          setShowAddModal(false);
+          setEditingEvent(null);
+        }}
         selectedDate={selectedDate}
         onEventCreated={handleEventCreated}
+        onEventDeleted={handleEventCreated}
+        eventToEdit={editingEvent}
       />
     </View>
   );
@@ -268,6 +322,24 @@ const styles = StyleSheet.create({
   eventCategoryText: {
     fontSize: 12,
     fontWeight: '600',
+  },
+  eventActionButton: {
+    marginTop: 10,
+    alignSelf: 'flex-start',
+    minHeight: 44,
+    borderRadius: 10,
+    backgroundColor: '#EFF6FF',
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+    paddingHorizontal: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  eventActionText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#1D4ED8',
   },
   gapContainer: {
     flexDirection: 'row',

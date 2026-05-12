@@ -1,7 +1,8 @@
 import { View, Text, StyleSheet, ScrollView, SectionList, FlatList } from 'react-native';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useAuth } from '../../../context/AuthContext';
+import * as ImagePicker from 'expo-image-picker';
 import {
   fetchProject,
   fetchTasksByProject,
@@ -10,17 +11,20 @@ import {
   updateTask,
   fetchProjectIssues,
   computeWeightedProjectProgressPercent,
+  uploadTaskPhotoSet,
 } from '@siteweave/core-logic';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import PhaseAccordion from '../../../components/PhaseAccordion';
 import ProjectTeamModal from '../../../components/ProjectTeamModal';
 import PressableWithFade from '../../../components/PressableWithFade';
+import { enqueueOfflineAction, processOfflineQueue } from '../../../utils/offlineQueue';
+import TaskDetailModal from '../../../components/TaskDetailModal';
 
 export default function ProjectDetailScreen() {
   const { id } = useLocalSearchParams();
   const router = useRouter();
-  const { supabase, activeOrganization } = useAuth();
+  const { supabase, activeOrganization, syncPulse } = useAuth();
   const insets = useSafeAreaInsets();
   const [project, setProject] = useState(null);
   const [tasks, setTasks] = useState([]);
@@ -30,10 +34,86 @@ export default function ProjectDetailScreen() {
   const [loading, setLoading] = useState(true);
   const [showTeamModal, setShowTeamModal] = useState(false);
   const [progress, setProgress] = useState(0);
+  const [isUpdatingPhase, setIsUpdatingPhase] = useState(false);
+  const [photoUploadTaskId, setPhotoUploadTaskId] = useState(null);
+  const [currentUserId, setCurrentUserId] = useState(null);
+  const subscriptionRef = useRef(null);
+  const [selectedTask, setSelectedTask] = useState(null);
+  const [showTaskModal, setShowTaskModal] = useState(false);
+  const [isSavingTask, setIsSavingTask] = useState(false);
 
   useEffect(() => {
     loadProjectData();
+    flushOfflineProjectActions();
   }, [id]);
+
+  useEffect(() => {
+    flushOfflineProjectActions();
+  }, [syncPulse]);
+
+  useEffect(() => {
+    if (!id || !supabase) return;
+    if (subscriptionRef.current) {
+      supabase.removeChannel(subscriptionRef.current);
+      subscriptionRef.current = null;
+    }
+
+    const channel = supabase
+      .channel(`project_live_${id}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'tasks', filter: `project_id=eq.${id}` }, () => {
+        loadProjectData();
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'project_phases', filter: `project_id=eq.${id}` }, () => {
+        loadProjectData();
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'project_issues', filter: `project_id=eq.${id}` }, () => {
+        if (activeTab === 'issues') loadIssues();
+      })
+      .subscribe();
+
+    subscriptionRef.current = channel;
+    return () => {
+      if (subscriptionRef.current) {
+        supabase.removeChannel(subscriptionRef.current);
+        subscriptionRef.current = null;
+      }
+    };
+  }, [id, supabase, activeTab]);
+
+  const flushOfflineProjectActions = async () => {
+    if (!supabase) return;
+    await processOfflineQueue({
+      complete_task: async (payload) => {
+        await completeTask(supabase, payload.taskId);
+      },
+      update_phase_progress: async (payload) => {
+        await supabase
+          .from('project_phases')
+          .update({ progress: payload.progress, updated_at: new Date().toISOString() })
+          .eq('id', payload.phaseId)
+          .eq('organization_id', payload.organizationId);
+      },
+      update_task: async (payload) => {
+        await updateTask(supabase, payload.taskId, payload.updates);
+      },
+      update_issue_status: async (payload) => {
+        await supabase
+          .from('project_issues')
+          .update({ status: payload.nextStatus, updated_at: new Date().toISOString() })
+          .eq('id', payload.issueId)
+          .eq('organization_id', payload.organizationId);
+      },
+    });
+  };
+
+  useEffect(() => {
+    const resolveCurrentUser = async () => {
+      if (!supabase) return;
+      const { data } = await supabase.auth.getUser();
+      setCurrentUserId(data?.user?.id || null);
+    };
+    resolveCurrentUser();
+  }, [supabase]);
 
   useEffect(() => {
     if (activeTab === 'issues' && id && supabase) {
@@ -117,6 +197,90 @@ export default function ProjectDetailScreen() {
       loadProjectData(); // Reload tasks
     } catch (error) {
       console.error('Error completing task:', error);
+      await enqueueOfflineAction({ type: 'complete_task', payload: { taskId } });
+      alert('Task completion queued for sync.');
+    }
+  };
+
+  const handleAdjustPhaseProgress = async (phase, delta) => {
+    if (!supabase || !activeOrganization || !phase?.id) return;
+    const currentValue = Number.isFinite(Number(phase.progress)) ? Number(phase.progress) : 0;
+    const nextProgress = Math.max(0, Math.min(100, currentValue + delta));
+    if (nextProgress === currentValue) return;
+
+    try {
+      setIsUpdatingPhase(true);
+      const { error } = await supabase
+        .from('project_phases')
+        .update({ progress: nextProgress, updated_at: new Date().toISOString() })
+        .eq('id', phase.id)
+        .eq('organization_id', activeOrganization.id);
+      if (error) throw error;
+      await loadProjectData();
+    } catch (error) {
+      console.error('Error updating phase progress:', error);
+      await enqueueOfflineAction({
+        type: 'update_phase_progress',
+        payload: {
+          phaseId: phase.id,
+          progress: nextProgress,
+          organizationId: activeOrganization.id,
+        },
+      });
+      alert('Progress update queued for sync.');
+    } finally {
+      setIsUpdatingPhase(false);
+    }
+  };
+
+  const pickAndUploadTaskPhoto = async (task, mode) => {
+    if (!task?.id || !task?.project_id || !activeOrganization?.id || !supabase) return;
+
+    try {
+      const permission =
+        mode === 'camera'
+          ? await ImagePicker.requestCameraPermissionsAsync()
+          : await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!permission.granted) {
+        alert('Photo permission is required to attach task photos.');
+        return;
+      }
+
+      const result =
+        mode === 'camera'
+          ? await ImagePicker.launchCameraAsync({
+              mediaTypes: ImagePicker.MediaTypeOptions.Images,
+              quality: 0.8,
+              allowsEditing: false,
+            })
+          : await ImagePicker.launchImageLibraryAsync({
+              mediaTypes: ImagePicker.MediaTypeOptions.Images,
+              quality: 0.8,
+              allowsEditing: false,
+            });
+
+      if (result.canceled || !result.assets?.[0]) return;
+      const asset = result.assets[0];
+      const response = await fetch(asset.uri);
+      const blob = await response.blob();
+      blob.type = asset.mimeType || blob.type || 'image/jpeg';
+
+      setPhotoUploadTaskId(task.id);
+      await uploadTaskPhotoSet(supabase, {
+        taskId: task.id,
+        organizationId: activeOrganization.id,
+        projectId: task.project_id,
+        originalFile: blob,
+        thumbnailFile: null,
+        uploadedByUserId: currentUserId,
+        capturedAt: new Date().toISOString(),
+      });
+      alert('Photo attached to task.');
+    } catch (error) {
+      console.error('Error uploading task photo:', error);
+      alert('Could not upload photo. Please try again.');
+    } finally {
+      setPhotoUploadTaskId(null);
     }
   };
 
@@ -173,10 +337,59 @@ export default function ProjectDetailScreen() {
     }
   };
 
+  const openTaskDetails = (task) => {
+    setSelectedTask(task);
+    setShowTaskModal(true);
+  };
+
+  const handleSaveTaskDetails = async (updates) => {
+    if (!selectedTask?.id) return;
+    try {
+      setIsSavingTask(true);
+      await updateTask(supabase, selectedTask.id, updates);
+      setShowTaskModal(false);
+      setSelectedTask(null);
+      await loadProjectData();
+    } catch (error) {
+      console.error('Error saving task details:', error);
+      await enqueueOfflineAction({
+        type: 'update_task',
+        payload: { taskId: selectedTask.id, updates },
+      });
+      alert('Task update queued for sync.');
+    } finally {
+      setIsSavingTask(false);
+    }
+  };
+
+  const handleIssueStatusChange = async (issue, nextStatus) => {
+    if (!issue?.id) return;
+    try {
+      const { error } = await supabase
+        .from('project_issues')
+        .update({ status: nextStatus, updated_at: new Date().toISOString() })
+        .eq('id', issue.id)
+        .eq('organization_id', activeOrganization.id);
+      if (error) throw error;
+      await loadIssues();
+    } catch (error) {
+      console.error('Error updating issue status:', error);
+      await enqueueOfflineAction({
+        type: 'update_issue_status',
+        payload: {
+          issueId: issue.id,
+          nextStatus,
+          organizationId: activeOrganization.id,
+        },
+      });
+      alert('Issue status change queued for sync.');
+    }
+  };
+
   const renderTaskItem = ({ item }) => (
     <PressableWithFade
       style={styles.taskItem}
-      onPress={() => handleCompleteTask(item.id)}
+      onPress={() => openTaskDetails(item)}
       activeOpacity={0.7}
     >
       <View style={styles.taskContent}>
@@ -204,6 +417,26 @@ export default function ProjectDetailScreen() {
             </Text>
           </View>
         )}
+      </View>
+      <View style={styles.taskActions}>
+        <PressableWithFade
+          style={[styles.photoButton, photoUploadTaskId === item.id && styles.photoButtonDisabled]}
+          onPress={() => pickAndUploadTaskPhoto(item, 'camera')}
+          disabled={photoUploadTaskId === item.id}
+          activeOpacity={0.7}
+        >
+          <Ionicons name="camera-outline" size={16} color="#1E3A8A" />
+          <Text style={styles.photoButtonText}>Camera</Text>
+        </PressableWithFade>
+        <PressableWithFade
+          style={[styles.photoButton, photoUploadTaskId === item.id && styles.photoButtonDisabled]}
+          onPress={() => pickAndUploadTaskPhoto(item, 'library')}
+          disabled={photoUploadTaskId === item.id}
+          activeOpacity={0.7}
+        >
+          <Ionicons name="images-outline" size={16} color="#1E3A8A" />
+          <Text style={styles.photoButtonText}>Photos</Text>
+        </PressableWithFade>
       </View>
     </PressableWithFade>
   );
@@ -257,6 +490,26 @@ export default function ProjectDetailScreen() {
                   </Text>
                 </View>
               )}
+            </View>
+            <View style={styles.issueActions}>
+              <PressableWithFade
+                style={[styles.issueActionButton, item.status === 'open' && styles.issueActionButtonActive]}
+                onPress={() => handleIssueStatusChange(item, 'open')}
+              >
+                <Text style={[styles.issueActionText, item.status === 'open' && styles.issueActionTextActive]}>Open</Text>
+              </PressableWithFade>
+              <PressableWithFade
+                style={[styles.issueActionButton, item.status === 'in_progress' && styles.issueActionButtonActive]}
+                onPress={() => handleIssueStatusChange(item, 'in_progress')}
+              >
+                <Text style={[styles.issueActionText, item.status === 'in_progress' && styles.issueActionTextActive]}>In progress</Text>
+              </PressableWithFade>
+              <PressableWithFade
+                style={[styles.issueActionButton, item.status === 'resolved' && styles.issueActionButtonActive]}
+                onPress={() => handleIssueStatusChange(item, 'resolved')}
+              >
+                <Text style={[styles.issueActionText, item.status === 'resolved' && styles.issueActionTextActive]}>Resolved</Text>
+              </PressableWithFade>
             </View>
           </View>
         </View>
@@ -388,7 +641,12 @@ export default function ProjectDetailScreen() {
             <View>
               {phases.length > 0 ? (
                 phases.map((phase) => (
-                  <PhaseAccordion key={phase.id} phase={phase} />
+                  <PhaseAccordion
+                    key={phase.id}
+                    phase={phase}
+                    onAdjustProgress={handleAdjustPhaseProgress}
+                    isUpdating={isUpdatingPhase}
+                  />
                 ))
               ) : (
                 <View style={styles.emptyContainer}>
@@ -421,6 +679,16 @@ export default function ProjectDetailScreen() {
         visible={showTeamModal}
         projectId={id}
         onClose={() => setShowTeamModal(false)}
+      />
+      <TaskDetailModal
+        visible={showTaskModal}
+        task={selectedTask}
+        onClose={() => {
+          setShowTaskModal(false);
+          setSelectedTask(null);
+        }}
+        onSave={handleSaveTaskDetails}
+        loading={isSavingTask}
       />
     </View>
   );
@@ -557,6 +825,28 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
   },
+  taskActions: {
+    marginTop: 10,
+    flexDirection: 'row',
+    gap: 8,
+  },
+  photoButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    backgroundColor: '#DBEAFE',
+  },
+  photoButtonDisabled: {
+    opacity: 0.5,
+  },
+  photoButtonText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#1E3A8A',
+  },
   taskLeft: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -632,6 +922,34 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 8,
     flexWrap: 'wrap',
+  },
+  issueActions: {
+    marginTop: 10,
+    flexDirection: 'row',
+    gap: 8,
+    flexWrap: 'wrap',
+  },
+  issueActionButton: {
+    minHeight: 44,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#D1D5DB',
+    paddingHorizontal: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#F9FAFB',
+  },
+  issueActionButtonActive: {
+    borderColor: '#2563EB',
+    backgroundColor: '#EFF6FF',
+  },
+  issueActionText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#4B5563',
+  },
+  issueActionTextActive: {
+    color: '#1D4ED8',
   },
   issueDate: {
     fontSize: 12,

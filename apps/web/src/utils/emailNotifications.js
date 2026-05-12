@@ -42,7 +42,7 @@ export async function sendTaskAssignmentEmail(contactEmail, taskDetails, project
 <body>
     <div class="container">
         <div class="header">
-            <h1>📋 New Task Assignment</h1>
+            <h1>New Task Assignment</h1>
         </div>
         <div class="content">
             <p>Hello,</p>
@@ -75,11 +75,6 @@ export async function sendTaskAssignmentEmail(contactEmail, taskDetails, project
                 <span class="label">Location:</span> <span class="value">${projectDetails.address}</span>
             </div>` : ''}
 
-            <div class="note">
-                <strong>📧 How to Respond:</strong>
-                <p style="margin: 10px 0 0 0;">Please reply to this email with your updates, files, or questions about this task. ${assignerName} will follow up with you directly.</p>
-                <p style="margin: 10px 0 0 0;"><em>Note: You do not need a SiteWeave account to complete this task. Simply respond via email.</em></p>
-            </div>
         </div>
         <div class="footer">
             <p>This email was sent from SiteWeave Project Management</p>
@@ -102,11 +97,6 @@ ${taskDetails.issueTitle ? `Issue: ${taskDetails.issueTitle}\n` : ''}Step: ${tas
 ${taskDetails.priority ? `Priority: ${taskDetails.priority}\n` : ''}${taskDetails.dueDate ? `Due Date: ${new Date(taskDetails.dueDate).toLocaleDateString()}\n` : ''}
 Project: ${projectDetails.name}
 ${projectDetails.address ? `Location: ${projectDetails.address}\n` : ''}
-
-HOW TO RESPOND:
-Please reply to this email with your updates, files, or questions about this task. ${assignerName} will follow up with you directly.
-
-Note: You do not need a SiteWeave account to complete this task. Simply respond via email.
 
 ---
 This email was sent from SiteWeave Project Management
@@ -575,7 +565,7 @@ export async function sendCalendarInvitationEmail(attendeeEmail, eventDetails, o
                 </p>
                 <div class="footer-compliance">
                     <p>© 2026 SiteWeave. All rights reserved.</p>
-                    <p>1671 moonlight trail cedar park tx 78613</p>
+                    <p>2965 Hero Way Ste 100 Leander, TX 78641</p>
                 </div>
             </div>
         </div>
@@ -601,7 +591,7 @@ Add to Calendar:
 
 ---
 © 2026 SiteWeave. All rights reserved.
-1671 moonlight trail cedar park tx 78613
+2965 Hero Way Ste 100 Leander, TX 78641
 siteweave.org
         `.trim();
 

@@ -1,6 +1,10 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
-import { buildMinimalDigestEmail } from '../_shared/notificationEmailTemplates.ts'
+import { buildMinimalDigestEmail, formatDigestDueDate } from '../_shared/notificationEmailTemplates.ts'
+import { sendTwilioSms } from '../_shared/twilioSms.ts'
+import { normalizeAssigneePhone } from '../_shared/phone.ts'
+import { createGuestShare } from '../_shared/guestShare.ts'
+import { gateOrSendOptInForSubstantiveSms } from '../_shared/smsConsent.ts'
 
 const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY')
 const RESEND_FROM =
@@ -55,12 +59,16 @@ serve(async (req) => {
         id,
         text,
         start_date,
+        due_date,
+        priority,
         completed,
+        assignee_id,
         project_id,
         organization_id,
-        contacts(name, email),
+        contacts(name, email, phone),
         projects(
           name,
+          address,
           task_notifications_use_org_defaults,
           task_start_notifications_enabled,
           task_start_notification_lead_days,
@@ -89,7 +97,7 @@ serve(async (req) => {
     const organizationIds = Array.from(new Set(taskList.map((t: any) => t.organization_id).filter(Boolean)))
     const { data: orgRows } = await supabase
       .from('organizations')
-      .select('id, task_start_notifications_enabled, task_start_notification_lead_days, notification_email_batching_enabled')
+      .select('id, name, task_start_notifications_enabled, task_start_notification_lead_days, notification_email_batching_enabled')
       .in('id', organizationIds)
 
     const orgById = new Map((orgRows || []).map((row: any) => [row.id, row]))
@@ -136,25 +144,31 @@ serve(async (req) => {
         continue
       }
 
-      const recipientEmail = task.contacts?.email
+      const recipientEmail = task.contacts?.email ? String(task.contacts.email).trim().toLowerCase() : null
+      const normalizedPhone = normalizeAssigneePhone(task.contacts?.phone || '')
+      const recipientPhone = normalizedPhone.isValid ? normalizedPhone.e164 : null
       const recipientName = task.contacts?.name || 'teammate'
-      if (!recipientEmail) {
+      if (!recipientEmail && !recipientPhone) {
         skipped += 1
         continue
       }
+      const recipientAddress = recipientEmail || `sms:${recipientPhone}`
 
       const orgBatchEnabled = orgConfig.notification_email_batching_enabled !== false
       const projectBatchEnabled = task.projects?.notification_email_batching_enabled
       const batchEnabled = projectBatchEnabled == null ? orgBatchEnabled : projectBatchEnabled !== false
       const batchKey = batchEnabled
-        ? `${task.organization_id}:${task.project_id}:${recipientEmail}:${daysUntilStart}`
-        : `${task.organization_id}:${task.project_id}:${recipientEmail}:${task.id}:${daysUntilStart}`
+        ? `${task.organization_id}:${task.project_id}:${recipientAddress}:${daysUntilStart}`
+        : `${task.organization_id}:${task.project_id}:${recipientAddress}:${task.id}:${daysUntilStart}`
 
       const bucket = groupedNotifications.get(batchKey) || {
         recipientEmail,
+        recipientPhone,
+        recipientAddress,
         recipientName,
         projectId: task.project_id,
         organizationId: task.organization_id,
+        organizationName: (orgById.get(task.organization_id) as { name?: string })?.name || 'Your team',
         projectName: task.projects?.name || 'your project',
         daysUntilStart,
         tasks: [],
@@ -176,18 +190,40 @@ serve(async (req) => {
         ? `${batchSize} items need attention`
         : bucket.tasks[0]?.text || 'Task reminder'
       const summaryLabel = bucket.daysUntilStart === 0 ? 'Due now' : 'Due soon'
+      const projectAddress = (bucket.tasks[0]?.projects as { address?: string } | undefined)?.address || null
+
+      const taskIdList = bucket.tasks.map((t: any) => t.id)
+      let guestUrl = buildAppUrl(bucket.projectId)
+      const shareResult = await createGuestShare(supabase, {
+        projectId: bucket.projectId,
+        organizationId: bucket.organizationId,
+        taskIds: taskIdList,
+        source: 'task_start',
+      })
+      if ('url' in shareResult) {
+        guestUrl = shareResult.url
+      } else {
+        console.error('createGuestShare failed:', shareResult.error)
+      }
+
       const template = buildMinimalDigestEmail({
         heading,
         subheading,
-        ctaLabel: 'View in SiteWeave',
-        ctaUrl: buildAppUrl(bucket.projectId),
+        ctaUrl: guestUrl,
+        reviewLinkText: batchSize > 1 ? 'Review your tasks in SiteWeave' : 'Review this task in SiteWeave',
         summaryLabel,
         summaryValue: batchSize,
         recipientName: bucket.recipientName,
         tasks: bucket.tasks.map((task: any) => ({
           title: task.text || 'Task',
           dueLabel,
+          priority: task.priority || null,
+          dueDateLabel: formatDigestDueDate(task.due_date),
+          dueDateIso: task.due_date ? String(task.due_date).slice(0, 10) : null,
         })),
+        projectName: bucket.projectName,
+        projectAddress: projectAddress ? String(projectAddress).trim() : null,
+        tasksSectionTitle: batchSize > 1 ? 'Your tasks' : 'Task details',
       })
       const subject = batchSize > 1
         ? `${batchSize} updates for ${bucket.projectName}`
@@ -196,7 +232,10 @@ serve(async (req) => {
       let status: 'sent' | 'failed' = 'sent'
       let errorMessage: string | null = null
 
-      if (RESEND_API_KEY) {
+      let emailDelivered = false
+      let smsDelivered = false
+
+      if (RESEND_API_KEY && bucket.recipientEmail) {
         const resendResponse = await fetch('https://api.resend.com/emails', {
           method: 'POST',
           headers: {
@@ -214,6 +253,50 @@ serve(async (req) => {
         if (!resendResponse.ok) {
           status = 'failed'
           errorMessage = `Resend error (${resendResponse.status})`
+        } else {
+          emailDelivered = true
+        }
+      }
+
+      if (bucket.recipientPhone) {
+        const gate = await gateOrSendOptInForSubstantiveSms(supabase, {
+          phoneE164: bucket.recipientPhone,
+          organizationId: bucket.organizationId,
+          organizationName: bucket.organizationName || 'Your team',
+        })
+        if (!gate.allowed) {
+          if (gate.optInSent) {
+            errorMessage = errorMessage
+              ? `${errorMessage}; SMS: opt_in_sent`
+              : 'SMS: opt_in_sent (awaiting YES)'
+          } else {
+            errorMessage = errorMessage
+              ? `${errorMessage}; SMS: blocked (${gate.reason || 'consent'})`
+              : `SMS: blocked (${gate.reason || 'consent'})`
+          }
+        } else {
+          const smsBody = batchSize > 1
+            ? `${batchSize} tasks for ${bucket.projectName} start ${dueLabel.toLowerCase()}. Open: ${guestUrl}`
+            : `${bucket.tasks[0]?.text || 'Task'} in ${bucket.projectName} starts ${dueLabel.toLowerCase()}. Open: ${guestUrl}`
+          const smsResult = await sendTwilioSms({
+            to: bucket.recipientPhone,
+            body: smsBody,
+          })
+          if (!smsResult.success) {
+            status = status === 'failed' ? 'failed' : 'sent'
+            errorMessage = errorMessage
+              ? `${errorMessage}; SMS: ${smsResult.error || 'twilio_failed'}`
+              : `SMS: ${smsResult.error || 'twilio_failed'}`
+          } else {
+            smsDelivered = true
+          }
+        }
+      }
+
+      if (!emailDelivered && !smsDelivered) {
+        status = 'failed'
+        if (!errorMessage) {
+          errorMessage = 'No notification channel succeeded'
         }
       }
 
@@ -222,7 +305,7 @@ serve(async (req) => {
         task_id: task.id,
         project_id: task.project_id,
         organization_id: task.organization_id,
-        recipient_email: bucket.recipientEmail,
+        recipient_email: bucket.recipientAddress,
         lead_days: bucket.daysUntilStart,
         notification_date: todayIso,
         status,
@@ -235,7 +318,7 @@ serve(async (req) => {
       const notificationRows = bucket.tasks.map((task: any) => ({
         organization_id: task.organization_id,
         project_id: task.project_id,
-        recipient_email: bucket.recipientEmail,
+        recipient_email: bucket.recipientAddress,
         recipient_user_id: task.assignee_id || null,
         source_type: 'task_start',
         source_id: task.id,
@@ -245,7 +328,11 @@ serve(async (req) => {
           batch_key: batchRef,
           lead_days: bucket.daysUntilStart,
           project_name: bucket.projectName,
-          action_url: buildAppUrl(task.project_id),
+          action_url: guestUrl,
+          channels: {
+            email: Boolean(bucket.recipientEmail),
+            sms: Boolean(bucket.recipientPhone),
+          },
         },
       }))
       const { error: notificationError } = await supabase

@@ -1,0 +1,290 @@
+import { View, Text, StyleSheet, FlatList } from 'react-native';
+import { useCallback, useEffect, useState } from 'react';
+import { useRouter, useFocusEffect } from 'expo-router';
+import { useAuth } from '../../context/AuthContext';
+import PressableWithFade from '../../components/PressableWithFade';
+import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import * as Linking from 'expo-linking';
+import {
+  fetchUserNotifications,
+  markNotificationRead,
+  acknowledgeNotification,
+  resolveNotificationRoute,
+} from '../../utils/notifications';
+
+export default function NotificationsScreen() {
+  const { user, supabase } = useAuth();
+  const router = useRouter();
+  const insets = useSafeAreaInsets();
+  const [notifications, setNotifications] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [showUnreadOnly, setShowUnreadOnly] = useState(false);
+
+  const loadNotifications = useCallback(async () => {
+    if (!supabase || !user) {
+      setNotifications([]);
+      setLoading(false);
+      return;
+    }
+    try {
+      setLoading(true);
+      const data = await fetchUserNotifications(supabase, {
+        userId: user.id,
+        email: user.email || '',
+      });
+      setNotifications(data);
+    } catch (error) {
+      console.error('Error loading notifications:', error);
+      setNotifications([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [supabase, user]);
+
+  useEffect(() => {
+    loadNotifications();
+  }, [loadNotifications]);
+
+  useFocusEffect(
+    useCallback(() => {
+      loadNotifications();
+    }, [loadNotifications]),
+  );
+
+  const handleOpenNotification = async (item) => {
+    try {
+      if (!item.read_at) {
+        await markNotificationRead(supabase, { notificationId: item.id, userId: user?.id });
+      }
+    } catch (error) {
+      console.error('Error marking notification read:', error);
+    }
+
+    const route = resolveNotificationRoute({
+      ...item.metadata,
+      project_id: item.project_id,
+      screen: item.metadata?.screen,
+      route: item.metadata?.route,
+    });
+    if (route && (route.startsWith('http://') || route.startsWith('https://'))) {
+      await Linking.openURL(route);
+      return;
+    }
+    router.push(route || '/');
+  };
+
+  const handleAcknowledge = async (item) => {
+    try {
+      await acknowledgeNotification(supabase, { notificationId: item.id, userId: user?.id });
+      setNotifications((prev) =>
+        prev.map((n) =>
+          n.id === item.id
+            ? { ...n, acknowledged_at: new Date().toISOString(), read_at: n.read_at || new Date().toISOString() }
+            : n,
+        ),
+      );
+    } catch (error) {
+      console.error('Error acknowledging notification:', error);
+    }
+  };
+
+  const handleMarkRead = async (item) => {
+    try {
+      await markNotificationRead(supabase, { notificationId: item.id, userId: user?.id });
+      setNotifications((prev) =>
+        prev.map((n) => (n.id === item.id ? { ...n, read_at: new Date().toISOString() } : n)),
+      );
+    } catch (error) {
+      console.error('Error marking notification read:', error);
+    }
+  };
+
+  const renderNotification = ({ item }) => {
+    const isUnread = !item.read_at;
+    return (
+      <PressableWithFade
+        style={[styles.card, isUnread && styles.cardUnread]}
+        onPress={() => handleOpenNotification(item)}
+        activeOpacity={0.75}
+      >
+        <View style={styles.cardHeader}>
+          <Text style={styles.title} numberOfLines={2}>{item.title}</Text>
+          {isUnread ? <View style={styles.unreadDot} /> : null}
+        </View>
+        <Text style={styles.body} numberOfLines={3}>{item.body}</Text>
+        <Text style={styles.time}>
+          {item.created_at ? new Date(item.created_at).toLocaleString() : ''}
+        </Text>
+        <View style={styles.actionsRow}>
+          <PressableWithFade
+            style={styles.actionButton}
+            onPress={() => handleMarkRead(item)}
+            disabled={Boolean(item.read_at)}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.actionButtonText}>{item.read_at ? 'Read' : 'Mark read'}</Text>
+          </PressableWithFade>
+          <PressableWithFade
+            style={styles.actionButton}
+            onPress={() => handleAcknowledge(item)}
+            disabled={Boolean(item.acknowledged_at)}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.actionButtonText}>
+              {item.acknowledged_at ? 'Acknowledged' : 'Acknowledge'}
+            </Text>
+          </PressableWithFade>
+        </View>
+      </PressableWithFade>
+    );
+  };
+
+  const visibleNotifications = showUnreadOnly
+    ? notifications.filter((item) => !item.read_at)
+    : notifications;
+
+  return (
+    <View style={[styles.safeArea, { paddingTop: insets.top }]}>
+      <View style={styles.header}>
+        <PressableWithFade style={styles.backButton} onPress={() => router.back()} activeOpacity={0.7}>
+          <Ionicons name="arrow-back" size={24} color="#111827" />
+        </PressableWithFade>
+        <Text style={styles.headerTitle}>Notifications</Text>
+        <View style={styles.backButton} />
+      </View>
+      <View style={styles.filterRow}>
+        <PressableWithFade
+          style={[styles.filterChip, showUnreadOnly && styles.filterChipActive]}
+          onPress={() => setShowUnreadOnly((v) => !v)}
+          activeOpacity={0.7}
+        >
+          <Text style={[styles.filterChipText, showUnreadOnly && styles.filterChipTextActive]}>
+            {showUnreadOnly ? 'Showing unread only' : 'Show unread only'}
+          </Text>
+        </PressableWithFade>
+      </View>
+      {loading ? (
+        <View style={styles.centerState}>
+          <Text style={styles.stateText}>Loading notifications...</Text>
+        </View>
+      ) : (
+        <FlatList
+          data={visibleNotifications}
+          keyExtractor={(item) => item.id}
+          contentContainerStyle={styles.listContent}
+          renderItem={renderNotification}
+          ListEmptyComponent={
+            <View style={styles.centerState}>
+              <Ionicons name="notifications-outline" size={44} color="#9CA3AF" />
+              <Text style={styles.stateText}>No notifications yet.</Text>
+            </View>
+          }
+        />
+      )}
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  safeArea: { flex: 1, backgroundColor: '#F9FAFB' },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB',
+    backgroundColor: '#fff',
+  },
+  headerTitle: { fontSize: 20, fontWeight: '700', color: '#111827' },
+  backButton: {
+    width: 44,
+    height: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  listContent: { padding: 14, paddingBottom: 30 },
+  filterRow: {
+    paddingHorizontal: 14,
+    paddingTop: 10,
+  },
+  filterChip: {
+    alignSelf: 'flex-start',
+    minHeight: 40,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#D1D5DB',
+    justifyContent: 'center',
+    paddingHorizontal: 14,
+    backgroundColor: '#fff',
+  },
+  filterChipActive: {
+    borderColor: '#2563EB',
+    backgroundColor: '#EFF6FF',
+  },
+  filterChipText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#4B5563',
+  },
+  filterChipTextActive: {
+    color: '#1D4ED8',
+  },
+  card: {
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    padding: 14,
+    marginBottom: 10,
+  },
+  cardUnread: {
+    borderColor: '#93C5FD',
+    backgroundColor: '#F8FBFF',
+  },
+  cardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    gap: 8,
+  },
+  title: { flex: 1, fontSize: 15, fontWeight: '700', color: '#111827' },
+  unreadDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: '#2563EB',
+    marginTop: 4,
+  },
+  body: { marginTop: 6, fontSize: 14, color: '#374151', lineHeight: 20 },
+  time: { marginTop: 8, fontSize: 12, color: '#6B7280' },
+  actionsRow: {
+    marginTop: 10,
+    flexDirection: 'row',
+    gap: 8,
+  },
+  actionButton: {
+    minHeight: 40,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#D1D5DB',
+    justifyContent: 'center',
+    paddingHorizontal: 10,
+    backgroundColor: '#fff',
+  },
+  actionButtonText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#374151',
+  },
+  centerState: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 12,
+    paddingHorizontal: 24,
+  },
+  stateText: { fontSize: 14, color: '#6B7280', textAlign: 'center' },
+});

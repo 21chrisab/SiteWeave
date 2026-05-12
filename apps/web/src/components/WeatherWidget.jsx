@@ -8,22 +8,30 @@ import {
   getWeatherIconUrl 
 } from '../utils/weatherService';
 
-const STORAGE_KEY = 'weather_location_preference';
+const CITY_STORAGE_KEY = 'weather_location_preference';
+const WEATHER_PREF_EVENT = 'weather-preference-changed';
 
 function WeatherWidget({ compact = false }) {
   const [weather, setWeather] = useState(null);
   const [forecast, setForecast] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [optedIn, setOptedIn] = useState(false);
+  const [showSourceSelection, setShowSourceSelection] = useState(false);
   const [showCityInput, setShowCityInput] = useState(false);
   const [cityInput, setCityInput] = useState('');
-  const [useGeolocation, setUseGeolocation] = useState(true);
+  const [source, setSource] = useState(null);
   const inputRef = useRef(null);
   const widgetRef = useRef(null);
 
   useEffect(() => {
-    // Always try to use geolocation first
-    loadWeather();
+    setLoading(false);
+    setWeather(null);
+    setForecast([]);
+    setOptedIn(false);
+    setShowSourceSelection(false);
+    setShowCityInput(false);
+    setError(null);
   }, []);
 
   // Handle click outside to close input
@@ -54,50 +62,62 @@ function WeatherWidget({ compact = false }) {
     };
   }, [showCityInput, cityInput, loading]);
 
-  const loadWeather = async () => {
+  const emitPreferenceChange = (nextCity = null, nextSource = null) => {
+    try {
+      window.dispatchEvent(
+        new CustomEvent(WEATHER_PREF_EVENT, {
+          detail: {
+            city: nextCity,
+            source: nextSource,
+            enabled: optedIn,
+          },
+        }),
+      );
+    } catch (err) {
+      // Best effort only
+    }
+  };
+
+  const handleImplementWeather = () => {
+    setOptedIn(true);
+    setShowSourceSelection(true);
+    setShowCityInput(false);
+    setWeather(null);
+    setForecast([]);
+    setError(null);
+    setSource(null);
+    emitPreferenceChange(null, null);
+  };
+
+  const loadWeatherFromLocation = async () => {
     try {
       setLoading(true);
       setError(null);
       setShowCityInput(false);
+      setShowSourceSelection(false);
+      setSource('geo');
 
-      // Get user location
       const location = await getUserLocation();
 
-      // Fetch current weather and forecast
       const [currentWeather, weatherForecast] = await Promise.all([
         getCurrentWeather(location.latitude, location.longitude),
         getWeatherForecast(location.latitude, location.longitude),
       ]);
 
-      // Handle null returns (when API key is missing)
-      if (!currentWeather) {
-        // Fall back to saved city or default
-        const savedLocation = localStorage.getItem(STORAGE_KEY);
-        const fallbackCity = savedLocation || 'Austin';
-        await loadWeatherByCity(fallbackCity);
-        return;
-      }
-
       setWeather(currentWeather);
       setForecast(weatherForecast || []);
-      setUseGeolocation(true);
-      setShowCityInput(false);
+      localStorage.setItem(CITY_STORAGE_KEY, currentWeather.city);
+      emitPreferenceChange(currentWeather.city, 'geo');
     } catch (err) {
-      console.error('Error loading weather:', err);
-      // If geolocation fails, try saved location preference first, then default city
-      const savedLocation = localStorage.getItem(STORAGE_KEY);
-      const fallbackCity = savedLocation || 'Austin';
-      console.log('Geolocation failed, falling back to:', fallbackCity);
-      try {
-        await loadWeatherByCity(fallbackCity);
-      } catch (cityErr) {
-        // If fallback city also fails, show city input
-        setError('Unable to get your location. Please enter a city name.');
-        setShowCityInput(true);
-        setUseGeolocation(false);
-        setWeather(null);
-        setForecast([]);
+      if (err.code !== 1 && err.code !== 2 && err.code !== 3) {
+        console.error('Error loading weather from location:', err);
       }
+      setError('Unable to use device location. Please choose a city instead.');
+      setSource('manualCity');
+      setShowSourceSelection(false);
+      setShowCityInput(true);
+      setWeather(null);
+      setForecast([]);
     } finally {
       setLoading(false);
     }
@@ -112,30 +132,21 @@ function WeatherWidget({ compact = false }) {
     try {
       setLoading(true);
       setError(null);
+      setShowSourceSelection(false);
+      setSource('manualCity');
       if (!keepInputOpen) {
         setShowCityInput(false);
       }
 
-      // Fetch current weather and forecast by city
       const [currentWeather, weatherForecast] = await Promise.all([
         getCurrentWeatherByCity(cityName.trim()),
         getWeatherForecastByCity(cityName.trim()),
       ]);
 
-      // Handle null returns (when API key is missing)
-      if (!currentWeather) {
-        setError('Weather API key is not configured. Please add VITE_WEATHER_API_KEY to your .env file.');
-        setWeather(null);
-        setForecast([]);
-        return;
-      }
-
       setWeather(currentWeather);
       setForecast(weatherForecast || []);
-      setUseGeolocation(false);
-      
-      // Save preference as fallback (but don't use it on next load - geolocation takes priority)
-      localStorage.setItem(STORAGE_KEY, cityName.trim());
+      localStorage.setItem(CITY_STORAGE_KEY, cityName.trim());
+      emitPreferenceChange(cityName.trim(), 'manualCity');
     } catch (err) {
       console.error('Error loading weather by city:', err);
       setError(err.message || 'Unable to load weather for this city');
@@ -150,11 +161,91 @@ function WeatherWidget({ compact = false }) {
     loadWeatherByCity(cityInput);
   };
 
-  const handleUseLocation = () => {
+  const handleChooseManualCity = () => {
+    const savedCity = localStorage.getItem(CITY_STORAGE_KEY) || '';
+    setCityInput(savedCity);
+    setSource('manualCity');
+    setShowSourceSelection(false);
+    setShowCityInput(true);
+    setError(null);
+  };
+
+  const handleResetWeather = () => {
+    setOptedIn(false);
+    setSource(null);
+    setError(null);
+    setWeather(null);
+    setForecast([]);
     setShowCityInput(false);
-    setCityInput('');
-    localStorage.removeItem(STORAGE_KEY);
-    loadWeather();
+    setShowSourceSelection(false);
+    setLoading(false);
+    emitPreferenceChange(null, null);
+  };
+
+  if (!optedIn) {
+    if (compact) {
+      return (
+        <button
+          type="button"
+          onClick={handleImplementWeather}
+          className="px-3 py-2 text-xs font-medium bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
+        >
+          Implement Weather
+        </button>
+      );
+    }
+
+    return (
+      <div className="bg-white p-4 rounded-lg border border-gray-200">
+        <div className="text-sm text-gray-600 mb-3">
+          Weather is off by default for privacy.
+        </div>
+        <button
+          type="button"
+          onClick={handleImplementWeather}
+          className="w-full text-sm px-3 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
+        >
+          Implement Weather
+        </button>
+      </div>
+    );
+  }
+
+  if (showSourceSelection && !loading) {
+    const sourceChooser = (
+      <div className={compact ? 'absolute top-full right-0 mt-2 z-50 bg-white p-3 rounded-lg border border-gray-200 shadow-lg min-w-[230px]' : 'space-y-2'}>
+        <button
+          type="button"
+          onClick={loadWeatherFromLocation}
+          className="w-full text-xs px-3 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
+        >
+          Use Device Location
+        </button>
+        <button
+          type="button"
+          onClick={handleChooseManualCity}
+          className="w-full text-xs px-3 py-2 bg-gray-100 text-gray-800 rounded hover:bg-gray-200 transition-colors"
+        >
+          Use City Manually
+        </button>
+      </div>
+    );
+
+    if (compact) {
+      return (
+        <div ref={widgetRef} className="relative flex items-center gap-2 px-3 py-2 bg-white rounded-lg border border-gray-200">
+          <span className="text-xs text-gray-600">Choose weather source</span>
+          {sourceChooser}
+        </div>
+      );
+    }
+
+    return (
+      <div className="bg-white p-4 rounded-lg border border-gray-200">
+        <div className="text-sm text-gray-600 mb-3">Choose where weather data comes from.</div>
+        {sourceChooser}
+      </div>
+    );
   };
 
   if (loading) {
@@ -196,7 +287,7 @@ function WeatherWidget({ compact = false }) {
           />
           <button
             type="button"
-            onClick={handleUseLocation}
+            onClick={loadWeatherFromLocation}
             disabled={loading}
             className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 p-1 disabled:opacity-50"
             title="Use Location"
@@ -226,7 +317,7 @@ function WeatherWidget({ compact = false }) {
           onClick={() => setShowCityInput(true)}
           className="w-full text-xs px-3 py-1.5 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
         >
-          Enter City Name
+          Use City Manually
         </button>
       </div>
     );
@@ -258,9 +349,10 @@ function WeatherWidget({ compact = false }) {
         <div className="flex items-center gap-1 ml-1">
           <button
             onClick={() => {
-              const currentCity = localStorage.getItem(STORAGE_KEY) || weather?.city || '';
+              const currentCity = localStorage.getItem(CITY_STORAGE_KEY) || weather?.city || '';
               setCityInput(currentCity);
               setShowCityInput(true);
+              setSource('manualCity');
             }}
             className="text-xs text-gray-400 hover:text-gray-600 p-1"
             title="Change location"
@@ -269,10 +361,10 @@ function WeatherWidget({ compact = false }) {
           </button>
           <button
             onClick={() => {
-              if (useGeolocation) {
-                loadWeather();
+              if (source === 'geo') {
+                loadWeatherFromLocation();
               } else {
-                const savedCity = localStorage.getItem(STORAGE_KEY) || weather?.city || cityInput;
+                const savedCity = localStorage.getItem(CITY_STORAGE_KEY) || weather?.city || cityInput;
                 if (savedCity) {
                   loadWeatherByCity(savedCity);
                 }
@@ -282,6 +374,13 @@ function WeatherWidget({ compact = false }) {
             title="Refresh weather"
           >
             ↻
+          </button>
+          <button
+            onClick={handleResetWeather}
+            className="text-xs text-gray-400 hover:text-gray-600 p-1"
+            title="Disable weather"
+          >
+            ✕
           </button>
         </div>
         {showCityInput && (
@@ -301,7 +400,7 @@ function WeatherWidget({ compact = false }) {
               />
               <button
                 type="button"
-                onClick={handleUseLocation}
+                onClick={loadWeatherFromLocation}
                 className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 p-1"
                 title="Use Location"
               >
@@ -323,9 +422,10 @@ function WeatherWidget({ compact = false }) {
         <div className="flex items-center gap-2">
           <button
             onClick={() => {
-              const currentCity = localStorage.getItem(STORAGE_KEY) || weather?.city || '';
+              const currentCity = localStorage.getItem(CITY_STORAGE_KEY) || weather?.city || '';
               setCityInput(currentCity);
               setShowCityInput(true);
+              setSource('manualCity');
             }}
             className="text-xs text-gray-400 hover:text-gray-600"
             title="Change location"
@@ -334,10 +434,10 @@ function WeatherWidget({ compact = false }) {
           </button>
           <button
             onClick={() => {
-              if (useGeolocation) {
-                loadWeather();
+              if (source === 'geo') {
+                loadWeatherFromLocation();
               } else {
-                const savedCity = localStorage.getItem(STORAGE_KEY) || weather?.city || cityInput;
+                const savedCity = localStorage.getItem(CITY_STORAGE_KEY) || weather?.city || cityInput;
                 if (savedCity) {
                   loadWeatherByCity(savedCity);
                 }
@@ -347,6 +447,13 @@ function WeatherWidget({ compact = false }) {
             title="Refresh weather"
           >
             ↻
+          </button>
+          <button
+            onClick={handleResetWeather}
+            className="text-xs text-gray-400 hover:text-gray-600"
+            title="Disable weather"
+          >
+            ✕
           </button>
         </div>
       </div>
@@ -367,7 +474,7 @@ function WeatherWidget({ compact = false }) {
             />
             <button
               type="button"
-              onClick={handleUseLocation}
+              onClick={loadWeatherFromLocation}
               className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 p-1"
               title="Use Location"
             >

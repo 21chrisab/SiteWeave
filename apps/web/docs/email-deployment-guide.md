@@ -31,6 +31,59 @@ You can modify the edge functions to use:
 - Mailgun
 - Postmark
 
+## Step 1B: Set Up Twilio (SMS Assignment Notifications)
+
+Twilio is used for SMS notifications when contacts are assigned to projects and a valid phone is on file.
+
+1. In Twilio Console, create or select a Messaging Service (recommended).
+2. Create an API Key + Secret for server-to-server access.
+3. Rotate any previously exposed credentials before going live.
+4. Add these Supabase Edge Function secrets:
+
+```bash
+supabase secrets set TWILIO_ACCOUNT_SID=ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+supabase secrets set TWILIO_API_KEY=SKxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+supabase secrets set TWILIO_API_SECRET=your_api_secret
+supabase secrets set TWILIO_MESSAGING_SERVICE_SID=MGxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+```
+
+Optional fallback if you are not using a Messaging Service:
+
+```bash
+supabase secrets set TWILIO_FROM_NUMBER=+15551234567
+```
+
+Notes:
+- Keep Twilio values in Supabase secrets only (never in client-side env vars).
+- Phone numbers are normalized to E.164 before sending SMS.
+- SMS failures do not block the main project assignment flow.
+
+### SMS double opt-in (reply YES) and inbound webhook
+
+Substantive SMS (task reminders, invites, assignment texts) is only sent after the assignee’s number is **`confirmed`** in `sms_phone_consent`. The first outbound attempt sends a short opt-in message; the assignee must reply **`YES`** (optionally with the 6-character code). **`STOP`** opts the number out globally until you change the product to support re-opt-in.
+
+1. **Edge Function URL (Twilio Messaging / number inbound webhook)**  
+   Point Twilio **when a message comes in** to:
+
+   `https://<project-ref>.supabase.co/functions/v1/twilio-sms-inbound`
+
+   Deploy: `supabase functions deploy twilio-sms-inbound`
+
+2. **Supabase secrets**
+
+```bash
+# Primary Account Auth Token (used to verify X-Twilio-Signature on inbound — not the API Key Secret)
+supabase secrets set TWILIO_AUTH_TOKEN=your_account_auth_token
+
+# If Supabase shows a different host than Twilio used when signing (e.g. proxies), set the public URL Twilio POSTs to:
+supabase secrets set TWILIO_WEBHOOK_PUBLIC_URL=https://<project-ref>.supabase.co/functions/v1/twilio-sms-inbound
+```
+
+Outbound SMS continues to use `TWILIO_ACCOUNT_SID`, `TWILIO_API_KEY`, `TWILIO_API_SECRET`, and `TWILIO_MESSAGING_SERVICE_SID` (or `TWILIO_FROM_NUMBER`) as above.
+
+3. **Twilio / carrier compliance**  
+   For verification forms, document: opt-in type **Text**; proof can include a screenshot of the opt-in SMS copy plus this inbound handler (YES/STOP/HELP) and the `sms_phone_consent` row updated on confirm.
+
 ## Step 2: Deploy Edge Functions
 
 ### Login to Supabase

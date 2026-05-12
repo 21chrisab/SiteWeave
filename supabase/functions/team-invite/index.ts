@@ -342,7 +342,7 @@ serve(async (req) => {
                 </p>
                 <div class="footer-compliance">
                     <p>© 2026 SiteWeave. All rights reserved.</p>
-                    <p>1671 moonlight trail cedar park tx 78613</p>
+                    <p>2965 Hero Way Ste 100 Leander, TX 78641</p>
                 </div>
             </div>
         </div>

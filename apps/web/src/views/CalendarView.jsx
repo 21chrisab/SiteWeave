@@ -30,6 +30,27 @@ import CategoryColorManager from '../components/CategoryColorManager';
 import WeatherWidget from '../components/WeatherWidget';
 import { getExtendedWeatherForecast, getWeatherIconUrl } from '../utils/weatherService';
 
+const WEATHER_CITY_STORAGE_KEY = 'weather_location_preference';
+const WEATHER_PREF_EVENT = 'weather-preference-changed';
+
+/** Recurring instances use composite FullCalendar ids; DB + clicks need the parent `calendar_events` id. */
+function resolveCalendarDbEventId(fcEvent) {
+    const ext = fcEvent.extendedProps || {};
+    if (ext.parent_event_id != null && ext.parent_event_id !== '') {
+        return ext.parent_event_id;
+    }
+    return fcEvent.id;
+}
+
+/** FullCalendar day navigation is most reliable with a local YYYY-MM-DD string. */
+function formatLocalDateForCalendar(date) {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+}
+
+
 // --- Mini Calendar Component (Sidebar) ---
 function MiniCalendar({ currentDate, setCurrentDate }) {
     // Normalize today to midnight local time to avoid timezone issues
@@ -141,7 +162,6 @@ function CalendarView() {
 
     useEffect(() => {
         loadCategories();
-        loadWeatherForCalendar();
     }, []);
 
     // Sync visible categories when categories list changes (e.g., after adding new categories)
@@ -170,37 +190,66 @@ function CalendarView() {
     // Load weather when view changes or date changes
     useEffect(() => {
         if (weatherCity) {
-            loadWeatherForCalendar();
+            loadWeatherForCalendar(weatherCity);
         }
     }, [currentView, currentDate]);
 
-    // Listen for weather city changes from WeatherWidget
+    // Listen for weather preference changes from WeatherWidget
     useEffect(() => {
-        const handleStorageChange = () => {
-            const savedCity = localStorage.getItem('weather_location_preference');
-            if (savedCity && savedCity !== weatherCity) {
-                loadWeatherForCalendar();
+        const handleWeatherPreferenceChange = (event) => {
+            const nextCity = event?.detail?.city || null;
+            const nextEnabled = event?.detail?.enabled;
+
+            if (nextEnabled === false || !nextCity) {
+                setWeatherCity(null);
+                setWeatherForecast({});
+                return;
+            }
+
+            if (nextCity !== weatherCity) {
+                setWeatherCity(nextCity);
+                loadWeatherForCalendar(nextCity);
             }
         };
-        
-        // Check for changes periodically (when user changes city in widget)
-        const interval = setInterval(handleStorageChange, 1000);
-        return () => clearInterval(interval);
+
+        const handleStorageChange = (event) => {
+            if (event.key && event.key !== WEATHER_CITY_STORAGE_KEY) {
+                return;
+            }
+            const nextCity = localStorage.getItem(WEATHER_CITY_STORAGE_KEY);
+            if (!nextCity) {
+                setWeatherCity(null);
+                setWeatherForecast({});
+                return;
+            }
+
+            if (nextCity !== weatherCity) {
+                setWeatherCity(nextCity);
+                loadWeatherForCalendar(nextCity);
+            }
+        };
+
+        window.addEventListener(WEATHER_PREF_EVENT, handleWeatherPreferenceChange);
+        window.addEventListener('storage', handleStorageChange);
+
+        return () => {
+            window.removeEventListener(WEATHER_PREF_EVENT, handleWeatherPreferenceChange);
+            window.removeEventListener('storage', handleStorageChange);
+        };
     }, [weatherCity]);
 
-    const loadWeatherForCalendar = async () => {
+    const loadWeatherForCalendar = async (cityName) => {
+        if (!cityName) {
+            setWeatherCity(null);
+            setWeatherForecast({});
+            return;
+        }
+
         try {
-            // Get saved city preference or use default
-            const savedCity = localStorage.getItem('weather_location_preference') || 'Austin';
-            setWeatherCity(savedCity);
-            
-            // Fetch extended forecast (14 days)
-            const forecast = await getExtendedWeatherForecast(savedCity, 14);
-            // Handle null/empty returns gracefully (when API key is missing)
+            const forecast = await getExtendedWeatherForecast(cityName, 14);
             setWeatherForecast(forecast || {});
         } catch (error) {
             console.error('Error loading weather for calendar:', error);
-            // Silently fail - weather is optional
             setWeatherForecast({});
         }
     };
@@ -255,7 +304,7 @@ function CalendarView() {
     useEffect(() => {
         if (calendarRef.current) {
             const calendarApi = calendarRef.current.getApi();
-            calendarApi.gotoDate(currentDate);
+            calendarApi.gotoDate(formatLocalDateForCalendar(currentDate));
         }
     }, [currentDate]);
 
@@ -330,10 +379,9 @@ function CalendarView() {
             return acc;
         }, {});
 
-        // Get calendar view date range (rough estimate for recurring generation)
-        const now = new Date();
-        const viewStart = new Date(now.getFullYear(), now.getMonth() - 1, 1); // 1 month before
-        const viewEnd = new Date(now.getFullYear(), now.getMonth() + 3, 0); // 3 months ahead
+        const anchor = new Date(currentDate);
+        const viewStart = new Date(anchor.getFullYear(), anchor.getMonth() - 1, 1);
+        const viewEnd = new Date(anchor.getFullYear(), anchor.getMonth() + 3, 0);
 
         const allEvents = [];
 
@@ -393,6 +441,7 @@ function CalendarView() {
                             title: event.title,
                             start: instance.start_time,
                             end: instance.end_time,
+                            editable: false,
                             extendedProps: {
                                 ...baseEventProps.extendedProps,
                                 is_recurring_instance: true,
@@ -420,7 +469,7 @@ function CalendarView() {
         });
 
         return allEvents;
-    }, [state.calendarEvents, state.projects, categories, visibleCategories]);
+    }, [state.calendarEvents, categories, visibleCategories, currentDate]);
 
     const handleDateClick = (arg) => {
         setModalDate(arg.date);
@@ -429,7 +478,8 @@ function CalendarView() {
     };
 
     const handleEventClick = (arg) => {
-        const event = state.calendarEvents.find(e => e.id === arg.event.id);
+        const dbId = resolveCalendarDbEventId(arg.event);
+        const event = state.calendarEvents.find(e => String(e.id) === String(dbId));
         if (event) {
             setEditingEvent(event);
             setShowModal(true);
@@ -437,7 +487,7 @@ function CalendarView() {
     };
 
     const handleEventDrop = async (info) => {
-        const eventId = info.event.id;
+        const eventId = resolveCalendarDbEventId(info.event);
         const newStart = info.event.start;
         const newEnd = info.event.end;
         
@@ -457,7 +507,7 @@ function CalendarView() {
             }
 
             // Update local state
-            const updatedEvent = state.calendarEvents.find(e => e.id === eventId);
+            const updatedEvent = state.calendarEvents.find(e => String(e.id) === String(eventId));
             if (updatedEvent) {
                 const finalEvent = {
                     ...updatedEvent, 
@@ -499,7 +549,7 @@ function CalendarView() {
     };
 
     const handleEventResize = async (info) => {
-        const eventId = info.event.id;
+        const eventId = resolveCalendarDbEventId(info.event);
         const newEnd = info.event.end;
         
         try {
@@ -517,7 +567,7 @@ function CalendarView() {
             }
 
             // Update local state
-            const updatedEvent = state.calendarEvents.find(e => e.id === eventId);
+            const updatedEvent = state.calendarEvents.find(e => String(e.id) === String(eventId));
             if (updatedEvent) {
                 const finalEvent = {
                     ...updatedEvent, 
@@ -1091,34 +1141,10 @@ function CalendarView() {
                             height="calc(100vh - 200px)"
                             allDaySlot={true}
                             timeZone="local"
-                            slotMinTime="05:00:00"
-                            slotMaxTime="23:00:00"
+                            slotMinTime="00:00:00"
+                            slotMaxTime="24:00:00"
                             eventDisplay="block"
                             eventTextColor="white"
-                            dayHeaderFormat={(arg) => {
-                                // Extract the date
-                                let date;
-                                if (arg.date && arg.date.marker) {
-                                    date = new Date(arg.date.marker);
-                                } else if (arg.date instanceof Date) {
-                                    date = arg.date;
-                                } else if (arg.date) {
-                                    date = new Date(arg.date);
-                                } else {
-                                    date = new Date();
-                                }
-                                
-                                // Month view: no header
-                                if (arg.view && arg.view.type === 'dayGridMonth') {
-                                    return ''; // No header for month view
-                                }
-                                
-                                // Week/Day views: full date
-                                const weekday = date.toLocaleDateString('en-US', { weekday: 'short' });
-                                const month = date.toLocaleDateString('en-US', { month: 'short' });
-                                const day = date.getDate();
-                                return `${weekday}, ${month} ${day}`;
-                            }}
                             dayHeaderContent={(arg) => {
                                 // Add weather to day headers in week/day views
                                 const date = arg.date instanceof Date ? arg.date : new Date(arg.date);

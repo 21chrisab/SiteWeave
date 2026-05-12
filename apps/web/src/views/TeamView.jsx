@@ -6,6 +6,7 @@ import TeamDirectory from '../components/TeamDirectory';
 import DirectoryManagementModal from '../components/DirectoryManagementModal';
 import RoleSummaryCard from '../components/RoleSummaryCard';
 import RoleCreationModal from '../components/RoleCreationModal';
+import DeleteRoleModal from '../components/DeleteRoleModal';
 import PermissionGuard from '../components/PermissionGuard';
 import { getRoles } from '../utils/roleManagementService';
 import LoadingSpinner from '../components/LoadingSpinner';
@@ -21,6 +22,7 @@ function TeamView() {
   const [showRoleModal, setShowRoleModal] = useState(false);
   const [editingRole, setEditingRole] = useState(null);
   const [isSavingRole, setIsSavingRole] = useState(false);
+  const [rolePendingDelete, setRolePendingDelete] = useState(null);
 
   // Load roles and calculate member counts
   useEffect(() => {
@@ -70,6 +72,11 @@ function TeamView() {
   const handleCreateRole = () => {
     setEditingRole(null);
     setShowRoleModal(true);
+  };
+
+  const handleDeleteRole = (role) => {
+    if (!role?.id || role.is_system_role || role.name === 'Org Admin') return;
+    setRolePendingDelete(role);
   };
 
   const handleSaveRole = async (roleData) => {
@@ -146,6 +153,11 @@ function TeamView() {
                     role={role}
                     memberCount={roleMemberCounts[role.id] || 0}
                     onEdit={() => handleEditRole(role)}
+                    onDelete={
+                      !role.is_system_role && role.name !== 'Org Admin'
+                        ? () => handleDeleteRole(role)
+                        : undefined
+                    }
                   />
                 ))}
                 <RoleSummaryCard
@@ -183,6 +195,15 @@ function TeamView() {
         onSave={handleSaveRole}
         existingRole={editingRole}
         isLoading={isSavingRole}
+      />
+
+      <DeleteRoleModal
+        show={!!rolePendingDelete}
+        onClose={() => setRolePendingDelete(null)}
+        organizationId={state.currentOrganization?.id}
+        roleToDelete={rolePendingDelete}
+        allRoles={roles}
+        onDeleted={loadRolesAndCounts}
       />
     </div>
   );

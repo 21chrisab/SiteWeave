@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { useAppContext, supabaseClient } from '../context/AppContext';
 import { useToast } from '../context/ToastContext';
 import LoadingSpinner from './LoadingSpinner';
-import { startOutlookCalendarOAuth, prepareCalendarEventsForInsert } from '../utils/calendarIntegration';
+import { startGoogleCalendarOAuth, startOutlookCalendarOAuth, prepareCalendarEventsForInsert } from '../utils/calendarIntegration';
 
 const CalendarImportModal = ({ onClose, importType = 'file' }) => {
     const { i18n } = useTranslation();
@@ -113,28 +113,61 @@ const CalendarImportModal = ({ onClose, importType = 'file' }) => {
         return new Date().toISOString();
     };
 
-    const handleGoogleCalendarImport = () => {
-        // For Google Calendar, we'll use OAuth2 flow
+    const handleGoogleCalendarImport = async () => {
         const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
-        
-        console.log('=== CALENDAR IMPORT MODAL ENV TEST ===');
-        console.log('import.meta.env:', import.meta.env);
-        console.log('VITE_GOOGLE_CLIENT_ID:', clientId);
-        console.log('VITE_SUPABASE_URL (working):', import.meta.env.VITE_SUPABASE_URL);
-        console.log('All env keys:', Object.keys(import.meta.env));
-        console.log('=====================================');
-        
+
         if (!clientId) {
             addToast('Google Calendar integration not configured. Please contact administrator.', 'error');
             return;
         }
 
-        // Store OAuth state
+        // Desktop: use loopback OAuth (same as Outlook) so redirect does not open a separate browser
+        // context at localhost without the app's Supabase session.
+        if (window.electronAPI?.isElectron) {
+            const clientSecret = import.meta.env.VITE_GOOGLE_CLIENT_SECRET;
+            if (!clientSecret) {
+                addToast('Google Calendar desktop import requires VITE_GOOGLE_CLIENT_SECRET.', 'error');
+                return;
+            }
+            setIsImporting(true);
+            try {
+                const events = await startGoogleCalendarOAuth();
+                if (!state?.user?.id) {
+                    addToast('Please sign in before importing Google events.', 'error');
+                    return;
+                }
+                if (events && events.length > 0) {
+                    const prepared = prepareCalendarEventsForInsert(events, state.user.id);
+                    const { data, error } = await supabaseClient
+                        .from('calendar_events')
+                        .insert(prepared)
+                        .select();
+
+                    if (error) throw error;
+
+                    data.forEach((event) => {
+                        dispatch({ type: 'ADD_EVENT', payload: event });
+                    });
+
+                    addToast(`Successfully imported ${data.length} Google events!`, 'success');
+                    onClose();
+                } else {
+                    addToast('No Google Calendar events found to import.', 'info');
+                }
+            } catch (e) {
+                console.error('Google import failed:', e);
+                addToast('Google import failed: ' + e.message, 'error');
+            } finally {
+                setIsImporting(false);
+            }
+            return;
+        }
+
         localStorage.setItem('oauth_state', 'google');
 
         const scope = 'https://www.googleapis.com/auth/calendar.readonly';
         const redirectUri = window.location.origin + '/calendar';
-        const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${clientId}&redirect_uri=${redirectUri}&scope=${scope}&response_type=code&access_type=offline`;
+        const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&scope=${encodeURIComponent(scope)}&response_type=code&access_type=offline&prompt=consent`;
 
         window.open(authUrl, '_blank', 'width=500,height=600');
         addToast('Please complete the Google Calendar authorization in the popup window.', 'info');

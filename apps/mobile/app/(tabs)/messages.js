@@ -1,15 +1,23 @@
 import { View, Text, StyleSheet, FlatList, TextInput, ScrollView, KeyboardAvoidingView, Platform, Pressable, Alert, Image } from 'react-native';
 import { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../../context/AuthContext';
-import { fetchMessageChannels, fetchChannelMessages, sendMessage, fetchMessageWithUserInfo } from '@siteweave/core-logic';
+import {
+  fetchMessageChannels,
+  fetchChannelMessages,
+  sendMessage,
+  fetchMessageWithUserInfo,
+  fetchUnreadCounts,
+  markMessageAsRead,
+} from '@siteweave/core-logic';
 import PressableWithFade from '../../components/PressableWithFade';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useHaptics } from '../../hooks/useHaptics';
 import ReportContentModal from '../../components/ReportContentModal';
+import { enqueueOfflineAction, processOfflineQueue } from '../../utils/offlineQueue';
 
 export default function MessagesScreen() {
-  const { user, supabase } = useAuth();
+  const { user, supabase, syncPulse } = useAuth();
   const insets = useSafeAreaInsets();
   const haptics = useHaptics();
   const [channels, setChannels] = useState([]);
@@ -20,10 +28,25 @@ export default function MessagesScreen() {
   const flatListRef = useRef(null);
   const [showReportModal, setShowReportModal] = useState(false);
   const [selectedMessage, setSelectedMessage] = useState(null);
+  const [unreadByChannel, setUnreadByChannel] = useState({});
 
   useEffect(() => {
     loadChannels();
+    flushOfflineMessages();
   }, [user]);
+
+  useEffect(() => {
+    flushOfflineMessages();
+  }, [syncPulse]);
+
+  const flushOfflineMessages = async () => {
+    if (!supabase || !user) return;
+    await processOfflineQueue({
+      send_message: async (payload) => {
+        await sendMessage(supabase, payload);
+      },
+    });
+  };
 
   useEffect(() => {
     if (selectedChannel) {
@@ -44,6 +67,12 @@ export default function MessagesScreen() {
     try {
       const data = await fetchMessageChannels(supabase);
       setChannels(data);
+      const counts = await fetchUnreadCounts(
+        supabase,
+        user?.id,
+        (data || []).map((channel) => channel.id),
+      );
+      setUnreadByChannel(counts || {});
       if (data.length > 0 && !selectedChannel) {
         setSelectedChannel(data[0]);
       }
@@ -58,6 +87,10 @@ export default function MessagesScreen() {
     try {
       const data = await fetchChannelMessages(supabase, selectedChannel.id, user?.id);
       setMessages(data);
+      if (data?.length) {
+        const latest = data[data.length - 1];
+        await markMessageAsRead(supabase, latest.id, user?.id);
+      }
       // Auto-scroll to bottom to show newest message
       setTimeout(() => {
         flatListRef.current?.scrollToEnd({ animated: false });
@@ -96,6 +129,8 @@ export default function MessagesScreen() {
             }, 100);
             return updated;
           });
+          await markMessageAsRead(supabase, payload.new.id, user?.id);
+          await loadChannels();
         } catch (error) {
           console.error('Error processing new message:', error);
         }
@@ -132,7 +167,18 @@ export default function MessagesScreen() {
     } catch (error) {
       console.error('Error sending message:', error);
       haptics.error();
-      // Don't clear input on error - user can retry
+      await enqueueOfflineAction({
+        type: 'send_message',
+        payload: {
+          channel_id: selectedChannel.id,
+          user_id: user.id,
+          content: messageContent,
+          topic: 'text',
+          extension: 'txt',
+          type: 'text',
+        },
+      });
+      Alert.alert('Offline', 'Message queued and will retry when you reopen Messages.');
     }
   };
 
@@ -196,6 +242,13 @@ export default function MessagesScreen() {
                 ]}>
                   {channel.name}
                 </Text>
+                {(unreadByChannel[channel.id] || 0) > 0 && (
+                  <View style={styles.channelBadge}>
+                    <Text style={styles.channelBadgeText}>
+                      {unreadByChannel[channel.id] > 99 ? '99+' : unreadByChannel[channel.id]}
+                    </Text>
+                  </View>
+                )}
               </PressableWithFade>
             ))}
           </ScrollView>
@@ -359,6 +412,9 @@ const styles = StyleSheet.create({
     marginRight: 8,
     minHeight: 44,
     justifyContent: 'center',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
   },
   channelChipActive: {
     backgroundColor: '#3B82F6',
@@ -371,6 +427,20 @@ const styles = StyleSheet.create({
   },
   channelChipTextActive: {
     color: '#fff',
+  },
+  channelBadge: {
+    minWidth: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: '#DC2626',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 4,
+  },
+  channelBadgeText: {
+    color: '#fff',
+    fontSize: 10,
+    fontWeight: '700',
   },
   messagesList: {
     paddingVertical: 8,

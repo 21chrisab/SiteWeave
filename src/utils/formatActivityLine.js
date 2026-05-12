@@ -68,6 +68,13 @@ export function formatActivityLine(activity, t, options = {}) {
       ? `pinged assignee (${details.recipient_email}) for task "${entityName}"`
       : `ping email to ${details.recipient_email} failed for task "${entityName}"${details.error ? `: ${details.error}` : ''}`;
   }
+  if (action === 'assignee_ping_sms' && details.recipient_email) {
+    const ok = details.success !== false;
+    const to = details.recipient_email;
+    return ok
+      ? `pinged assignee by SMS (${to}) for task "${entityName}"`
+      : `SMS ping to ${to} failed for task "${entityName}"${details.error ? `: ${details.error}` : ''}`;
+  }
 
   const nameFor = entityName || fallbackEntityLabel(entityType, t);
   const taskDetailSuffix = formatTaskUpdateDetails(details, t);

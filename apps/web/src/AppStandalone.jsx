@@ -3,6 +3,7 @@ import { Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-
 import { supabase } from './supabaseClient'
 import LoadingSpinner from './components/LoadingSpinner'
 import InviteAcceptPage from './components/InviteAcceptPage'
+import GuestTaskShareView from './views/GuestTaskShareView'
 import ForcePasswordReset from './components/ForcePasswordReset'
 import AppShell from './layouts/AppShell'
 import LoginView from './views/LoginView'
@@ -251,6 +252,7 @@ export default function AppStandalone() {
     <ToastProvider>
     <Routes>
       <Route path={ROUTE_PATHS.invite} element={<InviteAcceptPage />} />
+      <Route path={ROUTE_PATHS.guestTaskShare} element={<GuestTaskShareView />} />
       <Route path={ROUTE_PATHS.login} element={<LoginView />} />
       <Route
         element={(
