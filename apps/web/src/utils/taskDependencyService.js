@@ -1,4 +1,4 @@
-import { addBusinessDays } from '../../../../packages/core-logic/src/utils/usBusinessCalendar.js';
+import { addBusinessDays } from '@siteweave/core-logic';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
